@@ -216,6 +216,15 @@ async fn lock_timeout_fails_fast_with_a_clear_message() {
     assert!(started.elapsed() < std::time::Duration::from_secs(10), "should give up after lock_timeout");
 }
 
+#[tokio::test]
+async fn statement_timeout_says_how_long_and_what_to_do() {
+    let Some((conn, spec)) = setup() else { return };
+    let limits = Limits { timeout_ms: 1_000, ..LIMITS };
+    let err = explain(&conn, &spec, "SELECT pg_sleep(5)", &opts(ExplainMode::Analyze), limits).await.unwrap_err();
+    assert_eq!(err.kind, querylens_lib::error::ErrorKind::Timeout);
+    assert!(err.message.contains("after 1 s") && err.message.contains("Explain"), "{}", err.message);
+}
+
 fn temp_store(port: u16) -> (querylens_lib::storage::Store, std::path::PathBuf) {
     use querylens_lib::model::ConnectionInput;
     let dir = std::env::temp_dir().join(format!("ql-live-{}", uuid::Uuid::new_v4()));

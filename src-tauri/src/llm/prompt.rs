@@ -99,13 +99,6 @@ pub fn user(a: &AnalysisResult) -> String {
         let _ = writeln!(s, "Total estimated cost: {c:.0}");
     }
     let _ = writeln!(s, "\n## Query\n{}\n", a.sql);
-    if let Some(w) = &a.whatif {
-        s.push_str("## What-if experiments already run (rolled back)\n");
-        for r in &w.results {
-            let _ = writeln!(s, "- {} [{}]: {:?}. {}", r.scenario.label, r.scenario.setup.join("; "), r.outcome, r.verdict);
-        }
-        let _ = writeln!(s, "Diagnosis: {}\n", w.summary);
-    }
     s.push_str("## Plan (id operator · self time (share) · rows actual/estimated · detail)\n");
     s.push_str(&compact_plan(&a.root));
     if !a.tables.is_empty() {

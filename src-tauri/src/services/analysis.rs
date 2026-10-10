@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use crate::engines::{self, ConnectSpec, ExplainRequest};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult, ErrorKind};
 use crate::model::{AnalysisResult, Baseline, Connection, ConnectionInput, ExplainMode, RunStats};
 use crate::storage::Store;
 use crate::{plan, secrets};
@@ -49,7 +49,7 @@ pub struct RunOptions {
     /// Save to history (false for MCP tool calls the model makes).
     pub persist: bool,
     /// Statements run first inside the same rolled-back transaction (verification,
-    /// what-if scenarios). Validated with `sanitize_setup_sql`.
+    /// fix previews). Validated with `sanitize_setup_sql`.
     pub setup: Vec<String>,
     /// HypoPG hypothetical indexes (`CREATE INDEX …`); forces a plain EXPLAIN.
     pub hypothetical: Vec<String>,
@@ -125,6 +125,21 @@ struct Sample {
     read_blocks: f64,
 }
 
+/// Say how long the query was allowed to run and what to do about it.
+fn timeout_message(e: AppError, limits: Limits) -> AppError {
+    if e.kind != ErrorKind::Timeout {
+        return e;
+    }
+    let secs = (limits.timeout_ms as f64 / 1000.0).round();
+    AppError::new(
+        ErrorKind::Timeout,
+        format!(
+            "The query was still running after {secs} s, so it was stopped. Explain shows the plan without \
+             running the query, or raise the statement timeout in Settings → Running queries."
+        ),
+    )
+}
+
 /// Connect → EXPLAIN (×runs) → parse/score → schema context. No storage or keychain access.
 pub async fn explain(
     conn: &Connection,
@@ -166,7 +181,7 @@ pub async fn explain(
     let mut samples: Vec<Sample> = Vec::new();
     while samples.len() < wanted as usize {
         let run_started = Instant::now();
-        let raw = session.explain(&request).await?;
+        let raw = session.explain(&request).await.map_err(|e| timeout_message(e, limits))?;
         let parsed = plan::parse(conn.engine, mode, &raw)?;
         let execution_ms = parsed.execution_time_ms.unwrap_or(0.0);
         let read_blocks = parsed.root.buffers.as_ref().map(|b| b.shared_read).unwrap_or(0.0);
@@ -221,7 +236,6 @@ pub async fn explain(
         query_fp: plan::fingerprint::query_fp(&sql_for_fp),
         plan_fp: plan::fingerprint::plan_fp(&root_for_fp),
         baseline: None,
-        whatif: None,
         params: params.map(<[_]>::to_vec).unwrap_or_default(),
     })
 }

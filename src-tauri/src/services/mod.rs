@@ -4,4 +4,3 @@
 pub mod analysis;
 pub mod sensitivity;
 pub mod suggestions;
-pub mod whatif;

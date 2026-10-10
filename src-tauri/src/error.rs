@@ -10,6 +10,8 @@ pub enum ErrorKind {
     NotFound,
     Connection,
     Database,
+    /// The statement ran past the statement timeout.
+    Timeout,
     Llm,
     Internal,
 }
@@ -94,11 +96,14 @@ impl From<tokio_postgres::Error> for AppError {
                     msg.push_str(&format!("\nHint: {hint}"));
                 }
                 if db.code() == &tokio_postgres::error::SqlState::LOCK_NOT_AVAILABLE {
-                    msg = "Waited too long for a lock held by another session (see Settings →                            Running queries → Lock timeout). Try again, or use Explain, which                            doesn't need row locks."
+                    msg = "Waited too long for a lock held by another session (see Settings → \
+                           Running queries → Lock timeout). Try again, or use Explain, which \
+                           doesn't need row locks."
                         .into();
                 }
-                if db.code() == &tokio_postgres::error::SqlState::QUERY_CANCELED {
-                    msg = format!("{msg} — the statement timeout was reached (see Settings → Analysis).");
+                if db.code() == &tokio_postgres::error::SqlState::QUERY_CANCELED && msg.contains("statement timeout") {
+                    // services::analysis rewrites this with the configured limit.
+                    return Self::new(ErrorKind::Timeout, msg);
                 }
                 Self::database(msg)
             }

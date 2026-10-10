@@ -111,9 +111,8 @@ impl EngineSession for DuckSession {
             let _ = watchdog.join();
             result.map_err(|e| {
                 if e.message.contains("INTERRUPT") || e.message.contains("nterrupted") {
-                    AppError::database(format!(
-                        "Query interrupted after {timeout_ms} ms (statement timeout, see Settings → Analysis)."
-                    ))
+                    // services::analysis rewrites this with the configured limit.
+                    AppError::new(crate::error::ErrorKind::Timeout, "statement timeout")
                 } else {
                     e
                 }

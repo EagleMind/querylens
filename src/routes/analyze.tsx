@@ -1,6 +1,6 @@
 import { useEffect } from 'react'
 
-import { InsightsPanel } from '@/components/ai/InsightsPanel'
+import { SuggestionPanel } from '@/components/ai/SuggestionPanel'
 import { AnalyzeToolbar } from '@/components/editor/AnalyzeToolbar'
 import { ParamsBar } from '@/components/editor/ParamsBar'
 import { SqlEditor } from '@/components/editor/SqlEditor'
@@ -87,11 +87,12 @@ export function AnalyzeRoute() {
                 isReplay={isReplay}
                 running={analyze.isPending}
                 error={(analyze.error as IpcError | null) ?? null}
+                onExplain={() => run('estimate')}
               />
             </ResizablePanel>
             <ResizableHandle />
             <ResizablePanel defaultSize="38%" minSize="22%">
-              <InsightsPanel analysis={analyze.isPending ? null : analysis} />
+              <SuggestionPanel analysis={analyze.isPending ? null : analysis} />
             </ResizablePanel>
           </ResizablePanelGroup>
         </ResizablePanel>

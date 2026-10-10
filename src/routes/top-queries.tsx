@@ -147,8 +147,8 @@ export function TopQueriesRoute() {
           ))}
           {data && (
             <p className="px-4 py-3 text-[12px] text-muted-foreground">
-              Click a statement to open it in the Workbench. Its literals are $n parameters there: fill them in, or use
-              What-if → Parameters to see how the plan changes with different values.
+              Click a statement to open it in the Workbench. Its literals are $n parameters there: fill them in, then
+              use Try other values to see whether the plan changes with the value.
             </p>
           )}
         </ScrollArea>

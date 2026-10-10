@@ -1,9 +1,9 @@
-import { useMutation } from '@tanstack/react-query'
-import { Loader2Icon, ShuffleIcon } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
+import { Loader2Icon } from 'lucide-react'
 
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
 import type { SensitivityReport } from '@/bindings/SensitivityReport'
-import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { fmtCount, fmtPct } from '@/lib/format'
 import { api } from '@/lib/ipc'
 import { cn } from '@/lib/utils'
@@ -16,6 +16,10 @@ function Report({ r }: { r: SensitivityReport }) {
   for (const row of r.rows) if (!shapes.includes(row.planFp)) shapes.push(row.planFp)
   return (
     <div className="space-y-2">
+      <h3 className="font-mono text-[12.5px]">
+        <span className="text-signal">${r.param}</span>
+        {r.column && <span className="text-muted-foreground"> · {r.column}</span>}
+      </h3>
       <p
         className={cn('border-l-2 pl-3 text-[13px]/relaxed text-pretty', r.flips ? 'border-heat-medium' : 'border-ok')}
       >
@@ -58,28 +62,53 @@ function Report({ r }: { r: SensitivityReport }) {
 }
 
 /** Plan the statement with representative values for each $n and show plan flips. */
-export function SensitivitySection({ analysis }: { analysis: AnalysisResult }) {
-  const run = useMutation({ mutationFn: () => api.sensitivity(analysis.id) })
-  if (!analysis.params?.length) return null
+export function SensitivityDialog({
+  analysis,
+  open,
+  onOpenChange,
+}: {
+  analysis: AnalysisResult
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const run = useQuery({
+    queryKey: ['sensitivity', analysis.id],
+    queryFn: () => api.sensitivity(analysis.id),
+    enabled: open,
+    retry: false,
+    staleTime: Infinity,
+  })
   return (
-    <section className="space-y-3 border-t-2 border-foreground/80 pt-3">
-      <div className="flex items-center gap-2">
-        <h3 className="text-[15px] font-semibold">Parameters</h3>
-        <Button size="xs" variant="outline" className="ml-auto" onClick={() => run.mutate()} disabled={run.isPending}>
-          {run.isPending ? <Loader2Icon className="animate-spin" /> : <ShuffleIcon />}
-          {run.data ? 'Test again' : 'Test sensitivity'}
-        </Button>
-      </div>
-      {!run.data && !run.isPending && (
-        <p className="text-[12.5px]/relaxed text-muted-foreground">
-          Plans this statement with common, rare and absent values of each parameter (from the column statistics), plus
-          the generic plan a prepared statement reuses, to find plans that flip with the data. Estimates only, nothing
-          runs.
-        </p>
-      )}
-      {run.data?.map((r) => (
-        <Report key={r.param} r={r} />
-      ))}
-    </section>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[86vh] max-w-[min(640px,94vw)] overflow-y-auto sm:max-w-[min(640px,94vw)]">
+        <DialogHeader>
+          <DialogTitle>Does the plan depend on the value?</DialogTitle>
+          <DialogDescription>
+            Plans this statement with common, rare and absent values of each parameter, taken from the column
+            statistics, plus the generic plan a prepared statement can reuse. Planner estimates only; nothing runs.
+          </DialogDescription>
+        </DialogHeader>
+        {run.isPending && (
+          <p className="flex items-center gap-2 text-[13px] text-muted-foreground">
+            <Loader2Icon className="size-4 animate-spin" /> Planning with sample values…
+          </p>
+        )}
+        {run.error && (
+          <p className="text-[13px] text-destructive" data-selectable>
+            {(run.error as Error).message}
+          </p>
+        )}
+        {run.data?.length === 0 && (
+          <p className="text-[13px] text-muted-foreground">
+            None of the parameters compare against a column with statistics, so there are no sample values to try.
+          </p>
+        )}
+        <div className="space-y-5">
+          {run.data?.map((r) => (
+            <Report key={r.param} r={r} />
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }

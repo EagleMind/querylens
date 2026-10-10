@@ -56,6 +56,8 @@ const MIGRATIONS: &[&str] = &[r#"
     ALTER TABLE analyses ADD COLUMN plan_fp TEXT;
     ALTER TABLE analyses ADD COLUMN whatif_json TEXT;
     CREATE INDEX analyses_query ON analyses (connection_id, query_fp, created_at DESC);
+"#, r#"
+    ALTER TABLE analyses DROP COLUMN whatif_json;
 "#];
 
 pub struct Store {

@@ -7,4 +7,3 @@ pub mod history;
 pub mod llm;
 pub mod settings;
 pub mod workload;
-pub mod whatif;

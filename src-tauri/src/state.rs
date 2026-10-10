@@ -7,7 +7,7 @@ use crate::error::AppResult;
 use crate::model::AnalysisResult;
 use crate::storage::Store;
 
-/// Unsaved analyses (what-if scenarios, fix previews) kept so they can be compared.
+/// Unsaved analyses (fix previews) kept so they can be compared.
 const SCRATCH_CAPACITY: usize = 40;
 
 /// Recent unsaved analyses, newest first.
@@ -30,7 +30,7 @@ impl Scratch {
 pub struct AppState {
     pub store: Arc<Store>,
     pub scratch: Arc<Scratch>,
-    /// In-flight background jobs (suggestions, what-if sweeps…), so they can be cancelled.
+    /// In-flight background jobs (AI suggestions), so they can be cancelled.
     pub tasks: Mutex<HashMap<String, AbortHandle>>,
 }
 

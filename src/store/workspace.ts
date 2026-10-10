@@ -4,9 +4,6 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
 import type { SuggestionSet } from '@/bindings/SuggestionSet'
-import type { WhatIfReport } from '@/bindings/WhatIfReport'
-import type { WhatIfResult } from '@/bindings/WhatIfResult'
-import type { WhatIfScenario } from '@/bindings/WhatIfScenario'
 
 export interface Activity {
   id: number
@@ -16,27 +13,6 @@ export interface Activity {
 }
 
 export type StreamStatus = 'idle' | 'streaming' | 'done' | 'error' | 'cancelled'
-
-export interface WhatIfState {
-  status: 'idle' | 'running' | 'done' | 'error' | 'cancelled'
-  requestId: string | null
-  scenarios: WhatIfScenario[]
-  /** Scenario currently being evaluated and its phase ("planning" / "profiling"). */
-  current: { kind: string; phase: string } | null
-  results: WhatIfResult[]
-  report: WhatIfReport | null
-  error: string | null
-}
-
-export const idleWhatIf: WhatIfState = {
-  status: 'idle',
-  requestId: null,
-  scenarios: [],
-  current: null,
-  results: [],
-  report: null,
-  error: null,
-}
 
 export interface SuggestionStream {
   status: StreamStatus
@@ -72,8 +48,6 @@ interface WorkspaceState {
   /** Inputs for `$1…$n` (the text NULL = SQL NULL). */
   params: string[]
   stream: SuggestionStream
-  whatif: WhatIfState
-  insightsTab: 'advisor' | 'whatif'
 
   setSql: (sql: string) => void
   setConnectionId: (id: string | null) => void
@@ -87,8 +61,6 @@ interface WorkspaceState {
   appendDelta: (text: string) => void
   pushActivity: (label: string, detail: string | null) => void
   resetStream: () => void
-  updateWhatIf: (patch: Partial<WhatIfState>) => void
-  setInsightsTab: (t: 'advisor' | 'whatif') => void
 }
 
 let activitySeq = 0
@@ -112,8 +84,6 @@ export const useWorkspace = create<WorkspaceState>()(
       planView: 'tree',
       params: [],
       stream: idleStream,
-      whatif: idleWhatIf,
-      insightsTab: 'advisor',
 
       setSql: (sql) => set({ sql }),
       setConnectionId: (connectionId) => set({ connectionId }),
@@ -123,9 +93,6 @@ export const useWorkspace = create<WorkspaceState>()(
           isReplay: !!opts?.replay,
           selectedNodeId: null,
           stream: analysis?.suggestions ? { ...idleStream, status: 'done' } : idleStream,
-          whatif: analysis?.whatif
-            ? { ...idleWhatIf, status: 'done', report: analysis.whatif, results: analysis.whatif.results }
-            : idleWhatIf,
         }),
       selectNode: (selectedNodeId) => set({ selectedNodeId }),
       setPlanView: (planView) => set({ planView }),
@@ -148,8 +115,6 @@ export const useWorkspace = create<WorkspaceState>()(
           },
         })),
       resetStream: () => set({ stream: idleStream }),
-      updateWhatIf: (patch) => set((s) => ({ whatif: { ...s.whatif, ...patch } })),
-      setInsightsTab: (insightsTab) => set({ insightsTab }),
     }),
     {
       name: 'querylens.workspace',

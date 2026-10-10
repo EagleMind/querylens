@@ -3,4 +3,4 @@
 /**
  * Coarse error category, so the UI can pick an icon / recovery action.
  */
-export type ErrorKind = "validation" | "not_found" | "connection" | "database" | "llm" | "internal";
+export type ErrorKind = "validation" | "not_found" | "connection" | "database" | "timeout" | "llm" | "internal";

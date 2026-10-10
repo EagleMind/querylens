@@ -3,6 +3,7 @@ import { AlertTriangleIcon, NetworkIcon, PlugZapIcon, TimerIcon } from 'lucide-r
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
 import { EmptyState } from '@/components/shared/EmptyState'
 import { Kbd } from '@/components/shared/bits'
+import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { modKey } from '@/hooks/useHotkey'
 import type { IpcError } from '@/lib/ipc'
@@ -37,24 +38,47 @@ function Running() {
   )
 }
 
-function ErrorView({ error }: { error: IpcError }) {
+function ErrorView({ error, onExplain }: { error: IpcError; onExplain?: () => void }) {
   const isConn = error.kind === 'connection'
-  const isTimeout = /timeout/i.test(error.message)
+  const isTimeout = error.kind === 'timeout'
   const Icon = isConn ? PlugZapIcon : isTimeout ? TimerIcon : AlertTriangleIcon
   return (
     <div className="p-4">
-      <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 animate-rise">
-        <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+      <div
+        className={cn(
+          'rounded-lg border p-4 animate-rise',
+          isTimeout ? 'border-heat-medium/40 bg-heat-medium/5' : 'border-destructive/30 bg-destructive/5',
+        )}
+      >
+        <div
+          className={cn(
+            'flex items-center gap-2 text-sm font-medium',
+            isTimeout ? 'text-heat-medium' : 'text-destructive',
+          )}
+        >
           <Icon className="size-4" />
           {isConn
             ? 'Could not connect'
-            : error.kind === 'validation'
-              ? 'Check your query'
-              : 'The database rejected the query'}
+            : isTimeout
+              ? 'Query timed out'
+              : error.kind === 'validation'
+                ? 'Check your query'
+                : 'The database rejected the query'}
         </div>
-        <pre className="mt-2 font-mono text-xs/relaxed whitespace-pre-wrap text-destructive/90" data-selectable>
+        <p
+          className={cn(
+            'mt-2 text-[13px]/relaxed whitespace-pre-wrap',
+            isTimeout ? 'text-foreground/85' : 'font-mono text-xs/relaxed text-destructive/90',
+          )}
+          data-selectable
+        >
           {error.message}
-        </pre>
+        </p>
+        {isTimeout && onExplain && (
+          <Button size="sm" variant="outline" className="mt-3" onClick={onExplain}>
+            Explain instead
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -65,15 +89,18 @@ export function PlanView({
   isReplay,
   running,
   error,
+  onExplain,
 }: {
   analysis: AnalysisResult | null
   isReplay: boolean
   running: boolean
   error: IpcError | null
+  /** Offered when a Profile times out. */
+  onExplain?: () => void
 }) {
   const view = useWorkspace((s) => s.planView)
   if (running) return <Running />
-  if (error) return <ErrorView error={error} />
+  if (error) return <ErrorView error={error} onExplain={onExplain} />
   if (!analysis) {
     return (
       <EmptyState icon={NetworkIcon} title="No plan yet" className="blueprint">

@@ -21,7 +21,6 @@ import type { TopQuery } from '@/bindings/TopQuery'
 import type { TopQueryOrder } from '@/bindings/TopQueryOrder'
 import type { Settings } from '@/bindings/Settings'
 import type { SuggestionEvent } from '@/bindings/SuggestionEvent'
-import type { WhatIfEvent } from '@/bindings/WhatIfEvent'
 
 export class IpcError extends Error {
   readonly kind: AppError['kind']
@@ -87,24 +86,13 @@ export const api = {
     channel.onmessage = onEvent
     return call<string>('get_suggestions', { analysisId, onEvent: channel })
   },
-  /** Cancel any background job (suggestions, what-if sweep, sensitivity). */
+  /** Cancel any background job (today: AI suggestions). */
   cancelTask: (requestId: string) => call<void>('cancel_task', { requestId }),
 
   compare: (beforeId: string, afterId: string) => call<PlanDiff>('compare_analyses', { beforeId, afterId }),
 
   /** Re-run an analysis with a fix applied (rolled back); returns the new analysis. */
   previewFix: (analysisId: string, fix: string) => call<AnalysisResult>('preview_fix', { analysisId, fix }),
-
-  /** Start a planner what-if sweep; events (incl. the final report) arrive on `onEvent`. */
-  async runWhatif(analysisId: string, onEvent: (e: WhatIfEvent) => void): Promise<string> {
-    if (!isTauri() && import.meta.env.DEV) {
-      const { mockWhatif } = await import('@/dev/mockBackend')
-      return mockWhatif(analysisId, onEvent)
-    }
-    const channel = new Channel<WhatIfEvent>()
-    channel.onmessage = onEvent
-    return call<string>('run_whatif', { analysisId, onEvent: channel })
-  },
 }
 
 /** Native file picker for DuckDB databases; null when cancelled or unavailable. */

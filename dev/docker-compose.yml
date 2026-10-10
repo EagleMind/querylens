@@ -23,6 +23,13 @@ services:
       - pg_stat_statements.track=all
       - -c
       - track_io_timing=on
+      # Enough cache for IMDB's hot indexes; the 128 MB default makes JOB queries
+      # re-read gigabytes from disk on every run.
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - effective_cache_size=6GB
+    shm_size: 1g
     ports:
       - "54329:5432"
     volumes:

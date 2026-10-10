@@ -18,8 +18,6 @@ import type { HistoryEntry } from '@/bindings/HistoryEntry'
 import type { Settings } from '@/bindings/Settings'
 import type { SuggestionEvent } from '@/bindings/SuggestionEvent'
 import type { SuggestionSet } from '@/bindings/SuggestionSet'
-import type { WhatIfEvent } from '@/bindings/WhatIfEvent'
-import type { WhatIfResult } from '@/bindings/WhatIfResult'
 
 import fixture from './fixtures/postgres-analysis.json'
 
@@ -73,7 +71,7 @@ let settings: Settings = {
 }
 
 const analyses = new Map<string, AnalysisResult>()
-/** Unsaved analyses (fix previews, what-if scenarios). */
+/** Unsaved analyses (fix previews). */
 const scratch = new Map<string, AnalysisResult>()
 
 function toEntry(a: AnalysisResult): HistoryEntry {
@@ -130,6 +128,11 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         const sql = String(args.sql).trim()
         if (/^\s*$/.test(sql)) fail('validation', 'Enter a SQL statement to analyze.')
         if (/\bnope\b/i.test(sql)) fail('database', 'relation "nope" does not exist')
+        if (/pg_sleep/i.test(sql) && args.mode === 'analyze')
+          fail(
+            'timeout',
+            'The query was still running after 30 s, so it was stopped. Explain shows the plan without running the query, or raise the statement timeout in Settings → Running queries.',
+          )
         const conn = connections.find((c) => c.id === args.connectionId)!
         const prev = [...analyses.values()].reverse().find((p) => p.sql === sql && p.connectionId === conn.id)
         const a = {
@@ -388,71 +391,4 @@ function mockDiff(before: AnalysisResult, after: AnalysisResult): PlanDiff {
     planChanged: true,
     root: walk(before.root),
   }
-}
-
-const WHATIF: WhatIfResult[] = [
-  {
-    scenario: {
-      kind: 'nestloop_off',
-      label: 'Hash/merge joins instead of nested loops',
-      setup: ['SET enable_nestloop = off'],
-      rationale: '',
-    },
-    outcome: 'faster',
-    planChanged: true,
-    before: 103,
-    after: 31,
-    speedup: 3.3,
-    timed: true,
-    analysisId: null,
-    verdict:
-      "3.3× faster without nested loops. The planner's row estimates are wrong (cost model), not the schema. Fix the estimates (ANALYZE, extended statistics) rather than disabling nested loops globally.",
-  },
-  {
-    scenario: { kind: 'work_mem', label: 'work_mem × 4 (16 MB)', setup: ["SET work_mem = '16384kB'"], rationale: '' },
-    outcome: 'no_change',
-    planChanged: false,
-    before: 103,
-    after: 103,
-    speedup: 1,
-    timed: true,
-    analysisId: null,
-    verdict: "Same plan. This lever doesn't matter for this query.",
-  },
-  {
-    scenario: {
-      kind: 'random_page_cost',
-      label: 'SSD cost model (random_page_cost = 1.1)',
-      setup: ['SET random_page_cost = 1.1'],
-      rationale: '',
-    },
-    outcome: 'slower',
-    planChanged: true,
-    before: 103,
-    after: 160,
-    speedup: 0.64,
-    timed: true,
-    analysisId: null,
-    verdict: "1.6× slower. The planner's current choice is right here.",
-  },
-]
-
-export async function mockWhatif(analysisId: string, onEvent: (e: WhatIfEvent) => void): Promise<string> {
-  ;(async () => {
-    onEvent({ type: 'started', scenarios: WHATIF.map((r) => r.scenario) })
-    for (const r of WHATIF) {
-      onEvent({ type: 'running', kind: r.scenario.kind, phase: 'planning' })
-      await sleep(500)
-      if (r.planChanged) {
-        onEvent({ type: 'running', kind: r.scenario.kind, phase: 'profiling' })
-        await sleep(900)
-      }
-      onEvent({ type: 'result', result: r })
-    }
-    const report = { results: WHATIF, summary: WHATIF[0].verdict, createdAt: now() }
-    const a = analyses.get(analysisId)
-    if (a) a.whatif = report
-    onEvent({ type: 'done', report })
-  })()
-  return crypto.randomUUID()
 }

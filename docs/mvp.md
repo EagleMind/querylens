@@ -108,7 +108,6 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 - [x] Server capabilities, version-aware EXPLAIN (SETTINGS/WAL/SERIALIZE/MEMORY), I/O time, JIT/serialization
 - [x] Repeat runs (median + first run), lock timeout
 - [x] Fingerprints, run-over-run baselines, plan diff + Compare dialog, icicle view
-- [x] What-if planner sweep with causal verdicts
 - [x] HypoPG hypothetical indexes, MCP `test_index`, measured/estimated evidence, Preview fix
 - [x] `$n` parameters (custom/generic plans), parameter sensitivity, Top queries (pg_stat_statements)
 - [x] Dev image with hypopg + pg_stat_statements, `dev/load-job.sh`, JOB / workload live tests

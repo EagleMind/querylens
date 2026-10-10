@@ -40,7 +40,7 @@ pub async fn get_suggestions(
     Ok(request_id)
 }
 
-/// Cancel any background job (suggestions, what-if sweep, sensitivity). Aborting drops
+/// Cancel any background job (today: AI suggestions). Aborting drops
 /// in-flight HTTP streams / kills the `claude` child process / abandons DB work.
 #[tauri::command]
 pub async fn cancel_task(state: State<'_, AppState>, request_id: String) -> AppResult<()> {
