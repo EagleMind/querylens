@@ -1,9 +1,10 @@
 [package]
 name = "querylens"
 version = "0.1.0"
-description = "Local-first SQL query plan profiler with AI suggestions"
+description = "Local-first query profiler for PostgreSQL, MySQL, MongoDB and DuckDB, with an AI advisor"
 authors = ["QueryLens contributors"]
 license = "MIT"
+repository = "https://github.com/EagleMind/querylens"
 edition = "2024"
 rust-version = "1.90"
 default-run = "querylens"

@@ -2,6 +2,10 @@
   "name": "querylens",
   "private": true,
   "version": "0.1.0",
+  "description": "Local-first query profiler for PostgreSQL, MySQL, MongoDB and DuckDB, with an AI advisor",
+  "license": "MIT",
+  "repository": "github:EagleMind/querylens",
+  "packageManager": "pnpm@11.8.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

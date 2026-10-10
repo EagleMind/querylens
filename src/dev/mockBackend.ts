@@ -318,7 +318,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
 
 const CANNED: Omit<SuggestionSet, 'createdAt'> = {
   provider: 'Claude Code',
-  model: 'mock',
+  model: 'sample',
   summary:
     'Most of the time goes into a parallel full scan of orders that keeps only paid orders and then hash-joins them against users from one country.',
   suggestions: [
@@ -358,9 +358,9 @@ const CANNED: Omit<SuggestionSet, 'createdAt'> = {
 export async function mockSuggestions(analysisId: string, onEvent: (e: SuggestionEvent) => void): Promise<string> {
   const requestId = crypto.randomUUID()
   ;(async () => {
-    onEvent({ type: 'started', provider: 'Claude Code', model: 'mock' })
+    onEvent({ type: 'started', provider: 'Claude Code', model: 'sample' })
     await sleep(400)
-    onEvent({ type: 'activity', label: 'Claude Code session started', detail: 'mock' })
+    onEvent({ type: 'activity', label: 'Claude Code session started', detail: 'sample data' })
     await sleep(700)
     onEvent({
       type: 'activity',
