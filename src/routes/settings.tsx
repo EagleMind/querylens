@@ -26,8 +26,7 @@ import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { PROVIDERS } from '@/lib/constants'
+import { ACTIONS, PROVIDERS } from '@/lib/constants'
 import { fmtMs } from '@/lib/format'
 import { api } from '@/lib/ipc'
 import { useSaveSettings, useSettings } from '@/lib/queries'
@@ -307,28 +306,38 @@ function SettingsForm({ saved }: { saved: Settings }) {
           </Section>
 
           <Section
-            title="Analysis"
-            description="How queries are executed. Analyze always runs inside a rolled-back transaction."
+            title="Running queries"
+            description="Profile executes the query inside a transaction that is always rolled back. Explain never executes anything."
           >
-            <Field label="Default mode">
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                size="sm"
-                spacing={0}
-                value={form.analysis.defaultMode}
-                onValueChange={(v) =>
-                  v && setForm({ ...form, analysis: { ...form.analysis, defaultMode: v as 'analyze' | 'estimate' } })
-                }
-                className="w-fit"
-              >
-                <ToggleGroupItem value="analyze" className="px-3 text-xs">
-                  Analyze (execute + rollback)
-                </ToggleGroupItem>
-                <ToggleGroupItem value="estimate" className="px-3 text-xs">
-                  Estimate (never execute)
-                </ToggleGroupItem>
-              </ToggleGroup>
+            <Field label="Primary action" hint="The highlighted button and Ctrl/⌘+Enter. Add Shift for the other one.">
+              <div role="radiogroup" className="grid max-w-xl grid-cols-2 gap-2">
+                {(['analyze', 'estimate'] as const).map((m) => {
+                  const a = ACTIONS[m]
+                  const active = form.analysis.defaultMode === m
+                  return (
+                    <button
+                      key={m}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      onClick={() => setForm({ ...form, analysis: { ...form.analysis, defaultMode: m } })}
+                      className={cn(
+                        'flex flex-col items-start gap-1 rounded-[3px] border bg-card p-3 text-left transition hover:border-foreground/25',
+                        active && 'border-signal bg-accent shadow-[inset_0_-3px_0_var(--signal)]',
+                      )}
+                    >
+                      <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+                        <a.icon className="size-3.5" /> {a.label}
+                      </span>
+                      <span className="text-[12px]/snug text-muted-foreground">
+                        {m === 'analyze'
+                          ? 'Runs the query, rolls back. Real timings.'
+                          : 'Plan only, never runs. Safe on production.'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
             </Field>
             <Field label="Statement timeout" hint="Queries running longer are cancelled. 1–600 seconds.">
               <div className="flex items-center gap-2">

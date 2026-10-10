@@ -346,10 +346,17 @@ Errors are `AppError { kind: "validation" | "not_found" | "connection" | "databa
 ## 9. UI
 
 - **Shell.** A collapsible 240 px sidebar (brand, connections with color dots + engine
-  badge, "New connection", nav: Analyze / History / Settings) and a main area.
-- **Analyze.** A toolbar (connection select, Analyze/Estimate segmented control,
-  Analyze button with a <kbd>Ctrl/Cmd</kbd>+<kbd>Enter</kbd> hint), a resizable editor,
-  then a resizable horizontal split: plan (summary strip + tree) | AI panel.
+  badge, "New connection", nav: Workbench / History / Settings) and a main area.
+- **Workbench.** The toolbar has a connection select and **two explicit actions named
+  for what they do**, not a mode toggle:
+  - **Profile** (`EXPLAIN ANALYZE`): runs the query in a rolled-back transaction.
+  - **Explain** (plain `EXPLAIN`): never executes.
+
+  Settings picks which one is primary (highlighted, <kbd>Ctrl/Cmd</kbd>+<kbd>Enter</kbd>);
+  the other is <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>. When the SQL writes
+  data, an inline hint ("UPDATE rolls back") says what Profile will do. Internally the
+  modes keep their names `analyze` / `estimate`. Below the toolbar sit a resizable editor
+  and a resizable horizontal split: plan (summary strip + tree) | Advisor.
 - **Plan tree.** CSS-indented rows with guide lines, a heat-colored left bar, monospace
   operator, muted relation/detail, a self-time pill, a share bar, rows `actual / est`
   with a misestimate marker, and warning badges with tooltips. Click a row to expand

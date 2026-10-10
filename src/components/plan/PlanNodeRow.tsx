@@ -41,7 +41,7 @@ function Warnings({ warnings }: { warnings: PlanWarning[] }) {
           {warnings.length > 1 && <span className="font-mono text-[10px]">{warnings.length}</span>}
         </span>
       </TooltipTrigger>
-      <TooltipContent className="max-w-sm space-y-1.5 py-2">
+      <TooltipContent className="max-w-sm flex-col items-start gap-1.5 py-2">
         {warnings.map((w, i) => (
           <p key={i} className="text-xs/relaxed">
             <span className="text-[11px] font-semibold opacity-70">{w.kind.replaceAll('_', ' ')}</span>

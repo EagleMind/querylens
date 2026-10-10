@@ -3,7 +3,6 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
-import type { ExplainMode } from '@/bindings/ExplainMode'
 import type { SuggestionSet } from '@/bindings/SuggestionSet'
 
 export interface Activity {
@@ -41,7 +40,6 @@ const idleStream: SuggestionStream = {
 interface WorkspaceState {
   sql: string
   connectionId: string | null
-  mode: ExplainMode | null
   analysis: AnalysisResult | null
   /** True when the plan was opened from History rather than just run. */
   isReplay: boolean
@@ -50,7 +48,6 @@ interface WorkspaceState {
 
   setSql: (sql: string) => void
   setConnectionId: (id: string | null) => void
-  setMode: (mode: ExplainMode) => void
   setAnalysis: (a: AnalysisResult | null, opts?: { replay?: boolean }) => void
   selectNode: (id: string | null) => void
   setSuggestions: (set: SuggestionSet) => void
@@ -75,7 +72,6 @@ export const useWorkspace = create<WorkspaceState>()(
     (set) => ({
       sql: SAMPLE_SQL,
       connectionId: null,
-      mode: null,
       analysis: null,
       isReplay: false,
       selectedNodeId: null,
@@ -83,7 +79,6 @@ export const useWorkspace = create<WorkspaceState>()(
 
       setSql: (sql) => set({ sql }),
       setConnectionId: (connectionId) => set({ connectionId }),
-      setMode: (mode) => set({ mode }),
       setAnalysis: (analysis, opts) =>
         set({
           analysis,
@@ -109,7 +104,7 @@ export const useWorkspace = create<WorkspaceState>()(
       name: 'querylens.workspace',
       storage: createJSONStorage(() => localStorage),
       // Only the editor draft survives restarts; results come from history.
-      partialize: (s) => ({ sql: s.sql, connectionId: s.connectionId, mode: s.mode }),
+      partialize: (s) => ({ sql: s.sql, connectionId: s.connectionId }),
     },
   ),
 )

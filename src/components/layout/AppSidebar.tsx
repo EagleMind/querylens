@@ -54,7 +54,7 @@ import { useUi } from '@/store/ui'
 import { useWorkspace } from '@/store/workspace'
 
 const NAV = [
-  { to: '/', label: 'Analyze', icon: ScanSearchIcon },
+  { to: '/', label: 'Workbench', icon: ScanSearchIcon },
   { to: '/history', label: 'History', icon: HistoryIcon },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ]

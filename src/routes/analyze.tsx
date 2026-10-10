@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/layout/PageHeader'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { useAnalyze } from '@/hooks/useAnalyze'
 import { useHotkey } from '@/hooks/useHotkey'
+import type { ExplainMode } from '@/bindings/ExplainMode'
 import type { IpcError } from '@/lib/ipc'
 import { useConnections, useSettings } from '@/lib/queries'
 import { useWorkspace } from '@/store/workspace'
@@ -19,13 +20,13 @@ export function AnalyzeRoute() {
   const setSql = useWorkspace((s) => s.setSql)
   const connectionId = useWorkspace((s) => s.connectionId)
   const setConnectionId = useWorkspace((s) => s.setConnectionId)
-  const storedMode = useWorkspace((s) => s.mode)
-  const setMode = useWorkspace((s) => s.setMode)
   const analysis = useWorkspace((s) => s.analysis)
   const isReplay = useWorkspace((s) => s.isReplay)
   const analyze = useAnalyze()
 
-  const mode = storedMode ?? settings?.analysis.defaultMode ?? 'analyze'
+  // Ctrl/⌘+Enter runs the primary action; adding Shift runs the other one.
+  const primary: ExplainMode = settings?.analysis.defaultMode ?? 'analyze'
+  const secondary: ExplainMode = primary === 'analyze' ? 'estimate' : 'analyze'
   const connection = connections.find((c) => c.id === connectionId) ?? null
 
   // Keep the selection valid: fall back to the most recently used connection.
@@ -37,30 +38,36 @@ export function AnalyzeRoute() {
   }, [connections, connection, setConnectionId])
 
   const canRun = !!connection && sql.trim().length > 0
-  const run = () => {
+  const run = (mode: ExplainMode) => {
     if (!canRun || analyze.isPending) return
     analyze.mutate({ connectionId: connection!.id, sql, mode })
   }
-  useHotkey('mod+enter', run)
+  useHotkey('mod+enter', () => run(primary))
+  useHotkey('mod+shift+enter', () => run(secondary))
 
   return (
     <div className="flex h-full flex-col">
-      <PageHeader title="Analyze">
+      <PageHeader title="Workbench">
         <AnalyzeToolbar
           connections={connections}
           connectionId={connection?.id ?? null}
           onConnectionChange={setConnectionId}
-          mode={mode}
-          onModeChange={setMode}
-          onAnalyze={run}
-          running={analyze.isPending}
+          primary={primary}
+          sql={sql}
+          onRun={run}
+          runningMode={analyze.isPending ? (analyze.variables?.mode ?? null) : null}
           canRun={canRun}
         />
       </PageHeader>
 
       <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="32%" minSize="12%" className="bg-panel">
-          <SqlEditor value={sql} onChange={setSql} onRun={run} tables={analysis?.tables} />
+          <SqlEditor
+            value={sql}
+            onChange={setSql}
+            onRun={(alt) => run(alt ? secondary : primary)}
+            tables={analysis?.tables}
+          />
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel minSize="25%">

@@ -33,8 +33,9 @@ Think of it as DevTools for SQL. You paste a query, pick a connection, press
 
 ## Screens (target experience)
 
-**Analyze (main screen).** The SQL editor is on top, with a connection picker and an
-*Analyze / Estimate* mode toggle. The bottom half splits into the **plan tree** (left)
+**Workbench (main screen).** The SQL editor is on top, with a connection picker and two
+actions: **Profile** (run it, rolled back, real timings) and **Explain** (plan only,
+never runs). The bottom half splits into the **plan tree** (left)
 and the **AI panel** (right). Each plan node shows its operator, relation, self time,
 a heat bar for its share of total time, actual vs. estimated rows, and warning badges.
 Clicking a node expands its details (filters, index conditions, buffers, raw JSON).

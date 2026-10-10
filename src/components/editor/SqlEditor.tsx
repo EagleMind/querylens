@@ -63,7 +63,8 @@ export function SqlEditor({
 }: {
   value: string
   onChange: (v: string) => void
-  onRun: () => void
+  /** `alt`: Shift was held — run the secondary action. */
+  onRun: (alt: boolean) => void
   /** Schema from the last analysis, for column/table completion. */
   tables?: TableContext[]
 }) {
@@ -72,8 +73,9 @@ export function SqlEditor({
   const wrapper = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const el = wrapper.current
-    el?.addEventListener(RUN_EVENT, onRun)
-    return () => el?.removeEventListener(RUN_EVENT, onRun)
+    const handler = (e: Event) => onRun(!!(e as CustomEvent<{ alt: boolean }>).detail?.alt)
+    el?.addEventListener(RUN_EVENT, handler)
+    return () => el?.removeEventListener(RUN_EVENT, handler)
   }, [onRun])
 
   const extensions = useMemo(() => {
@@ -90,7 +92,14 @@ export function SqlEditor({
           {
             key: 'Mod-Enter',
             run: (view) => {
-              view.dom.dispatchEvent(new Event(RUN_EVENT, { bubbles: true }))
+              view.dom.dispatchEvent(new CustomEvent(RUN_EVENT, { bubbles: true, detail: { alt: false } }))
+              return true
+            },
+          },
+          {
+            key: 'Shift-Mod-Enter',
+            run: (view) => {
+              view.dom.dispatchEvent(new CustomEvent(RUN_EVENT, { bubbles: true, detail: { alt: true } }))
               return true
             },
           },

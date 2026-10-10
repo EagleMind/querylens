@@ -1,4 +1,7 @@
+import { FileSearchIcon, TimerIcon } from 'lucide-react'
+
 import type { Engine } from '@/bindings/Engine'
+import type { ExplainMode } from '@/bindings/ExplainMode'
 import type { LlmProviderKind } from '@/bindings/LlmProviderKind'
 
 // Survey-ink swatches chosen to read on blueprint paper without clashing with plan heat.
@@ -61,5 +64,29 @@ export const PROVIDERS: Record<
     local: false,
     hint: 'OpenAI or any server that speaks /v1/chat/completions.',
     modelPlaceholder: 'e.g. gpt-4.1',
+  },
+}
+
+/**
+ * The two ways to look at a query, named for what they *do* rather than as a mode.
+ * `analyze`/`estimate` stay the internal names; users see Profile/Explain.
+ */
+export const ACTIONS: Record<
+  ExplainMode,
+  { label: string; busy: string; icon: typeof TimerIcon; title: string; body: string }
+> = {
+  analyze: {
+    label: 'Profile',
+    busy: 'Profiling…',
+    icon: TimerIcon,
+    title: 'Run the query and measure it',
+    body: 'Executes the statement with EXPLAIN ANALYZE inside a transaction that is always rolled back. Real timings, real row counts.',
+  },
+  estimate: {
+    label: 'Explain',
+    busy: 'Explaining…',
+    icon: FileSearchIcon,
+    title: 'Show the plan without running it',
+    body: "Plain EXPLAIN: the planner's estimates only. Nothing executes, so it's safe on production.",
   },
 }

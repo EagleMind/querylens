@@ -20,10 +20,12 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 ### 2. Editor + Analyze
 - CodeMirror 6 with SQL highlighting (Postgres dialect), a dark theme that matches
   shadcn, and a resizable height.
-- Toolbar: connection select, **Analyze / Estimate** mode, and an Analyze button
-  (<kbd>Ctrl/Cmd</kbd>+<kbd>Enter</kbd>).
-- **Analyze** runs `EXPLAIN ANALYZE` inside a rolled-back transaction with a statement
-  timeout. **Estimate** runs plain `EXPLAIN` and never executes the query.
+- Toolbar: connection select and two actions, **Profile** and **Explain**. The primary
+  one (chosen in Settings) is on <kbd>Ctrl/Cmd</kbd>+<kbd>Enter</kbd>, the other on
+  <kbd>Ctrl/Cmd</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd>.
+- **Profile** runs `EXPLAIN ANALYZE` inside a rolled-back transaction with a statement
+  timeout. **Explain** runs plain `EXPLAIN` and never executes the query. A hint
+  appears when the SQL writes data.
 - Loading, error and empty states.
 
 ### 3. Plan tree
