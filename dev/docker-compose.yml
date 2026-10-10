@@ -1,0 +1,15 @@
+# Local Postgres for QueryLens development.
+#   docker compose -f dev/docker-compose.yml up -d
+# Connect with: host=localhost port=54329 db=shop user=querylens password=querylens
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: querylens-pg
+    environment:
+      POSTGRES_DB: shop
+      POSTGRES_USER: querylens
+      POSTGRES_PASSWORD: querylens
+    ports:
+      - "54329:5432"
+    volumes:
+      - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
