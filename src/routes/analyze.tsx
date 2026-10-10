@@ -10,6 +10,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { useAnalyze } from '@/hooks/useAnalyze'
 import { useHotkey } from '@/hooks/useHotkey'
 import type { ExplainMode } from '@/bindings/ExplainMode'
+import { ENGINES } from '@/lib/constants'
 import type { IpcError } from '@/lib/ipc'
 import { useConnections, useSettings } from '@/lib/queries'
 import { paramValues, placeholderCount } from '@/lib/sql'
@@ -39,8 +40,16 @@ export function AnalyzeRoute() {
     }
   }, [connections, connection, setConnectionId])
 
+  // SQL and MongoDB connections each keep their own draft in the editor.
+  const setLanguage = useWorkspace((s) => s.setLanguage)
+  const engine = connection?.engine
+  useEffect(() => {
+    if (engine) setLanguage(ENGINES[engine].language)
+  }, [engine, setLanguage])
+
   const params = useWorkspace((s) => s.params)
-  const paramCount = placeholderCount(sql)
+  // `$n` parameters are PostgreSQL's; in MongoDB `$` starts operators and field paths.
+  const paramCount = engine === 'postgres' ? placeholderCount(sql) : 0
   const canRun = !!connection && sql.trim().length > 0
   const run = (mode: ExplainMode) => {
     if (!canRun || analyze.isPending) return
@@ -58,6 +67,7 @@ export function AnalyzeRoute() {
           onConnectionChange={setConnectionId}
           primary={primary}
           sql={sql}
+          engine={engine}
           onRun={run}
           runningMode={analyze.isPending ? (analyze.variables?.mode ?? null) : null}
           canRun={canRun}
@@ -73,6 +83,7 @@ export function AnalyzeRoute() {
                 onChange={setSql}
                 onRun={(alt) => run(alt ? secondary : primary)}
                 tables={analysis?.tables}
+                engine={engine}
               />
             </div>
             <ParamsBar count={paramCount} />

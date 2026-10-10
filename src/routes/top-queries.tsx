@@ -11,6 +11,7 @@ import { ColorDot, EngineBadge } from '@/components/shared/bits'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ENGINES } from '@/lib/constants'
 import { fmtCount, fmtMs, fmtPct } from '@/lib/format'
 import { api } from '@/lib/ipc'
 import { useConnections } from '@/lib/queries'
@@ -60,7 +61,7 @@ export function TopQueriesRoute() {
   const { data: connections = [] } = useConnections()
   const connectionId = useWorkspace((s) => s.connectionId)
   const setConnectionId = useWorkspace((s) => s.setConnectionId)
-  const setSql = useWorkspace((s) => s.setSql)
+  const loadQuery = useWorkspace((s) => s.loadQuery)
   const setParams = useWorkspace((s) => s.setParams)
   const navigate = useNavigate()
   const [order, setOrder] = useState<TopQueryOrder>('total')
@@ -69,12 +70,12 @@ export function TopQueriesRoute() {
   const { data, isFetching, error, refetch } = useQuery({
     queryKey: ['top-queries', conn?.id, order],
     queryFn: () => api.topQueries(conn!.id, order),
-    enabled: conn?.engine === 'postgres',
+    enabled: conn?.engine === 'postgres' || conn?.engine === 'mysql',
     retry: false,
   })
 
   function open(q: TopQuery) {
-    setSql(q.query)
+    loadQuery(q.query, 'sql')
     // Normalized statements carry $n placeholders; start with empty values.
     setParams(Array.from({ length: placeholderCount(q.query) }, () => ''))
     navigate('/')
@@ -118,11 +119,12 @@ export function TopQueriesRoute() {
 
       {!conn ? (
         <EmptyState icon={FlameIcon} title="Choose a connection">
-          Top queries lists the statements costing the most time on a PostgreSQL server.
+          Top queries lists the statements costing the most time on a PostgreSQL or MySQL server.
         </EmptyState>
-      ) : conn.engine !== 'postgres' ? (
-        <EmptyState icon={FlameIcon} title="PostgreSQL only">
-          DuckDB doesn't keep a statement history. Choose a PostgreSQL connection.
+      ) : conn.engine !== 'postgres' && conn.engine !== 'mysql' ? (
+        <EmptyState icon={FlameIcon} title="PostgreSQL and MySQL only">
+          {ENGINES[conn.engine].label} doesn't expose statement statistics QueryLens can read. Choose a PostgreSQL or
+          MySQL connection.
         </EmptyState>
       ) : error ? (
         <EmptyState icon={FlameIcon} title="Statement statistics aren't available">
@@ -130,7 +132,8 @@ export function TopQueriesRoute() {
         </EmptyState>
       ) : data && data.length === 0 ? (
         <EmptyState icon={FlameIcon} title="No statements recorded yet">
-          pg_stat_statements hasn't seen any queries in this database since it was last reset.
+          {conn.engine === 'mysql' ? 'performance_schema' : 'pg_stat_statements'} hasn't recorded any queries in this
+          database since it was last reset.
         </EmptyState>
       ) : (
         <ScrollArea className="min-h-0 flex-1">
@@ -147,8 +150,9 @@ export function TopQueriesRoute() {
           ))}
           {data && (
             <p className="px-4 py-3 text-[12px] text-muted-foreground">
-              Click a statement to open it in the Workbench. Its literals are $n parameters there: fill them in, then
-              use Try other values to see whether the plan changes with the value.
+              {conn.engine === 'mysql'
+                ? 'Click a statement to open it in the Workbench. MySQL replaces literals with ?: put real values back before running it.'
+                : 'Click a statement to open it in the Workbench. Its literals are $n parameters there: fill them in, then use Try other values to see whether the plan changes with the value.'}
             </p>
           )}
         </ScrollArea>

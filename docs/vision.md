@@ -28,7 +28,7 @@ Think of it as DevTools for SQL. You paste a query, pick a connection, press
 | **Heuristics first** | Deterministic checks (large seq scan, row-estimate error, sort/hash spill, nested-loop blowup) run locally and instantly, with no LLM required. |
 | **AI suggestions** | A model receives a compact, normalized plan plus schema context (existing indexes, table sizes) and returns 3–5 ranked fixes with copyable SQL. |
 | **Verified suggestions** | With the Claude Code provider, the model can call QueryLens's own `explain_query` tool through MCP to test a rewrite before it recommends it. |
-| **Multi-engine** | Postgres and DuckDB at launch, all normalized into one plan model. More engines plug in behind the same trait. |
+| **Multi-engine** | PostgreSQL, MySQL, MongoDB and DuckDB, all normalized into one plan model. More engines plug in behind the same trait. |
 | **Local-first** | No accounts and no telemetry. Credentials live in the OS keychain. With a local model (LM Studio / Ollama), nothing leaves the machine. |
 
 ## Screens (target experience)
@@ -65,7 +65,7 @@ answers: *"Is my query slow, or is this the wrong engine for this workload?"*
 
 | | explain.dalibo / pev2 | pgMustard | pganalyze | **QueryLens** |
 |---|---|---|---|---|
-| Engines | Postgres | Postgres | Postgres | Postgres, DuckDB (+ more) |
+| Engines | Postgres | Postgres | Postgres | Postgres, MySQL, MongoDB, DuckDB |
 | Runs EXPLAIN for you | ✗ (paste) | ✗ (paste) | ✓ (agent) | ✓ (direct connection) |
 | Fix suggestions | ✗ | ✓ (rules) | ✓ (rules) | ✓ (rules + LLM, verified) |
 | Local / private | ✓ | ✗ | ✗ | ✓ |

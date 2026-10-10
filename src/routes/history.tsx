@@ -33,6 +33,7 @@ import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmtCount, fmtMs, fmtRelative } from '@/lib/format'
+import { ENGINES } from '@/lib/constants'
 import { api } from '@/lib/ipc'
 import { useClearHistory, useConnections, useDeleteAnalysis, useHistory } from '@/lib/queries'
 import { cn } from '@/lib/utils'
@@ -57,7 +58,7 @@ function Row({
   onToggle: () => void
 }) {
   const del = useDeleteAnalysis()
-  const setSql = useWorkspace((s) => s.setSql)
+  const loadQuery = useWorkspace((s) => s.loadQuery)
   const setConnectionId = useWorkspace((s) => s.setConnectionId)
   const navigate = useNavigate()
 
@@ -131,7 +132,7 @@ function Row({
                   e.stopPropagation()
                   // The list only carries a preview; fetch the full statement.
                   const full = await api.getAnalysis(entry.id).catch(() => null)
-                  setSql(full?.sql ?? entry.sqlPreview)
+                  loadQuery(full?.sql ?? entry.sqlPreview, ENGINES[entry.engine].language)
                   setConnectionId(entry.connectionId)
                   navigate('/')
                 }}
@@ -171,7 +172,7 @@ export function HistoryRoute() {
   const clear = useClearHistory()
   const navigate = useNavigate()
   const setAnalysis = useWorkspace((s) => s.setAnalysis)
-  const setSql = useWorkspace((s) => s.setSql)
+  const loadQuery = useWorkspace((s) => s.loadQuery)
   const setConnectionId = useWorkspace((s) => s.setConnectionId)
   const [opening, setOpening] = useState<string | null>(null)
   // Pick two analyses to compare; the third pick replaces the oldest pick.
@@ -191,7 +192,7 @@ export function HistoryRoute() {
     try {
       const analysis = await api.getAnalysis(id)
       setAnalysis(analysis, { replay: true })
-      setSql(analysis.sql)
+      loadQuery(analysis.sql, ENGINES[analysis.engine].language)
       if (analysis.params?.length) useWorkspace.getState().setParams(analysis.params.map((p) => p ?? 'NULL'))
       if (connections?.some((c) => c.id === analysis.connectionId)) setConnectionId(analysis.connectionId)
       navigate('/')

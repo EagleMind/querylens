@@ -16,9 +16,22 @@ export const CONNECTION_COLORS = [
   '#8a96b3',
 ] as const
 
-export const ENGINES: Record<Engine, { label: string; short: string; defaultPort: number | null }> = {
-  postgres: { label: 'PostgreSQL', short: 'pg', defaultPort: 5432 },
-  duckdb: { label: 'DuckDB', short: 'duck', defaultPort: null },
+export const ENGINES: Record<
+  Engine,
+  {
+    label: string
+    short: string
+    /** null = a local file, not a server. */
+    defaultPort: number | null
+    /** What users type in the editor. */
+    language: 'sql' | 'mongo'
+    defaultUser: string
+  }
+> = {
+  postgres: { label: 'PostgreSQL', short: 'pg', defaultPort: 5432, language: 'sql', defaultUser: 'postgres' },
+  mysql: { label: 'MySQL', short: 'my', defaultPort: 3306, language: 'sql', defaultUser: 'root' },
+  mongodb: { label: 'MongoDB', short: 'mongo', defaultPort: 27017, language: 'mongo', defaultUser: '' },
+  duckdb: { label: 'DuckDB', short: 'duck', defaultPort: null, language: 'sql', defaultUser: '' },
 }
 
 export const PROVIDERS: Record<

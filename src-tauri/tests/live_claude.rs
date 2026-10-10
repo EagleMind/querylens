@@ -5,6 +5,7 @@
 //!     cargo test --test live_claude -- --nocapture
 //! Optional: QUERYLENS_CLAUDE_MODEL (default "sonnet"), QUERYLENS_CLAUDE_DB (default "shop"),
 //! QUERYLENS_CLAUDE_SQL_FILE (default: a single-table lookup on the demo data).
+//! QUERYLENS_CLAUDE_ENGINE=mongodb runs against the dev MongoDB instead (QUERYLENS_MONGO_PORT).
 
 use std::sync::Mutex;
 
@@ -28,7 +29,9 @@ impl EventSink for Collect {
 
 #[tokio::test]
 async fn claude_suggests_and_verifies_with_mcp() {
-    let (Ok(port), Ok(claude)) = (std::env::var("QUERYLENS_PG_PORT"), std::env::var("QUERYLENS_CLAUDE_PATH")) else {
+    let mongo = std::env::var("QUERYLENS_CLAUDE_ENGINE").is_ok_and(|e| e == "mongodb");
+    let port_var = if mongo { "QUERYLENS_MONGO_PORT" } else { "QUERYLENS_PG_PORT" };
+    let (Ok(port), Ok(claude)) = (std::env::var(port_var), std::env::var("QUERYLENS_CLAUDE_PATH")) else {
         return;
     };
     let dir = std::env::temp_dir().join(format!("querylens-it-{}", uuid::Uuid::new_v4()));
@@ -42,12 +45,12 @@ async fn claude_suggests_and_verifies_with_mcp() {
     let input = ConnectionInput {
         id: None,
         name: "dev-shop".into(),
-        engine: Engine::Postgres,
+        engine: if mongo { Engine::Mongodb } else { Engine::Postgres },
         color: "#2dd4bf".into(),
         host: Some("localhost".into()),
         port: Some(port.parse().unwrap()),
         database: Some(std::env::var("QUERYLENS_CLAUDE_DB").unwrap_or_else(|_| "shop".into())),
-        username: Some("querylens".into()),
+        username: (!mongo).then(|| "querylens".into()),
         ssl_mode: SslMode::Disable,
         file_path: None,
         password: None,
@@ -63,6 +66,7 @@ async fn claude_suggests_and_verifies_with_mcp() {
 
     let sql = match std::env::var("QUERYLENS_CLAUDE_SQL_FILE") {
         Ok(path) => std::fs::read_to_string(path).unwrap(),
+        Err(_) if mongo => "db.orders.find({ userId: 4242 }).sort({ createdAt: -1 }).limit(10)".into(),
         Err(_) => "SELECT * FROM orders WHERE user_id = 4242 ORDER BY created_at DESC LIMIT 10".into(),
     };
     let opts = analysis::RunOptions { persist: true, ..analysis::RunOptions::new(ExplainMode::Analyze) };

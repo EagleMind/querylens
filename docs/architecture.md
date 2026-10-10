@@ -24,6 +24,8 @@ made to the original May 2026 spec.
 | Secrets | **OS keychain via `keyring`** | DB passwords and LLM API keys never touch SQLite. |
 | Postgres | **`tokio-postgres` + `native-tls`** | Uses the extended protocol, so multi-statement injection is impossible. TLS uses the OS stack (no OpenSSL build). |
 | DuckDB | **`duckdb` crate (bundled)** | Embedded. Opened read-only for files. |
+| MySQL | **`mysql_async`** (native-tls, pure-Rust compression) | MySQL 8.0.18+ (`EXPLAIN ANALYZE`). |
+| MongoDB | **`mongodb`** official driver (rustls) | Accepts a full `mongodb+srv://` string for Atlas. |
 | HTTP | **`reqwest`** (rustls) | OpenAI-compatible SSE streaming. |
 | Claude | **Claude Code CLI** (`claude -p`) | Headless, `stream-json` output, with QueryLens exposed to it as an **MCP server**. |
 
@@ -45,7 +47,7 @@ and more direct for this.
 ┌───────────────────────────────┴───────────── Rust (Tauri core) ──────────┐
 │  commands/   thin #[tauri::command] adapters: deserialize → service       │
 │  services/   analysis (run + persist), suggestions (prompt → provider)    │
-│  engines/    Engine trait  ─ postgres.rs ─ duckdb.rs                      │
+│  engines/    Engine trait ─ postgres ─ mysql ─ mongo (+ query parser) ─ duckdb │
 │  plan/       per-engine parser → PlanNode tree → analyze (self time,      │
 │              heat, warnings)                                              │
 │  llm/        LlmProvider trait ─ openai_compat.rs ─ claude_cli.rs         │
@@ -95,14 +97,14 @@ and more direct for this.
         ├── model.rs           # all IPC types (ts-rs)
         ├── commands/          # connections, analysis, history, settings, llm
         ├── services/          # analysis, suggestions
-        ├── engines/           # mod (Engine trait + factory), postgres, duckdb
-        ├── plan/              # postgres, duckdb (parsers), analyze (scoring)
+        ├── engines/           # mod (Engine trait + factory), postgres, mysql, mongo, mongo_query, duckdb
+        ├── plan/              # postgres, mysql, mongo, duckdb (parsers), analyze (scoring)
         ├── llm/               # mod (trait), prompt, parse, openai_compat, claude_cli
         ├── mcp/               # JSON-RPC 2.0 stdio server
         ├── storage/           # mod (Store + migrations), connections, analyses, settings
         ├── state.rs           # AppState (store + in-flight LLM task handles)
         └── secrets.rs
-    └── tests/                 # live_postgres.rs, live_claude.rs (opt-in, env-gated)
+    └── tests/                 # live_postgres, live_workload, live_job, live_mysql, live_mongo, live_claude (opt-in, env-gated)
 ```
 
 ---
@@ -110,7 +112,7 @@ and more direct for this.
 ## 4. Data model (Rust → generated TS)
 
 ```ts
-type Engine = "postgres" | "duckdb"
+type Engine = "postgres" | "mysql" | "mongodb" | "duckdb"
 type ExplainMode = "analyze" | "estimate"        // estimate = plain EXPLAIN, never executes
 
 interface Connection {
@@ -193,13 +195,30 @@ interface SuggestionSet { summary: string; suggestions: Suggestion[]; provider: 
    transaction.
    **DuckDB** file databases are opened `read_only`. `:memory:` is useful for querying
    Parquet/CSV with `read_parquet()`. Uses `EXPLAIN (ANALYZE, FORMAT JSON)`.
-3. **Parse** the engine output into a `PlanNode` tree (`plan/postgres.rs`, `plan/duckdb.rs`).
+   **MySQL** can't promise to undo writes (MyISAM tables, implicit commits), so Profile
+   runs `EXPLAIN ANALYZE` inside `START TRANSACTION READ ONLY` and the server refuses any
+   write. Explain (`EXPLAIN FORMAT=TREE`) uses a normal transaction, always rolled back.
+   Limits: `max_execution_time`, `innodb_lock_wait_timeout`, and a client-side backstop
+   that sends `KILL QUERY` from a second connection. When `max_execution_time` fires,
+   MySQL returns the *partial* plan as if it had finished; QueryLens detects warning 1317
+   and reports a timeout instead. Setup is limited to `SET SESSION` (DDL commits).
+   **MongoDB** queries are written in mongosh syntax and parsed (`engines/mongo_query.rs`)
+   into the equivalent command, which runs through `explain` (`executionStats` for
+   Profile, `queryPlanner` for Explain) with `maxTimeMS`. Explain never applies an update
+   or delete; pipelines with `$out` / `$merge` are refused before reaching the server.
+3. **Parse** the engine output into a `PlanNode` tree (`plan/postgres.rs`, `plan/mysql.rs`, `plan/mongo.rs`, `plan/duckdb.rs`).
 4. **Score** (`plan/analyze.rs`):
    - Postgres `Actual Total Time` is *per loop* and *inclusive*. Inclusive time is
      `actual_total_time × loops`. Self time is inclusive time minus the children's
      inclusive time, clamped at ≥ 0. Parallel workers and InitPlans are handled the same
      way. Small negative noise is clamped.
    - DuckDB reports exclusive `operator_timing` per operator directly.
+   - MySQL's tree reports per-loop `actual time` and `rows` like Postgres, with cumulative
+     `cost`. Operators name tables by alias, so aliases are resolved against the query.
+   - MongoDB's `executionTimeMillisEstimate` is inclusive. Classic plans carry stats on each
+     stage; slot-based (SBE) plans keep the readable tree in `queryPlan` and the stats on
+     low-level stages linked by `planNodeId` (the topmost stage per id gives time and rows).
+     Pipelines chain `$cursor` → `$sort` → `$lookup` …, each stage feeding the next.
    - `share = self / Σ self`. Heat is **high** at ≥ 25 %, **medium** at ≥ 5 %, and
      **low** otherwise. Shares avoid the main flaw of percentile ranks: in a three-node
      plan, a 0.01 ms node should not be red.
@@ -214,9 +233,16 @@ interface SuggestionSet { summary: string; suggestions: Suggestion[]; provider: 
    | `hash_spill` | `Hash Batches > 1` |
    | `nested_loop_blowup` | Nested Loop whose inner side runs ≥ 1 000 loops |
    | `heap_fetches` | Index Only Scan with heap fetches > 10 % of rows (visibility map is stale, needs VACUUM) |
+   | `blocking_sort` | MySQL `Sort` / MongoDB `SORT` reading ≥ 10k / 1k rows that an index could return in order (not after `$group`) |
+   | `unselective_index` | MongoDB `FETCH` after an index scan that keeps < 10 % of fetched documents |
+
+   MySQL and MongoDB reuse `missing_index` (table/collection scan keeping < 10 %, a table
+   scanned once per outer row, a `$lookup` that scans its collection) and `seq_scan_large`.
 6. **Schema context.** For every relation in the plan, Postgres reads `pg_indexes`,
    `pg_class.reltuples` and `pg_total_relation_size`. DuckDB reads `duckdb_columns()`
-   and `estimated_size`. This is stored on the analysis so the LLM never suggests an
+   and `estimated_size`. MySQL reads `information_schema` (TABLES, COLUMNS, STATISTICS).
+   MongoDB lists indexes, the estimated count and size, and samples 50 documents for
+   field names and types. This is stored on the analysis so the LLM never suggests an
    index that already exists, and history replay doesn't need a live connection.
 7. **Persist** to history (pruned to the newest 200), then return `AnalysisResult`.
 
@@ -424,6 +450,9 @@ cd src-tauri
 QUERYLENS_PG_PORT=54329 cargo test --test live_postgres     # safety envelope, rollback, read-only, setup_sql
 QUERYLENS_PG_PORT=54329 QUERYLENS_CLAUDE_PATH=$(which claude)   cargo test --test live_claude -- --nocapture              # full Claude Code + MCP loop
 QUERYLENS_PG_PORT=54329 QUERYLENS_WRITE_FIXTURE=1   cargo test --test live_postgres                           # refresh the UI mock fixture
+QUERYLENS_MYSQL_PORT=33069 cargo test --test live_mysql   # read-only Profile, timeouts, Top queries
+QUERYLENS_MONGO_PORT=27019 cargo test --test live_mongo   # collection scans, SBE pipelines, writes never applied
+QUERYLENS_CLAUDE_ENGINE=mongodb QUERYLENS_MONGO_PORT=27019 QUERYLENS_CLAUDE_PATH=$(which claude) cargo test --test live_claude -- --nocapture
 ```
 
 Environment hooks: `QUERYLENS_DATA_DIR` overrides the data directory (portable installs
@@ -440,14 +469,14 @@ CI (planned): a GitHub Actions matrix on ubuntu/windows/macos running
 | Feature | Where it plugs in |
 |---|---|
 | ClickHouse | `engines/clickhouse.rs` (HTTP 8123). ClickHouse has **no `EXPLAIN ANALYZE`**: use `EXPLAIN PLAN indexes=1, actions=1` + `EXPLAIN ESTIMATE`, and get real timings from `system.query_log` / `system.processors_profile_log` after a run with `log_processors_profiles=1`. |
-| MySQL / MariaDB | `EXPLAIN ANALYZE FORMAT=TREE` (MySQL 8.0.18+, text) or `EXPLAIN FORMAT=JSON` (estimates only). |
+| MariaDB | `ANALYZE FORMAT=JSON` (its own format; MariaDB has no `EXPLAIN ANALYZE` tree). Connections to MariaDB are detected and refused with a clear message today. |
 | SQLite | `EXPLAIN QUERY PLAN` only (no timings or costs), so the plan is structural. |
 | SQL Server | `SET STATISTICS XML ON` and parse the actual showplan XML. Not `sys.dm_exec_query_plan`, which only has cached *estimated* plans. |
 | Cross-engine compare | `compare_engines(connectionIds, sql)` → `join_all` of `services::analysis::run`, bucketed by operator class. |
 | SSH tunnels | `russh` local port-forward before the Postgres connect. |
 
-MongoDB, Redis, Snowflake and BigQuery from the original list are dropped. They have no
-comparable plan model, and supporting them would dilute the product.
+Redis, Snowflake and BigQuery from the original list are dropped. They have no comparable
+plan model, and supporting them would dilute the product.
 
 ---
 
@@ -492,3 +521,9 @@ Corrections to the original spec (`techspect.md`, `mvpScope.md`, `ProjectSpec.md
     on the target database. The advisor can still test a setting itself through
     `explain_query` with `setup`, and Preview fix measures concrete fixes. Storage
     migration v3 drops the `whatif_json` column.
+15. **MySQL and MongoDB added (v1.2).** MongoDB was dropped in the first revision for
+    lacking a comparable plan model. That was wrong: `explain` returns a stage tree with
+    per-stage time and document counts, which maps onto `PlanNode` like any other plan.
+    Index changes can't be tested safely on either engine (MySQL commits DDL; a MongoDB
+    index build is real), so the advisor gets only `explain_query` and `table_info`
+    there, and Preview fix covers query rewrites (plus `SET SESSION` on MySQL).

@@ -1,6 +1,9 @@
-# Local Postgres for QueryLens development.
+# Local databases for QueryLens development.
 #   docker compose -f dev/docker-compose.yml up -d --build
-# Connect with: host=localhost port=54329 db=shop user=querylens (trust auth, dev only)
+# Connect with (dev only):
+#   PostgreSQL  host=localhost port=54329 db=shop user=querylens (no password)
+#   MySQL       host=localhost port=33069 db=shop user=querylens password=querylens
+#   MongoDB     host=localhost port=27019 db=shop (no auth)
 # Optional IMDB / Join Order Benchmark database: dev/load-job.sh
 services:
   postgres:
@@ -36,6 +39,32 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
 
+  mysql:
+    image: mysql:8.4
+    container_name: querylens-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: querylens
+      MYSQL_DATABASE: shop
+      MYSQL_USER: querylens
+      MYSQL_PASSWORD: querylens
+    command: ["--innodb-buffer-pool-size=1G"]
+    ports:
+      - "33069:3306"
+    volumes:
+      - mysqldata:/var/lib/mysql
+      - ./mysql-seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+
+  mongo:
+    image: mongo:8.0
+    container_name: querylens-mongo
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongodata:/data/db
+      - ./mongo-seed.js:/docker-entrypoint-initdb.d/seed.js:ro
+
 volumes:
-  # Survives `docker compose down` (only `down -v` wipes it).
+  # Survive `docker compose down` (only `down -v` wipes them).
   pgdata:
+  mysqldata:
+  mongodata:

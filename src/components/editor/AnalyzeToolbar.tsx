@@ -2,6 +2,7 @@ import { Loader2Icon, PlusIcon, Undo2Icon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import type { Connection } from '@/bindings/Connection'
+import type { Engine } from '@/bindings/Engine'
 import type { ExplainMode } from '@/bindings/ExplainMode'
 import { ColorDot, EngineBadge, Kbd } from '@/components/shared/bits'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { modKey } from '@/hooks/useHotkey'
 import { ACTIONS } from '@/lib/constants'
-import { writesData } from '@/lib/sql'
+import { mongoWrite, writesData } from '@/lib/sql'
 import { useUi } from '@/store/ui'
 
 function ActionButton({
@@ -58,6 +59,7 @@ export function AnalyzeToolbar({
   onConnectionChange,
   primary,
   sql,
+  engine,
   onRun,
   runningMode,
   canRun,
@@ -68,6 +70,7 @@ export function AnalyzeToolbar({
   /** Which action Ctrl/⌘+Enter triggers (Settings → Analysis). */
   primary: ExplainMode
   sql: string
+  engine?: Engine
   onRun: (mode: ExplainMode) => void
   /** The action currently in flight, if any. */
   runningMode: ExplainMode | null
@@ -76,7 +79,8 @@ export function AnalyzeToolbar({
   const openDialog = useUi((s) => s.openConnectionDialog)
   const secondary: ExplainMode = primary === 'analyze' ? 'estimate' : 'analyze'
   const busy = runningMode !== null
-  const dml = writesData(sql)
+  const dml = engine === 'mongodb' ? null : writesData(sql)
+  const mongoDml = engine === 'mongodb' ? mongoWrite(sql) : null
 
   const mainKeys = (
     <>
@@ -117,7 +121,32 @@ export function AnalyzeToolbar({
 
       <span className="mx-1 h-5 w-px bg-rule" />
 
-      {dml && (
+      {mongoDml && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex cursor-default items-center gap-1 text-[12px] text-heat-medium">
+              <Undo2Icon className="size-3.5" /> {mongoDml} isn't applied
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-72">
+            MongoDB's explain plans and times the {mongoDml} without writing anything.
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {dml && engine === 'mysql' && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex cursor-default items-center gap-1 text-[12px] text-heat-medium">
+              <Undo2Icon className="size-3.5" /> {dml}: Explain only
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-72">
+            MySQL can't always undo writes (MyISAM tables, implicit commits), so Profile only runs queries that read.
+            Explain shows this {dml}'s plan without executing it.
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {dml && engine !== 'mysql' && (
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="inline-flex cursor-default items-center gap-1 text-[12px] text-heat-medium">

@@ -1,4 +1,5 @@
-import { PostgreSQL, sql as sqlLang, type SQLNamespace } from '@codemirror/lang-sql'
+import { javascript } from '@codemirror/lang-javascript'
+import { MySQL, PostgreSQL, sql as sqlLang, StandardSQL, type SQLNamespace } from '@codemirror/lang-sql'
 import { Prec } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { tags as t } from '@lezer/highlight'
@@ -6,6 +7,7 @@ import { createTheme } from '@uiw/codemirror-themes'
 import CodeMirror from '@uiw/react-codemirror'
 import { useEffect, useMemo, useRef } from 'react'
 
+import type { Engine } from '@/bindings/Engine'
 import type { TableContext } from '@/bindings/TableContext'
 
 // Ink-and-signal syntax palette: keywords in a muted signal yellow, data values in
@@ -60,6 +62,7 @@ export function SqlEditor({
   onChange,
   onRun,
   tables,
+  engine,
 }: {
   value: string
   onChange: (v: string) => void
@@ -67,6 +70,8 @@ export function SqlEditor({
   onRun: (alt: boolean) => void
   /** Schema from the last analysis, for column/table completion. */
   tables?: TableContext[]
+  /** Picks the language: SQL dialect, or JavaScript for MongoDB's shell syntax. */
+  engine?: Engine
 }) {
   // The keymap is built once per schema, so it signals "run" through a DOM event
   // instead of capturing a (stale) callback.
@@ -84,9 +89,17 @@ export function SqlEditor({
       const short = tbl.name.split('.').pop()!
       schema[short] = tbl.columns.map((c) => ({ label: c.name, detail: c.dataType, type: 'property' }))
     }
+    const language =
+      engine === 'mongodb'
+        ? javascript()
+        : sqlLang({
+            dialect: engine === 'mysql' ? MySQL : engine === 'duckdb' ? StandardSQL : PostgreSQL,
+            schema,
+            upperCaseKeywords: false,
+          })
     return [
       ...baseExtensions,
-      sqlLang({ dialect: PostgreSQL, schema, upperCaseKeywords: false }),
+      language,
       Prec.highest(
         keymap.of([
           {
@@ -106,7 +119,7 @@ export function SqlEditor({
         ]),
       ),
     ]
-  }, [tables])
+  }, [tables, engine])
 
   return (
     <div ref={wrapper} className="h-full">
@@ -118,7 +131,11 @@ export function SqlEditor({
         height="100%"
         className="h-full"
         basicSetup={{ foldGutter: false, highlightActiveLineGutter: false, searchKeymap: true }}
-        placeholder="SELECT … — paste a query and press Ctrl/⌘ + Enter"
+        placeholder={
+          engine === 'mongodb'
+            ? 'db.orders.find({ status: "paid" }) — then press Ctrl/⌘ + Enter'
+            : 'SELECT … — paste a query and press Ctrl/⌘ + Enter'
+        }
       />
     </div>
   )

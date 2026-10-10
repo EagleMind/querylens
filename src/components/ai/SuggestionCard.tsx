@@ -2,6 +2,7 @@ import { CheckIcon, CornerDownRightIcon, Loader2Icon, PlayIcon } from 'lucide-re
 import { useState } from 'react'
 import { toast } from 'sonner'
 
+import type { Engine } from '@/bindings/Engine'
 import type { PlanNode } from '@/bindings/PlanNode'
 import type { SuggestionSeverity } from '@/bindings/SuggestionSeverity'
 import { findNode, nodeLabel } from '@/components/plan/heat'
@@ -27,6 +28,7 @@ export function SuggestionCard({
   index,
   streaming,
   analysisId,
+  engine,
 }: {
   suggestion: DraftSuggestion
   root: PlanNode
@@ -34,6 +36,8 @@ export function SuggestionCard({
   streaming?: boolean
   /** Enables "Preview fix" (re-run with the fix applied, then compare). */
   analysisId?: string
+  /** What can be previewed depends on what the engine can undo. */
+  engine?: Engine
 }) {
   const selectNode = useWorkspace((st) => st.selectNode)
   const selectedNodeId = useWorkspace((st) => st.selectedNodeId)
@@ -119,7 +123,7 @@ export function SuggestionCard({
             )}
           </div>
         )}
-        {!streaming && s.sqlFix && analysisId && previewable(s.sqlFix) && (
+        {!streaming && s.sqlFix && analysisId && previewable(s.sqlFix, engine) && (
           <PreviewFix analysisId={analysisId} fix={s.sqlFix} />
         )}
       </div>
@@ -127,9 +131,18 @@ export function SuggestionCard({
   )
 }
 
-/** Fixes QueryLens can apply inside a rolled-back transaction to measure them. */
-function previewable(fix: string): boolean {
-  return /^\s*(create\s+(unique\s+)?index|create\s+statistics|set\s|analy[sz]e|select|with)/i.test(fix)
+/** Fixes QueryLens can measure without leaving changes behind, per engine. */
+function previewable(fix: string, engine?: Engine): boolean {
+  switch (engine) {
+    // A rewritten query; building an index would change the database.
+    case 'mongodb':
+      return /^\s*db\b/.test(fix) && !/\.createIndex/i.test(fix)
+    // Rewrites and session settings; MySQL commits DDL immediately.
+    case 'mysql':
+      return /^\s*(set\s|select|with|table|\()/i.test(fix)
+    default:
+      return /^\s*(create\s+(unique\s+)?index|create\s+statistics|set\s|analy[sz]e|select|with)\b/i.test(fix)
+  }
 }
 
 function PreviewFix({ analysisId, fix }: { analysisId: string; fix: string }) {

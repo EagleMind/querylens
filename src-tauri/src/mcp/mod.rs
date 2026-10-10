@@ -9,7 +9,7 @@ use std::io::{BufRead, Write};
 use serde_json::{Value, json};
 
 use crate::error::{AppError, AppResult};
-use crate::model::ExplainMode;
+use crate::model::{Engine, ExplainMode};
 use crate::services::analysis::{self, RunOptions};
 use crate::storage::Store;
 use crate::{engines, llm::prompt, paths};
@@ -85,7 +85,7 @@ impl Server {
                 "serverInfo": { "name": "querylens", "version": env!("CARGO_PKG_VERSION") },
             })),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({ "tools": tool_definitions() })),
+            "tools/list" => self.store.get_connection(&self.connection_id).map(|c| json!({ "tools": tool_definitions(c.engine) })),
             "tools/call" => Ok(self.call_tool(&params).await),
             _ => return Some(error_response(id, -32601, &format!("Method not found: {method}"))),
         };
@@ -175,6 +175,11 @@ impl Server {
             }
         }
         let conn = self.store.get_connection(&self.connection_id)?;
+        if conn.engine != Engine::Postgres {
+            return Err(AppError::validation(
+                "test_index needs PostgreSQL: other engines can't build an index inside a rolled-back transaction.",
+            ));
+        }
         let spec = analysis::spec_for(&conn)?;
         let limits = analysis::Limits::from_settings(&self.store.get_settings()?.analysis);
         let runs = self.store.get_settings()?.analysis.repeat_runs;
@@ -232,25 +237,71 @@ impl Server {
     }
 }
 
-fn tool_definitions() -> Value {
-    json!([
-        {
+/// The tools offered for a connection: only what each engine can test safely.
+fn tool_definitions(engine: Engine) -> Value {
+    let (explain_desc, sql_desc) = match engine {
+        Engine::Mongodb => (
+            "Explain a MongoDB query against the user's database (executionStats runs reads; writes are \
+             never applied). Returns execution time and the annotated plan tree. Use it to measure a \
+             rewrite, or an existing index via .hint({ … }).",
+            "The query in mongosh syntax, e.g. db.orders.find({ status: \"paid\" }).sort({ total: -1 }).",
+        ),
+        Engine::Mysql => (
+            "Run EXPLAIN ANALYZE on a SQL query against the user's MySQL database, in a read-only \
+             transaction. Returns execution time and the annotated plan tree. Use it to measure a \
+             rewrite, or session settings via setup_sql.",
+            "A single SELECT statement.",
+        ),
+        Engine::Postgres | Engine::Duckdb => (
+            "Run EXPLAIN on a SQL query against the user's database, inside a transaction that is \
+             always rolled back (read-only after setup). Returns execution time and the annotated \
+             plan tree. Use it to measure a rewrite, or pass setup_sql to measure the effect of a \
+             candidate index or setting.",
+            "A single SELECT (or other explainable) statement.",
+        ),
+    };
+    let mut explain_props = json!({
+        "sql": { "type": "string", "description": sql_desc },
+        "analyze": { "type": "boolean", "description": "Execute for real timings (default true). false = planner estimate only." }
+    });
+    let setup_desc = match engine {
+        Engine::Postgres => Some(
+            "Optional statement(s) run first in the same rolled-back transaction: CREATE [UNIQUE] INDEX, \
+             CREATE STATISTICS, SET or ANALYZE. A string or an array of strings.",
+        ),
+        Engine::Mysql => Some("Optional SET SESSION statement(s) run first. A string or an array of strings."),
+        Engine::Duckdb | Engine::Mongodb => None,
+    };
+    if let Some(desc) = setup_desc {
+        explain_props["setup_sql"] = json!({
+            "description": desc,
+            "anyOf": [ { "type": "string" }, { "type": "array", "items": { "type": "string" } } ]
+        });
+    }
+    let table_desc = if engine == Engine::Mongodb {
+        "Sampled fields, indexes, document count and size for a collection."
+    } else {
+        "Columns, indexes, row estimate, size and statistics freshness for a table."
+    };
+    let mut tools = vec![
+        json!({
             "name": "explain_query",
-            "description": "Run EXPLAIN on a SQL query against the user's database, inside a \
-                transaction that is always rolled back (read-only after setup). Returns \
-                execution time and the annotated plan tree. Use it to measure a rewrite, or \
-                pass setup_sql to measure the effect of a candidate index or setting.",
+            "description": explain_desc,
+            "inputSchema": { "type": "object", "properties": explain_props, "required": ["sql"] }
+        }),
+        json!({
+            "name": "table_info",
+            "description": table_desc,
             "inputSchema": {
                 "type": "object",
-                "properties": {
-                    "sql": { "type": "string", "description": "A single SELECT (or other explainable) statement." },
-                    "analyze": { "type": "boolean", "description": "Execute for real timings (default true). false = planner estimate only." },
-                    "setup_sql": { "description": "Optional statement(s) run first in the same rolled-back transaction (PostgreSQL only): CREATE [UNIQUE] INDEX, CREATE STATISTICS, SET or ANALYZE. A string or an array of strings.", "anyOf": [ { "type": "string" }, { "type": "array", "items": { "type": "string" } } ] }
-                },
-                "required": ["sql"]
+                "properties": { "table": { "type": "string", "description": "Table or collection name." } },
+                "required": ["table"]
             }
-        },
-        {
+        }),
+    ];
+    // Building an index inside a rolled-back transaction (or with HypoPG) is PostgreSQL-only.
+    if engine == Engine::Postgres {
+        tools.push(json!({
             "name": "test_index",
             "description": "Test candidate indexes for a query. With HypoPG installed it plans with hypothetical \
                 indexes: instant and lock-free, but an estimate. Otherwise it builds them inside a rolled-back \
@@ -263,15 +314,23 @@ fn tool_definitions() -> Value {
                 },
                 "required": ["sql", "indexes"]
             }
-        },
-        {
-            "name": "table_info",
-            "description": "Columns, indexes, row estimate, size and statistics freshness for a table.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "table": { "type": "string", "description": "Table name, optionally schema-qualified." } },
-                "required": ["table"]
-            }
-        }
-    ])
+        }));
+    }
+    Value::Array(tools)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tools_follow_the_engine() {
+        let names = |e| -> Vec<String> {
+            tool_definitions(e).as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect()
+        };
+        assert_eq!(names(Engine::Postgres), ["explain_query", "table_info", "test_index"]);
+        assert_eq!(names(Engine::Mongodb), ["explain_query", "table_info"]);
+        assert!(tool_definitions(Engine::Mongodb)[0]["inputSchema"]["properties"].get("setup_sql").is_none());
+        assert!(tool_definitions(Engine::Mysql)[0]["inputSchema"]["properties"].get("setup_sql").is_some());
+    }
 }

@@ -20,6 +20,11 @@ export function writesData(sql: string): string | null {
   return WRITES.find(([re]) => re.test(s))?.[1] ?? null
 }
 
+/** A MongoDB write in shell syntax (`db.orders.updateMany(…)`), or null. */
+export function mongoWrite(query: string): string | null {
+  return /^\s*db\.[\s\S]*?\.(update(?:One|Many)|delete(?:One|Many))\s*\(/.exec(query)?.[1] ?? null
+}
+
 /** Highest `$n` placeholder in the statement (0 = none), ignoring strings and comments. */
 export function placeholderCount(sql: string): number {
   let max = 0

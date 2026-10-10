@@ -11,44 +11,45 @@ const MAX_PLAN_LINES: usize = 200;
 
 pub fn system(engine: Engine, tools: bool) -> String {
     let engine_name = engine.label();
-    let index_ddl = match engine {
-        Engine::Postgres => "CREATE INDEX CONCURRENTLY",
-        Engine::Duckdb => "CREATE INDEX",
+    let (subject, fix_rule) = match engine {
+        Engine::Postgres => (
+            "a SQL query",
+            "sqlFix must be runnable PostgreSQL: a CREATE INDEX CONCURRENTLY, a rewritten query, ANALYZE, \
+or a SET.",
+        ),
+        Engine::Duckdb => (
+            "a SQL query",
+            "sqlFix must be runnable DuckDB SQL: a CREATE INDEX, a rewritten query, or a SET.",
+        ),
+        Engine::Mysql => (
+            "a SQL query",
+            "sqlFix must be runnable MySQL 8: a CREATE INDEX (or ALTER TABLE … ADD INDEX), a rewritten \
+query, ANALYZE TABLE (optionally UPDATE HISTOGRAM ON …), or a SET SESSION.",
+        ),
+        Engine::Mongodb => (
+            "a MongoDB query in mongosh syntax",
+            "sqlFix must be a mongosh command: db.<collection>.createIndex({ … }) with fields in \
+equality, sort, range order, or a rewritten query (db.<collection>.find(…) / .aggregate([…])).",
+        ),
     };
     let mut s = format!(
-        "You are QueryLens, a senior {engine_name} performance engineer. You receive a SQL \
-query, its execution plan (normalized, with each operator's exclusive time, its share of \
-total time, and heuristic warnings) and schema facts (columns, existing indexes, row \
-counts, statistics freshness).
+        "You are QueryLens, a senior {engine_name} performance engineer. You receive {subject}, \
+its execution plan (normalized, with each operator's exclusive time, its share of total time, \
+and heuristic warnings) and schema facts (fields or columns, existing indexes, sizes).
 
 Give 1-5 specific, actionable suggestions, most impactful first.
 
 Rules:
 - Ground every suggestion in the plan and set nodeId to the id of the operator it targets.
 - Check the existing indexes first. Never suggest an index that already exists.
-- sqlFix must be runnable {engine_name} SQL: a {index_ddl}, a rewritten query, ANALYZE, or a \
-SET. Use null if no SQL applies.
+- {fix_rule} Use null if nothing runnable applies.
 - Explanations: at most 3 sentences, and state the expected effect.
 - If the plan is already efficient, return a single low-severity suggestion saying so. \
 Never invent problems.
 "
     );
     if tools {
-        s.push_str(
-            "
-You have tools connected to the user's database:
-- test_index(sql, indexes[]) checks candidate indexes. Prefer it for index ideas: with \
-HypoPG it is instant and lock-free. Its output starts with an EVIDENCE line \
-(estimated or measured).
-- explain_query(sql, analyze?, setup_sql?) runs EXPLAIN on a query inside a transaction \
-that is always rolled back. Use it to measure rewrites, or settings via setup_sql \
-(e.g. SET work_mem, CREATE STATISTICS + ANALYZE).
-- table_info(table) returns columns, indexes, size and statistics.
-Test your top suggestions (at most 4 tool calls in total) and quote the before/after numbers \
-in the explanation. Set \"evidence\" to \"measured\" (real timings), \"estimated\" (planner \
-cost, e.g. a hypothetical index), or null if you did not test it.
-",
-        );
+        s.push_str(&tools_section(engine));
     }
     s.push_str(
         r#"
@@ -61,11 +62,49 @@ Your final answer must be ONLY a JSON object, with no prose and no code fences:
     s
 }
 
+/// The MCP tools available for this engine (see `mcp::tool_definitions`).
+fn tools_section(engine: Engine) -> String {
+    let evidence = "Test your top suggestions (at most 4 tool calls in total) and quote the before/after \
+numbers in the explanation. Set \"evidence\" to \"measured\" (real timings), \"estimated\" (planner \
+cost, e.g. a hypothetical index), or null if you did not test it.\n";
+    let tools = match engine {
+        Engine::Postgres => {
+            "- test_index(sql, indexes[]) checks candidate indexes. Prefer it for index ideas: with \
+HypoPG it is instant and lock-free. Its output starts with an EVIDENCE line (estimated or measured).
+- explain_query(sql, analyze?, setup_sql?) runs EXPLAIN on a query inside a transaction that is \
+always rolled back. Use it to measure rewrites, or settings via setup_sql (e.g. SET work_mem, \
+CREATE STATISTICS + ANALYZE).
+- table_info(table) returns columns, indexes, size and statistics.\n"
+        }
+        Engine::Mysql => {
+            "- explain_query(sql, analyze?, setup_sql?) runs EXPLAIN ANALYZE on a query in a read-only \
+transaction. Use it to measure rewrites, or session settings via setup_sql (SET SESSION …). \
+Indexes can't be tested: MySQL commits DDL immediately, so suggest them untested (evidence null).
+- table_info(table) returns columns, indexes and size.\n"
+        }
+        Engine::Mongodb => {
+            "- explain_query(sql, analyze?) explains a query written in mongosh syntax (pass it as `sql`), \
+executing reads with executionStats. Use it to measure rewrites, or compare index choices with \
+.hint({ … }) on existing indexes. New indexes can't be tested without building them, so suggest \
+them untested (evidence null).
+- table_info(table) returns a collection's sampled fields, indexes and size.\n"
+        }
+        Engine::Duckdb => {
+            "- explain_query(sql, analyze?) runs EXPLAIN ANALYZE on a query (the database is read-only).
+- table_info(table) returns columns and indexes.\n"
+        }
+    };
+    format!("\nYou have tools connected to the user's database:\n{tools}{evidence}")
+}
+
 pub fn user(a: &AnalysisResult) -> String {
     let mut s = String::new();
-    let mode = match a.mode {
-        ExplainMode::Analyze => "EXPLAIN ANALYZE (executed, then rolled back)",
-        ExplainMode::Estimate => "EXPLAIN (planner estimates only, not executed)",
+    let mode = match (a.engine, a.mode) {
+        (Engine::Mongodb, ExplainMode::Analyze) => "explain executionStats (executed; writes are never applied)",
+        (Engine::Mongodb, ExplainMode::Estimate) => "explain queryPlanner (winning plan only, not executed)",
+        (Engine::Mysql, ExplainMode::Analyze) => "EXPLAIN ANALYZE (executed in a read-only transaction)",
+        (_, ExplainMode::Analyze) => "EXPLAIN ANALYZE (executed, then rolled back)",
+        (_, ExplainMode::Estimate) => "EXPLAIN (planner estimates only, not executed)",
     };
     let _ = writeln!(s, "Engine: {} · Mode: {mode}", a.engine.label());
     if let Some(ms) = a.execution_time_ms {
@@ -191,7 +230,8 @@ pub fn table_summary(t: &TableContext, mentioned: Option<&str>) -> String {
     }
     match &t.last_analyzed {
         Some(at) => facts.push(format!("last analyzed {at}")),
-        None if t.size_bytes.is_some() => facts.push("never analyzed".into()),
+        // Only PostgreSQL tracks this (it always reports modifications since ANALYZE).
+        None if t.modified_since_analyze.is_some() => facts.push("never analyzed".into()),
         None => {}
     }
     if let Some(m) = t.modified_since_analyze.filter(|m| *m > 0.0) {

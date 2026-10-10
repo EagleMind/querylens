@@ -1,6 +1,9 @@
 //! Database engines: connect, run EXPLAIN safely, and read schema context.
 
 mod duckdb;
+mod mongo;
+pub mod mongo_query;
+mod mysql;
 mod postgres;
 
 use async_trait::async_trait;
@@ -76,9 +79,12 @@ pub trait EngineSession: Send {
     /// Best-effort schema facts for the given relations; unknown names are skipped.
     async fn table_context(&mut self, relations: &[String]) -> AppResult<Vec<TableContext>>;
 
-    /// The most expensive statements recorded by the server (pg_stat_statements).
+    /// The most expensive statements recorded by the server (pg_stat_statements,
+    /// performance_schema).
     async fn top_queries(&mut self, _order: TopQueryOrder, _limit: u32) -> AppResult<Vec<TopQuery>> {
-        Err(AppError::validation("Top queries are available for PostgreSQL with pg_stat_statements."))
+        Err(AppError::validation(
+            "Top queries are available for PostgreSQL (pg_stat_statements) and MySQL (performance_schema).",
+        ))
     }
 }
 
@@ -86,6 +92,8 @@ pub async fn open(spec: &ConnectSpec) -> AppResult<Box<dyn EngineSession>> {
     match spec.engine {
         Engine::Postgres => Ok(Box::new(postgres::PgSession::connect(spec).await?)),
         Engine::Duckdb => Ok(Box::new(duckdb::DuckSession::open(spec).await?)),
+        Engine::Mysql => Ok(Box::new(mysql::MySession::connect(spec).await?)),
+        Engine::Mongodb => Ok(Box::new(mongo::MongoSession::connect(spec).await?)),
     }
 }
 

@@ -59,21 +59,32 @@ function initialState(c: Connection | null): FormState {
   }
 }
 
+const isServer = (engine: Engine) => ENGINES[engine].defaultPort !== null
+/** A full MongoDB connection string typed into Host (Atlas, replica sets). */
+const isUri = (host: string) => /^mongodb(\+srv)?:\/\//.test(host.trim())
+
 function toInput(f: FormState, id: string | null): ConnectionInput {
-  const pg = f.engine === 'postgres'
+  const server = isServer(f.engine)
   return {
     id,
     name: f.name.trim(),
     engine: f.engine,
     color: f.color,
-    host: pg ? f.host.trim() : null,
-    port: pg && f.port ? Number(f.port) : null,
-    database: pg ? f.database.trim() || null : null,
-    username: pg ? f.username.trim() || null : null,
+    host: server ? f.host.trim() : null,
+    port: server && f.port && !isUri(f.host) ? Number(f.port) : null,
+    database: server ? f.database.trim() || null : null,
+    username: server ? f.username.trim() || null : null,
     sslMode: f.sslMode,
-    filePath: pg ? null : f.filePath.trim(),
-    password: pg && f.passwordTouched ? f.password : null,
+    filePath: server ? null : f.filePath.trim(),
+    password: server && f.passwordTouched ? f.password : null,
   }
+}
+
+const PLACEHOLDERS: Record<Engine, { name: string; database: string; user: string }> = {
+  postgres: { name: 'local-shop', database: 'postgres', user: 'postgres' },
+  mysql: { name: 'shop-mysql', database: 'shop', user: 'root' },
+  mongodb: { name: 'shop-mongo', database: 'shop', user: 'none' },
+  duckdb: { name: 'analytics', database: '', user: '' },
 }
 
 function Field({ label, children, className }: { label: string; children: ReactNode; className?: string }) {
@@ -115,7 +126,18 @@ function ConnectionForm({ editing, onDone: close }: { editing: Connection | null
     setTest({ status: 'idle' })
   }
   const id = editing?.id ?? null
-  const isPg = form.engine === 'postgres'
+  const server = isServer(form.engine)
+  const ph = PLACEHOLDERS[form.engine]
+
+  /** Switching engine moves the port to the new default unless it was customised. */
+  function setEngine(engine: Engine) {
+    setForm((f) => {
+      const oldDefault = String(ENGINES[f.engine].defaultPort ?? '')
+      const port = !f.port || f.port === oldDefault ? String(ENGINES[engine].defaultPort ?? '') : f.port
+      return { ...f, engine, port }
+    })
+    setTest({ status: 'idle' })
+  }
 
   async function runTest() {
     setTest({ status: 'running' })
@@ -167,7 +189,7 @@ function ConnectionForm({ editing, onDone: close }: { editing: Connection | null
               size="sm"
               spacing={0}
               value={form.engine}
-              onValueChange={(v) => v && set('engine', v as Engine)}
+              onValueChange={(v) => v && setEngine(v as Engine)}
             >
               {(Object.keys(ENGINES) as Engine[]).map((e) => (
                 <ToggleGroupItem key={e} value={e} className="px-3 text-xs">
@@ -196,24 +218,25 @@ function ConnectionForm({ editing, onDone: close }: { editing: Connection | null
         </div>
 
         <Field label="Name">
-          <Input
-            autoFocus
-            placeholder={isPg ? 'local-shop' : 'analytics'}
-            value={form.name}
-            onChange={(e) => set('name', e.target.value)}
-          />
+          <Input autoFocus placeholder={ph.name} value={form.name} onChange={(e) => set('name', e.target.value)} />
         </Field>
 
-        {isPg ? (
+        {server ? (
           <>
             <div className="grid grid-cols-[1fr_96px] gap-3">
-              <Field label="Host">
-                <Input className="font-mono text-xs" value={form.host} onChange={(e) => set('host', e.target.value)} />
+              <Field label={form.engine === 'mongodb' ? 'Host or connection string' : 'Host'}>
+                <Input
+                  className="font-mono text-xs"
+                  placeholder={form.engine === 'mongodb' ? 'localhost or mongodb+srv://…' : 'localhost'}
+                  value={form.host}
+                  onChange={(e) => set('host', e.target.value)}
+                />
               </Field>
               <Field label="Port">
                 <Input
                   className="font-mono text-xs"
                   inputMode="numeric"
+                  disabled={isUri(form.host)}
                   value={form.port}
                   onChange={(e) => set('port', e.target.value.replace(/\D/g, '').slice(0, 5))}
                 />
@@ -223,7 +246,7 @@ function ConnectionForm({ editing, onDone: close }: { editing: Connection | null
               <Field label="Database">
                 <Input
                   className="font-mono text-xs"
-                  placeholder="postgres"
+                  placeholder={ph.database}
                   value={form.database}
                   onChange={(e) => set('database', e.target.value)}
                 />
@@ -231,7 +254,7 @@ function ConnectionForm({ editing, onDone: close }: { editing: Connection | null
               <Field label="User">
                 <Input
                   className="font-mono text-xs"
-                  placeholder="postgres"
+                  placeholder={ph.user}
                   value={form.username}
                   onChange={(e) => set('username', e.target.value)}
                 />

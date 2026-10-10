@@ -14,6 +14,8 @@ use ts_rs::TS;
 pub enum Engine {
     Postgres,
     Duckdb,
+    Mysql,
+    Mongodb,
 }
 
 impl Engine {
@@ -21,12 +23,16 @@ impl Engine {
         match self {
             Engine::Postgres => "postgres",
             Engine::Duckdb => "duckdb",
+            Engine::Mysql => "mysql",
+            Engine::Mongodb => "mongodb",
         }
     }
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "postgres" => Some(Engine::Postgres),
             "duckdb" => Some(Engine::Duckdb),
+            "mysql" => Some(Engine::Mysql),
+            "mongodb" => Some(Engine::Mongodb),
             _ => None,
         }
     }
@@ -34,7 +40,17 @@ impl Engine {
         match self {
             Engine::Postgres => "PostgreSQL",
             Engine::Duckdb => "DuckDB",
+            Engine::Mysql => "MySQL",
+            Engine::Mongodb => "MongoDB",
         }
+    }
+    /// Engines reached over the network (host/port/user), as opposed to a local file.
+    pub fn is_server(self) -> bool {
+        !matches!(self, Engine::Duckdb)
+    }
+    /// The query language users write: SQL, or MongoDB's shell syntax.
+    pub fn is_sql(self) -> bool {
+        !matches!(self, Engine::Mongodb)
     }
 }
 
@@ -161,6 +177,11 @@ pub enum WarningKind {
     JitOverhead,
     IoBound,
     SerializeHeavy,
+    /// A sort that has to read all of its input before returning a row (MySQL filesort,
+    /// MongoDB in-memory SORT) where an index could return rows already ordered.
+    BlockingSort,
+    /// An index scan whose results are mostly thrown away by a later filter.
+    UnselectiveIndex,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]

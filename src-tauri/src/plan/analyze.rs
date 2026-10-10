@@ -1,7 +1,7 @@
 //! Engine-agnostic scoring: exclusive time / cost, share of total, heat, and
 //! the warnings that only need normalized fields.
 
-use crate::model::{Heat, PlanNode, WarningKind, WarningSeverity};
+use crate::model::{Engine, Heat, PlanNode, WarningKind, WarningSeverity};
 
 use super::{fmt_count, warning};
 
@@ -13,7 +13,7 @@ const ESTIMATE_ERROR_MIN_ROWS: f64 = 100.0;
 /// A node's misestimate must be this many times worse than its inputs' to count as its own.
 const ORIGIN_FACTOR: f64 = 3.0;
 
-pub(super) fn finalize(root: &mut PlanNode) {
+pub(super) fn finalize(root: &mut PlanNode, engine: Engine) {
     fill_times(root);
 
     let total_self_time = sum(root, &|n| n.self_time_ms);
@@ -25,7 +25,7 @@ pub(super) fn finalize(root: &mut PlanNode) {
     } else {
         Basis::None
     };
-    score(root, basis, false);
+    score(root, basis, false, engine);
 }
 
 #[derive(Clone, Copy)]
@@ -70,7 +70,7 @@ fn sum(node: &PlanNode, get: &impl Fn(&PlanNode) -> Option<f64>) -> f64 {
 /// produce fewer rows than estimated.
 const EARLY_STOP: &[&str] = &["Limit", "LIMIT", "STREAMING_LIMIT", "TOP_N"];
 
-fn score(node: &mut PlanNode, basis: Basis, under_limit: bool) {
+fn score(node: &mut PlanNode, basis: Basis, under_limit: bool, engine: Engine) {
     node.share = match basis {
         Basis::Time(total) => node.self_time_ms.unwrap_or(0.0) / total,
         Basis::Cost(total) => node.self_cost.unwrap_or(0.0) / total,
@@ -83,11 +83,11 @@ fn score(node: &mut PlanNode, basis: Basis, under_limit: bool) {
     } else {
         Heat::Low
     };
-    row_estimate_warning(node, under_limit);
+    row_estimate_warning(node, under_limit, engine);
     io_bound_warning(node);
     let under_limit = under_limit || EARLY_STOP.contains(&node.node_type.as_str());
     for c in &mut node.children {
-        score(c, basis, under_limit);
+        score(c, basis, under_limit, engine);
     }
 }
 
@@ -118,7 +118,7 @@ fn io_bound_warning(node: &mut PlanNode) {
     ));
 }
 
-fn row_estimate_warning(node: &mut PlanNode, under_limit: bool) {
+fn row_estimate_warning(node: &mut PlanNode, under_limit: bool, engine: Engine) {
     // Hash / Materialize just mirror their child's rows; warning there is noise.
     if matches!(node.node_type.as_str(), "Hash" | "Materialize" | "Memoize") {
         return;
@@ -140,13 +140,21 @@ fn row_estimate_warning(node: &mut PlanNode, under_limit: bool) {
     }
     let direction = if actual > est { "under" } else { "over" };
     let severity = if ratio >= 100.0 { WarningSeverity::Error } else { WarningSeverity::Warning };
+    let fix = match engine {
+        Engine::Mysql => {
+            "Refresh statistics with ANALYZE TABLE, or add a histogram on the filtered columns \
+             (ANALYZE TABLE … UPDATE HISTOGRAM ON …)."
+        }
+        _ => {
+            "Stale or missing statistics — try ANALYZE on the table, or extended statistics \
+             for correlated columns."
+        }
+    };
     node.warnings.push(warning(
         WarningKind::RowEstimateError,
         severity,
         format!(
-            "Planner {direction}estimated rows {ratio:.0}× (estimated {}, actual {}). \
-             Stale or missing statistics — try ANALYZE on the table, or extended statistics \
-             for correlated columns.",
+            "Planner {direction}estimated rows {ratio:.0}× (estimated {}, actual {}). {fix}",
             fmt_count(est),
             fmt_count(actual),
         ),

@@ -121,6 +121,49 @@ impl From<tokio_postgres::Error> for AppError {
     }
 }
 
+impl From<mysql_async::Error> for AppError {
+    fn from(e: mysql_async::Error) -> Self {
+        match e {
+            mysql_async::Error::Server(s) => match s.code {
+                // ER_QUERY_TIMEOUT (max_execution_time); services::analysis adds the limit.
+                3024 => Self::new(ErrorKind::Timeout, "statement timeout"),
+                // ER_LOCK_WAIT_TIMEOUT / ER_LOCK_WAIT_TIMEOUT for metadata locks.
+                1205 => Self::database(
+                    "Waited too long for a lock held by another session (see Settings → \
+                     Running queries → Lock timeout). Try again, or use Explain.",
+                ),
+                // ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION
+                1792 => Self::validation(
+                    "On MySQL, Profile only runs queries that read: MySQL can't always undo writes \
+                     (MyISAM tables, statements that commit implicitly). Use Explain to see the plan of \
+                     an INSERT, UPDATE or DELETE.",
+                ),
+                _ => Self::database(format!("{} (MySQL error {})", s.message, s.code)),
+            },
+            mysql_async::Error::Io(io) => Self::connection(io.to_string()),
+            mysql_async::Error::Driver(d) => Self::connection(d.to_string()),
+            other => Self::database(other.to_string()),
+        }
+    }
+}
+
+impl From<mongodb::error::Error> for AppError {
+    fn from(e: mongodb::error::Error) -> Self {
+        use mongodb::error::ErrorKind as K;
+        match e.kind.as_ref() {
+            // MaxTimeMSExpired; services::analysis adds the limit.
+            K::Command(c) if c.code == 50 => Self::new(ErrorKind::Timeout, "statement timeout"),
+            K::Command(c) => Self::database(format!("{} ({})", c.message, c.code_name)),
+            K::ServerSelection { .. } | K::Io(_) | K::DnsResolve { .. } | K::ConnectionPoolCleared { .. } => {
+                Self::connection(format!("Couldn't reach MongoDB: {}", e.kind))
+            }
+            K::Authentication { message, .. } => Self::connection(format!("MongoDB authentication failed: {message}")),
+            K::InvalidArgument { message, .. } => Self::validation(message.clone()),
+            _ => Self::database(e.to_string()),
+        }
+    }
+}
+
 impl From<reqwest::Error> for AppError {
     fn from(e: reqwest::Error) -> Self {
         if e.is_connect() {

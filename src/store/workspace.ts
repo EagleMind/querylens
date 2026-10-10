@@ -14,6 +14,9 @@ export interface Activity {
 
 export type StreamStatus = 'idle' | 'streaming' | 'done' | 'error' | 'cancelled'
 
+/** What the editor holds: SQL, or a MongoDB query in shell syntax. */
+export type QueryLanguage = 'sql' | 'mongo'
+
 export interface SuggestionStream {
   status: StreamStatus
   requestId: string | null
@@ -38,7 +41,11 @@ const idleStream: SuggestionStream = {
 }
 
 interface WorkspaceState {
+  /** Editor text (SQL or a MongoDB query, see `language`). */
   sql: string
+  language: QueryLanguage
+  /** The other language's draft, kept while switching between SQL and MongoDB connections. */
+  drafts: Record<QueryLanguage, string>
   connectionId: string | null
   analysis: AnalysisResult | null
   /** True when the plan was opened from History rather than just run. */
@@ -50,6 +57,10 @@ interface WorkspaceState {
   stream: SuggestionStream
 
   setSql: (sql: string) => void
+  /** Switch the editor to a language, restoring that language's draft. */
+  setLanguage: (language: QueryLanguage) => void
+  /** Open a query (from History or Top queries) in its language, keeping the other draft. */
+  loadQuery: (sql: string, language: QueryLanguage) => void
   setConnectionId: (id: string | null) => void
   setAnalysis: (a: AnalysisResult | null, opts?: { replay?: boolean }) => void
   selectNode: (id: string | null) => void
@@ -73,10 +84,16 @@ GROUP BY u.email
 ORDER BY spent DESC
 LIMIT 20;`
 
+const SAMPLE_MONGO = `db.orders.find({ status: "paid", total: { $gt: 900 } })
+  .sort({ createdAt: -1 })
+  .limit(20)`
+
 export const useWorkspace = create<WorkspaceState>()(
   persist(
     (set) => ({
       sql: SAMPLE_SQL,
+      language: 'sql',
+      drafts: { sql: SAMPLE_SQL, mongo: SAMPLE_MONGO },
       connectionId: null,
       analysis: null,
       isReplay: false,
@@ -86,6 +103,18 @@ export const useWorkspace = create<WorkspaceState>()(
       stream: idleStream,
 
       setSql: (sql) => set({ sql }),
+      setLanguage: (language) =>
+        set((s) =>
+          s.language === language
+            ? {}
+            : { language, sql: s.drafts[language], drafts: { ...s.drafts, [s.language]: s.sql } },
+        ),
+      loadQuery: (sql, language) =>
+        set((s) => ({
+          sql,
+          language,
+          drafts: s.language === language ? s.drafts : { ...s.drafts, [s.language]: s.sql },
+        })),
       setConnectionId: (connectionId) => set({ connectionId }),
       setAnalysis: (analysis, opts) =>
         set({
@@ -120,7 +149,14 @@ export const useWorkspace = create<WorkspaceState>()(
       name: 'querylens.workspace',
       storage: createJSONStorage(() => localStorage),
       // Only the editor draft survives restarts; results come from history.
-      partialize: (s) => ({ sql: s.sql, connectionId: s.connectionId, planView: s.planView, params: s.params }),
+      partialize: (s) => ({
+        sql: s.sql,
+        language: s.language,
+        drafts: s.drafts,
+        connectionId: s.connectionId,
+        planView: s.planView,
+        params: s.params,
+      }),
     },
   ),
 )

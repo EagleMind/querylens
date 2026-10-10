@@ -16,10 +16,13 @@ against your database before recommending them.
   inside a rolled-back transaction, re-run `EXPLAIN`, and report the measured speedup.
 - **Safe by construction.** `EXPLAIN ANALYZE` always runs in a transaction that is rolled
   back, with a statement timeout and single-statement execution. Model-issued queries
-  are read-only. DuckDB files open read-only.
+  are read-only. DuckDB files open read-only. MySQL profiles in a read-only transaction,
+  and MongoDB's explain never applies writes.
 - **Private.** No accounts and no telemetry. Credentials live in the OS keychain.
 
-Engines: **PostgreSQL** and **DuckDB** (ClickHouse, MySQL and others are planned).
+Engines: **PostgreSQL**, **MySQL 8.0.18+**, **MongoDB** and **DuckDB** (ClickHouse, MariaDB
+and others are planned). MongoDB queries are written as in the shell:
+`db.orders.find({ status: "paid" }).sort({ total: -1 })`.
 
 ## Quick start
 
@@ -34,13 +37,20 @@ pnpm install
 pnpm tauri dev
 ```
 
-Optional demo database (seeded with deliberately slow queries):
+Optional demo databases (PostgreSQL, MySQL and MongoDB, seeded with deliberately slow
+queries):
 
 ```bash
 docker compose -f dev/docker-compose.yml up -d --build
 ```
 
-Then add a connection: host `localhost`, port `54329`, database `shop`, user `querylens`.
+Then add connections, all on host `localhost` with database `shop`:
+
+| Engine | Port | User | Password |
+|---|---|---|---|
+| PostgreSQL | `54329` | `querylens` | none |
+| MySQL | `33069` | `querylens` | `querylens` |
+| MongoDB | `27019` | none | none |
 
 For AI suggestions, the default provider is **Claude Code**. Install the `claude` CLI and
 sign in, and QueryLens uses that login, so no API key is needed. Alternatively, start LM

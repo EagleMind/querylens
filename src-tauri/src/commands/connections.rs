@@ -12,8 +12,8 @@ fn validate(input: &ConnectionInput) -> AppResult<()> {
         return Err(AppError::validation("Give the connection a name."));
     }
     match input.engine {
-        Engine::Postgres if input.host.as_deref().is_none_or(|h| h.trim().is_empty()) => {
-            Err(AppError::validation("Host is required for PostgreSQL."))
+        e if e.is_server() && input.host.as_deref().is_none_or(|h| h.trim().is_empty()) => {
+            Err(AppError::validation(format!("Host is required for {}.", e.label())))
         }
         Engine::Duckdb if input.file_path.as_deref().is_none_or(|p| p.trim().is_empty()) => {
             Err(AppError::validation("Choose a DuckDB file, or use :memory:."))

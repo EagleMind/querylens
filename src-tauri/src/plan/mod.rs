@@ -4,6 +4,8 @@ mod analyze;
 pub mod diff;
 mod duckdb;
 pub mod fingerprint;
+mod mongo;
+mod mysql;
 mod postgres;
 
 use serde_json::Value;
@@ -27,11 +29,18 @@ const JIT_OVERHEAD_SHARE: f64 = 0.1;
 const SERIALIZE_HEAVY_SHARE: f64 = 0.2;
 
 pub fn parse(engine: Engine, mode: ExplainMode, raw: &str) -> AppResult<ParsedPlan> {
+    parse_query(engine, mode, raw, "")
+}
+
+/// Like [`parse`], with the query text for engines whose plans name tables by alias (MySQL).
+pub fn parse_query(engine: Engine, mode: ExplainMode, raw: &str, sql: &str) -> AppResult<ParsedPlan> {
     let mut plan = match engine {
         Engine::Postgres => postgres::parse(raw)?,
         Engine::Duckdb => duckdb::parse(raw, mode)?,
+        Engine::Mysql => mysql::parse(raw, mode, sql)?,
+        Engine::Mongodb => mongo::parse(raw, mode)?,
     };
-    analyze::finalize(&mut plan.root);
+    analyze::finalize(&mut plan.root, engine);
     plan_level_warnings(&mut plan);
     Ok(plan)
 }

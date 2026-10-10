@@ -1,7 +1,7 @@
 # QueryLens — MVP Scope
 
 The MVP answers one question well: **"Why is my query slow, and what should I do about
-it?"** It covers Postgres and DuckDB, with AI suggestions, in a native desktop app.
+it?"** It covers PostgreSQL and DuckDB (MySQL and MongoDB arrived in v1.2), with AI suggestions, in a native desktop app.
 
 Technical design: [architecture.md](architecture.md). Product context: [vision.md](vision.md).
 
@@ -75,7 +75,7 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 | Light mode | Cosmetic. The tokens are already themeable. | v1.1 |
 | Export (Markdown/JSON report) | Nice to have | v1.1 |
 | Command palette | Nice to have | v1.1 |
-| ClickHouse, MySQL, SQLite, SQL Server | More parsers. ClickHouse needs `query_log` profiling, not EXPLAIN. | v1.1–1.2 |
+| ClickHouse, MariaDB, SQLite, SQL Server | More parsers. ClickHouse needs `query_log` profiling, not EXPLAIN; MariaDB's `ANALYZE FORMAT=JSON` differs from MySQL's tree. | v1.2 |
 | Cross-engine comparison | Needs operator-class bucketing across engines | v1.2 |
 | SSH tunnels | Significant complexity. Most dev DBs are local or on a VPN. | v1.2 |
 | Auto-updater, code signing | Manual GitHub releases are fine for early users | v1.1 |
@@ -111,6 +111,13 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 - [x] HypoPG hypothetical indexes, MCP `test_index`, measured/estimated evidence, Preview fix
 - [x] `$n` parameters (custom/generic plans), parameter sensitivity, Top queries (pg_stat_statements)
 - [x] Dev image with hypopg + pg_stat_statements, `dev/load-job.sh`, JOB / workload live tests
+
+### v1.2 engines (done)
+- [x] MySQL 8.0.18+: `EXPLAIN ANALYZE` / `FORMAT=TREE` parser, alias resolution, read-only Profile, `max_execution_time` + `KILL QUERY` backstop, truncated-plan detection, schema context, Top queries from `performance_schema`
+- [x] MongoDB: mongosh-syntax parser (find/aggregate/count/distinct/update/delete, shell helpers, regex literals), `explain` with classic and SBE plans and pipelines, `maxTimeMS`, sampled schema + indexes
+- [x] New warnings `blocking_sort`, `unselective_index`; engine-specific advisor prompt and MCP tools; engine-aware Preview fix
+- [x] Editor: MySQL dialect / JavaScript highlighting, per-language drafts; connection form for both
+- [x] Dev containers (MySQL 8.4, MongoDB 8.0) and live tests
 
 ### Ship
 - [x] Windows release build (`.msi` + NSIS `.exe`)

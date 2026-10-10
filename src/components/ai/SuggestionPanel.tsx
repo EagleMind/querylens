@@ -176,7 +176,14 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
             <>
               {result.summary && <Summary text={result.summary} />}
               {result.suggestions.map((s, i) => (
-                <SuggestionCard key={i} suggestion={s} root={analysis.root} index={i} analysisId={analysis.id} />
+                <SuggestionCard
+                  key={i}
+                  suggestion={s}
+                  root={analysis.root}
+                  index={i}
+                  analysisId={analysis.id}
+                  engine={analysis.engine}
+                />
               ))}
             </>
           )}

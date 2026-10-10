@@ -153,7 +153,8 @@ pub async fn explain(
     let hypothetical = opts.hypothetical.iter().map(|s| engines::sanitize_sql(s)).collect::<AppResult<Vec<_>>>()?;
     // Hypothetical indexes are planner-only, so they always produce an estimate.
     let mode = if hypothetical.is_empty() { opts.mode } else { ExplainMode::Estimate };
-    let placeholders = engines::placeholder_count(&sql);
+    // `$n` parameters are a PostgreSQL feature (MongoDB uses `$` for operators and fields).
+    let placeholders = if conn.engine == crate::model::Engine::Postgres { engines::placeholder_count(&sql) } else { 0 };
     if placeholders > 0 && opts.params.len() < placeholders {
         return Err(crate::error::AppError::validation(format!(
             "This query has {placeholders} parameter(s) ($1…${placeholders}). Fill in their values in the \
@@ -182,7 +183,7 @@ pub async fn explain(
     while samples.len() < wanted as usize {
         let run_started = Instant::now();
         let raw = session.explain(&request).await.map_err(|e| timeout_message(e, limits))?;
-        let parsed = plan::parse(conn.engine, mode, &raw)?;
+        let parsed = plan::parse_query(conn.engine, mode, &raw, &sql)?;
         let execution_ms = parsed.execution_time_ms.unwrap_or(0.0);
         let read_blocks = parsed.root.buffers.as_ref().map(|b| b.shared_read).unwrap_or(0.0);
         samples.push(Sample { raw, parsed, execution_ms, read_blocks });
@@ -251,8 +252,27 @@ pub async fn preview_fix(store: &Store, baseline: &AnalysisResult, fix: &str) ->
     let lower = fix.to_ascii_lowercase();
     let runs = store.get_settings()?.analysis.repeat_runs;
     let base = RunOptions { read_only: true, runs, params: baseline.params.clone(), ..RunOptions::new(baseline.mode) };
+    let not_transactional = |what: &str| {
+        crate::error::AppError::validation(format!(
+            "{what} can't be undone afterwards, so QueryLens won't apply it for a preview. Apply it yourself \
+             (ideally on a staging copy), then Profile again: QueryLens will compare the run with this one."
+        ))
+    };
 
-    let (sql, opts) = if lower.starts_with("create index") || lower.starts_with("create unique index") {
+    let (sql, opts) = if baseline.engine == crate::model::Engine::Mongodb {
+        if lower.contains(".createindex") {
+            return Err(not_transactional("On MongoDB, building an index"));
+        }
+        (fix.clone(), base)
+    } else if baseline.engine == crate::model::Engine::Mysql {
+        if lower.starts_with("set ") {
+            (baseline.sql.clone(), RunOptions { setup: vec![fix.clone()], ..base })
+        } else if ["select", "with", "table", "("].iter().any(|k| lower.starts_with(k)) {
+            (fix.clone(), base)
+        } else {
+            return Err(not_transactional("On MySQL, this change (MySQL commits DDL and ANALYZE TABLE immediately)"));
+        }
+    } else if lower.starts_with("create index") || lower.starts_with("create unique index") {
         let target_rows = index_target(&lower)
             .and_then(|t| baseline.tables.iter().find(|tc| tc.name.rsplit('.').next() == Some(t.as_str())))
             .and_then(|tc| tc.row_estimate)
