@@ -1,20 +1,21 @@
 import type { Engine } from '@/bindings/Engine'
 import type { LlmProviderKind } from '@/bindings/LlmProviderKind'
 
+// Survey-ink swatches chosen to read on blueprint paper without clashing with plan heat.
 export const CONNECTION_COLORS = [
-  '#2dd4bf',
-  '#60a5fa',
-  '#a78bfa',
-  '#f472b6',
-  '#fb923c',
-  '#facc15',
-  '#4ade80',
-  '#94a3b8',
+  '#7fb3e6',
+  '#f2d84a',
+  '#b9a3f0',
+  '#e98fb0',
+  '#8fd0a8',
+  '#e9a35b',
+  '#f1ead9',
+  '#8a96b3',
 ] as const
 
 export const ENGINES: Record<Engine, { label: string; short: string; defaultPort: number | null }> = {
-  postgres: { label: 'PostgreSQL', short: 'PG', defaultPort: 5432 },
-  duckdb: { label: 'DuckDB', short: 'DUCK', defaultPort: null },
+  postgres: { label: 'PostgreSQL', short: 'pg', defaultPort: 5432 },
+  duckdb: { label: 'DuckDB', short: 'duck', defaultPort: null },
 }
 
 export const PROVIDERS: Record<

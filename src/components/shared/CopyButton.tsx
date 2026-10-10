@@ -32,7 +32,7 @@ export function CopyButton({
 
   const Icon = copied ? CheckIcon : CopyIcon
   return (
-    <Button size={size} variant={variant} onClick={copy} className={cn(copied && 'text-primary', className)}>
+    <Button size={size} variant={variant} onClick={copy} className={cn(copied && 'text-ok', className)}>
       <Icon />
       {size !== 'icon-xs' && (copied ? 'Copied' : label)}
     </Button>

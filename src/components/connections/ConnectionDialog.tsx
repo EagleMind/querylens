@@ -298,7 +298,7 @@ function ConnectionForm({ editing, onDone: close }: { editing: Connection | null
           <div
             className={cn(
               'flex items-start gap-2 rounded-md border px-3 py-2 text-xs animate-rise',
-              test.status === 'ok' && 'border-heat-low/30 bg-heat-low/5 text-heat-low',
+              test.status === 'ok' && 'border-ok/35 text-ok',
               test.status === 'error' && 'border-destructive/30 bg-destructive/5 text-destructive',
               test.status === 'running' && 'text-muted-foreground',
             )}

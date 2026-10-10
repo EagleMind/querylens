@@ -5,13 +5,13 @@ import { cn } from '@/lib/utils'
 function Stat({ label, value, className }: { label: string; value: string; className?: string }) {
   return (
     <div>
-      <div className="font-mono text-[9px] tracking-[0.12em] text-muted-foreground uppercase">{label}</div>
+      <div className="text-[11px] text-muted-foreground">{label}</div>
       <div className={cn('font-mono text-xs tabular', className)}>{value}</div>
     </div>
   )
 }
 
-const SEVERITY_BORDER = { error: 'border-heat-high/60', warning: 'border-heat-medium/60', info: 'border-sky-400/50' }
+const SEVERITY_BORDER = { error: 'border-heat-high/60', warning: 'border-heat-medium/60', info: 'border-chart-2/60' }
 
 export function NodeDetails({ node, timed, indent }: { node: PlanNode; timed: boolean; indent: number }) {
   const b = node.buffers
@@ -19,7 +19,7 @@ export function NodeDetails({ node, timed, indent }: { node: PlanNode; timed: bo
 
   return (
     <div
-      className="animate-rise space-y-3 border-y border-border/60 bg-background/60 py-3 pr-4"
+      className="animate-rise space-y-3 border-y border-border/60 bg-background/50 py-3 pr-4"
       style={{ paddingLeft: indent }}
       data-selectable
     >

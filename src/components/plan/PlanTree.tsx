@@ -50,7 +50,7 @@ export function PlanTree({ root, timed }: { root: PlanNode; timed: boolean }) {
 
   return (
     <div role="tree" className="pb-6">
-      <div className={`${ROW_GRID} sticky top-0 z-10 h-8 border-b bg-background/95 pr-4 pl-4 backdrop-blur`}>
+      <div className={`${ROW_GRID} sticky top-0 z-10 h-8 border-b bg-background pr-4 pl-4`}>
         <div className="flex items-center gap-2">
           <PaneLabel>Operator</PaneLabel>
           {allCollapsible.length > 0 && (

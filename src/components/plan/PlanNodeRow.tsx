@@ -21,7 +21,7 @@ export const ROW_GRID = 'grid grid-cols-[minmax(0,1fr)_116px_84px_120px] items-c
 const INDENT = 18
 
 const SEVERITY_ICON = { error: CircleAlertIcon, warning: TriangleAlertIcon, info: InfoIcon }
-const SEVERITY_COLOR = { error: 'text-heat-high', warning: 'text-heat-medium', info: 'text-sky-400' }
+const SEVERITY_COLOR = { error: 'text-heat-high', warning: 'text-heat-medium', info: 'text-chart-2' }
 
 function worst(warnings: PlanWarning[]): PlanWarning['severity'] | null {
   if (warnings.some((w) => w.severity === 'error')) return 'error'
@@ -44,7 +44,7 @@ function Warnings({ warnings }: { warnings: PlanWarning[] }) {
       <TooltipContent className="max-w-sm space-y-1.5 py-2">
         {warnings.map((w, i) => (
           <p key={i} className="text-xs/relaxed">
-            <span className="font-mono text-[10px] uppercase opacity-70">{w.kind.replaceAll('_', ' ')}</span>
+            <span className="text-[11px] font-semibold opacity-70">{w.kind.replaceAll('_', ' ')}</span>
             <br />
             {w.message}
           </p>
@@ -64,7 +64,7 @@ function Rows({ node }: { node: PlanNode }) {
       {off && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="inline-flex items-center rounded-[3px] bg-heat-medium/12 px-1 text-[10px] text-heat-medium">
+            <span className="inline-flex items-center rounded-[2px] border border-heat-medium/40 px-1 text-[10.5px] text-heat-medium">
               {under ? <ArrowUpIcon className="size-2.5" /> : <ArrowDownIcon className="size-2.5" />}
               {factor >= 1000 ? fmtCount(factor) : Math.round(factor)}×
             </span>
@@ -114,7 +114,14 @@ export const PlanNodeRow = memo(function PlanNodeRow({
   }, [selected])
 
   return (
-    <div ref={ref} className={cn('group relative scroll-mt-9', selected && 'bg-accent/60')}>
+    <div
+      ref={ref}
+      className={cn(
+        'group relative scroll-mt-9',
+        selected &&
+          'bg-accent/70 before:absolute before:inset-y-0 before:left-0 before:z-10 before:w-[3px] before:bg-signal',
+      )}
+    >
       <div
         role="treeitem"
         aria-selected={selected}
@@ -127,7 +134,10 @@ export const PlanNodeRow = memo(function PlanNodeRow({
             onSelect(selected ? null : node.id)
           }
         }}
-        className={cn(ROW_GRID, 'h-9 cursor-default pr-4 outline-none hover:bg-accent/40 focus-visible:bg-accent/50')}
+        className={cn(
+          ROW_GRID,
+          'h-9 cursor-default border-b border-rule/50 pr-4 outline-none hover:bg-accent/40 focus-visible:bg-accent/50',
+        )}
       >
         <div className="flex min-w-0 items-center" style={{ paddingLeft: 8 + depth * INDENT }}>
           {/* tree guides */}
@@ -137,7 +147,7 @@ export const PlanNodeRow = memo(function PlanNodeRow({
               className="pointer-events-none absolute inset-y-0 left-2"
               style={{
                 width: depth * INDENT,
-                backgroundImage: `repeating-linear-gradient(to right, transparent 0 ${INDENT / 2 + 3}px, oklch(1 0 0 / 7%) ${INDENT / 2 + 3}px ${INDENT / 2 + 4}px, transparent ${INDENT / 2 + 4}px ${INDENT}px)`,
+                backgroundImage: `repeating-linear-gradient(to right, transparent 0 ${INDENT / 2 + 3}px, var(--rule) ${INDENT / 2 + 3}px ${INDENT / 2 + 4}px, transparent ${INDENT / 2 + 4}px ${INDENT}px)`,
               }}
             />
           )}
@@ -155,26 +165,17 @@ export const PlanNodeRow = memo(function PlanNodeRow({
           >
             <ChevronRightIcon className={cn('size-3.5 transition-transform', !collapsed && 'rotate-90')} />
           </button>
-          <span
-            className={cn(
-              'mr-2.5 h-5 w-[3px] shrink-0 rounded-full',
-              HEAT_BG[node.heat],
-              node.heat === 'low' && 'opacity-50',
-            )}
-            style={hot ? { boxShadow: '0 0 10px var(--heat-high)' } : undefined}
-          />
-          <span className={cn('shrink-0 font-mono text-[13px] font-medium', hot && 'text-heat-high')}>
-            {node.nodeType}
-          </span>
+          <span className={cn('mr-2.5 size-2 shrink-0 rounded-[1px]', HEAT_BG[node.heat])} />
+          <span className={cn('shrink-0 text-[13.5px] font-semibold', hot && 'text-heat-high')}>{node.nodeType}</span>
           {node.relation && (
-            <span className="ml-1.5 shrink-0 font-mono text-[13px] text-foreground/80">
+            <span className="ml-1.5 shrink-0 font-mono text-[12.5px] text-foreground/85">
               <span className="text-muted-foreground">on </span>
               {node.relation}
               {node.alias && <span className="text-muted-foreground"> {node.alias}</span>}
             </span>
           )}
           {node.indexName && (
-            <span className="ml-1.5 shrink-0 font-mono text-xs text-sky-300/80">
+            <span className="ml-1.5 shrink-0 font-mono text-xs text-chart-2">
               <span className="text-muted-foreground">using </span>
               {node.indexName}
             </span>
@@ -183,7 +184,10 @@ export const PlanNodeRow = memo(function PlanNodeRow({
             <Warnings warnings={node.warnings} />
           </span>
           {node.detail && (
-            <span className="ml-2 min-w-0 truncate font-mono text-[11px] text-muted-foreground" title={node.detail}>
+            <span
+              className="ml-2.5 min-w-0 truncate font-mono text-[11.5px] text-muted-foreground italic"
+              title={node.detail}
+            >
               {node.detail}
             </span>
           )}
@@ -196,7 +200,7 @@ export const PlanNodeRow = memo(function PlanNodeRow({
 
         <Rows node={node} />
 
-        <div className="text-right font-mono text-xs tabular">
+        <div className="text-right font-mono text-[12.5px] tabular">
           {timed ? (
             <span className={cn(hot && 'text-heat-high', node.heat === 'medium' && 'text-heat-medium')}>
               {fmtMs(node.selfTimeMs)}
@@ -207,13 +211,13 @@ export const PlanNodeRow = memo(function PlanNodeRow({
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted/60">
+          <div className="h-1 flex-1 overflow-hidden bg-rule">
             <div
-              className={cn('h-full rounded-full', HEAT_BG[node.heat], node.heat === 'low' && 'opacity-60')}
+              className={cn('h-full', HEAT_BG[node.heat])}
               style={{ width: `${Math.max(node.share * 100, node.share > 0 ? 2 : 0)}%` }}
             />
           </div>
-          <span className="w-9 text-right font-mono text-[10px] text-muted-foreground tabular">
+          <span className="w-10 text-right font-mono text-[11px] text-muted-foreground tabular">
             {fmtPct(node.share)}
           </span>
         </div>

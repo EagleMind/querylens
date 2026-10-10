@@ -3,7 +3,7 @@ import {
   Loader2Icon,
   PencilLineIcon,
   SearchIcon,
-  LightbulbIcon,
+  NotebookPenIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from 'lucide-react'
@@ -65,8 +65,8 @@ function Row({
           <ColorDot color={color} />
           <span className="text-foreground/90">{entry.connectionName}</span>
           <EngineBadge engine={entry.engine} />
-          <span className="font-mono text-[9px] tracking-wider uppercase">{entry.mode}</span>
-          {entry.hasSuggestions && <LightbulbIcon className="size-3 text-primary" />}
+          <span className="italic">{entry.mode === 'analyze' ? 'executed' : 'estimated'}</span>
+          {entry.hasSuggestions && <NotebookPenIcon className="size-3 text-foreground/70" />}
         </div>
         <p className="line-clamp-2 font-mono text-xs/relaxed text-foreground/85">{entry.sqlPreview}</p>
       </div>
@@ -204,7 +204,7 @@ export function HistoryRoute() {
         </EmptyState>
       ) : (
         <ScrollArea className="min-h-0 flex-1">
-          <div className="grid grid-cols-[minmax(0,1fr)_110px_90px_auto] gap-4 border-b bg-panel px-4 py-2 font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+          <div className="grid grid-cols-[minmax(0,1fr)_110px_90px_auto] gap-4 border-b bg-panel px-4 py-2 text-[12px] font-semibold text-muted-foreground">
             <span>Query</span>
             <span className="text-right">Time</span>
             <span className="text-right">Warnings</span>

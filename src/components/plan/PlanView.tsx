@@ -14,8 +14,8 @@ import { PlanTree } from './PlanTree'
 function Running() {
   return (
     <div className="space-y-4 p-4">
-      <div className="relative h-1 overflow-hidden rounded-full bg-muted/50">
-        <div className="absolute inset-y-0 w-1/4 animate-scan rounded-full bg-linear-to-r from-transparent via-primary to-transparent" />
+      <div className="relative h-0.5 overflow-hidden bg-rule">
+        <div className="absolute inset-y-0 w-1/4 animate-sweep bg-signal" />
       </div>
       <div className="grid grid-cols-5 gap-4">
         {Array.from({ length: 5 }, (_, i) => (
@@ -73,7 +73,7 @@ export function PlanView({
   if (error) return <ErrorView error={error} />
   if (!analysis) {
     return (
-      <EmptyState icon={NetworkIcon} title="No plan yet" className="grid-paper">
+      <EmptyState icon={NetworkIcon} title="No plan yet" className="blueprint">
         Write a query above and press{' '}
         <span className="inline-flex gap-0.5 align-middle">
           <Kbd>{modKey}</Kbd>

@@ -13,7 +13,7 @@ made to the original May 2026 spec.
 |---|---|---|
 | Desktop runtime | **Tauri 2** | Native webview (WebView2 / WKWebView / WebKitGTK), Rust core, small installers. |
 | UI | **React 19 + TypeScript + Vite** | |
-| Components | **shadcn/ui** (Radix) + **Tailwind CSS v4** | Dark theme only in the MVP. Geist Sans / Geist Mono. |
+| Components | **shadcn/ui** (Radix) + **Tailwind CSS v4** | Dark theme only in the MVP. Bricolage Grotesque, Hanken Grotesk, Fragment Mono. |
 | SQL editor | **CodeMirror 6** | Much smaller than Monaco, and works well in every Tauri webview. |
 | Server state | **TanStack Query** | Connections, history and settings come from Rust and are cached and invalidated here. |
 | UI state | **Zustand** | Editor text, selected connection, current analysis, AI stream state. |
@@ -357,9 +357,18 @@ Errors are `AppError { kind: "validation" | "not_found" | "connection" | "databa
 - **AI panel.** An empty state with a CTA when the LLM isn't configured, a "Get
   suggestions" button, a live activity log, progressive cards (severity, title, target
   node chip that highlights the node, explanation, Copy fix), and Stop / Regenerate.
-- **Visual language.** shadcn dark (neutral base) with one teal accent
-  (`oklch(0.78 0.14 175)`, close to `#00D4AA`). Heat is red / amber / emerald. Spacing
-  is tight and numbers are monospace with tabular figures.
+- **Brand: "blueprint & signal".** The look borrows from technical drawings, not the
+  generic dark-dev-tool aesthetic:
+  - **Paper and ink:** deep ink-blue paper (`oklch(0.2 0.032 262)`) with cream ink and
+    hairline rules.
+  - **Signal:** one signal yellow (`oklch(0.88 0.165 98)`), used only for primary actions,
+    the active marker and the selection.
+  - **Plan heat:** a cool → hot temperature ramp (slate → ochre → vermilion), reserved for
+    plan data.
+  - **Shapes:** small radii, square swatches, and no glows or gradients.
+  - **Type:** Bricolage Grotesque (wordmark, headings, big figures), Hanken Grotesk (UI)
+    and Fragment Mono (SQL, figures, plan conditions in italic).
+  - **Logo:** a "Q" whose tail is a plan branch (`└─■`), a lens plus a tree.
 
 ---
 

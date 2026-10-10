@@ -1,4 +1,3 @@
-import { ShieldCheckIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
@@ -11,13 +10,29 @@ import { cn } from '@/lib/utils'
 
 import { TimeShareBar } from './TimeShareBar'
 
-function Metric({ label, value, unit, accent }: { label: string; value: ReactNode; unit?: string; accent?: string }) {
+function Metric({
+  label,
+  value,
+  unit,
+  className,
+}: {
+  label: string
+  value: ReactNode
+  unit?: string
+  className?: string
+}) {
   return (
-    <div className="min-w-0">
-      <div className="font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase">{label}</div>
-      <div className={cn('flex items-baseline gap-1 font-mono text-lg leading-tight font-medium tabular', accent)}>
+    <div className="min-w-0 border-l border-rule pl-3 first:border-l-0 first:pl-0">
+      <div className="text-[11.5px] text-muted-foreground">{label}</div>
+      <div
+        className={cn(
+          'flex items-baseline gap-1 font-display text-[26px] leading-tight font-semibold tabular',
+          className,
+        )}
+        style={{ fontStretch: '85%' }}
+      >
         {value}
-        {unit && <span className="text-xs font-normal text-muted-foreground">{unit}</span>}
+        {unit && <span className="font-sans text-xs font-normal text-muted-foreground">{unit}</span>}
       </div>
     </div>
   )
@@ -31,57 +46,50 @@ function splitMs(ms: number | null): [string, string] {
 
 export function PlanSummary({ analysis, isReplay }: { analysis: AnalysisResult; isReplay: boolean }) {
   const { data: connections } = useConnections()
-  const color = connections?.find((c) => c.id === analysis.connectionId)?.color ?? '#64748b'
+  const color = connections?.find((c) => c.id === analysis.connectionId)?.color ?? '#7c8aa5'
   const analyzed = analysis.mode === 'analyze'
   const [execValue, execUnit] = splitMs(analysis.executionTimeMs)
   const [planValue, planUnit] = splitMs(analysis.planningTimeMs)
 
   return (
-    <div className="space-y-3 border-b bg-panel px-4 py-3">
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+    <div className="space-y-4 border-b bg-panel px-5 pt-3.5 pb-4">
+      <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground">
         <ColorDot color={color} />
-        <span className="font-medium text-foreground">{analysis.connectionName}</span>
+        <span className="font-semibold text-foreground">{analysis.connectionName}</span>
         <EngineBadge engine={analysis.engine} />
+        <span className="text-foreground/25">/</span>
         <Tooltip>
           <TooltipTrigger asChild>
-            <span
-              className={cn(
-                'inline-flex h-4 items-center gap-1 rounded-[3px] px-1 font-mono text-[9px] font-medium tracking-wider',
-                analyzed ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
-              )}
-            >
-              {analyzed && <ShieldCheckIcon className="size-2.5" />}
-              {analyzed ? 'ANALYZE · ROLLED BACK' : 'ESTIMATE'}
+            <span className="cursor-default border-b border-dotted border-muted-foreground/60">
+              {analyzed ? 'executed, rolled back' : 'estimated, not executed'}
             </span>
           </TooltipTrigger>
           <TooltipContent className="max-w-xs">
             {analyzed
-              ? 'The statement really executed, inside a transaction that was rolled back. Non-transactional side effects (sequences, dblink, NOTIFY) may still occur.'
-              : 'Planner estimates only — the statement was not executed.'}
+              ? 'The statement really ran, inside a transaction that was rolled back. Non-transactional side effects (sequences, dblink, NOTIFY) may still occur.'
+              : 'Planner estimates only. The statement was not executed.'}
           </TooltipContent>
         </Tooltip>
-        <span className="ml-auto flex items-center gap-2">
-          {isReplay && (
-            <span className="rounded-[3px] bg-muted px-1 font-mono text-[9px] tracking-wider">FROM HISTORY</span>
-          )}
+        <span className="ml-auto flex items-center gap-3">
+          {isReplay && <span className="italic">from history</span>}
           <span>{fmtRelative(analysis.analyzedAt)}</span>
           <CopyButton value={analysis.rawPlan} label="Raw plan" variant="ghost" />
         </span>
       </div>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div className="grid grid-cols-5 gap-3">
         {analyzed ? (
-          <Metric label="Execution" value={execValue} unit={execUnit} accent="text-primary" />
+          <Metric label="Execution" value={execValue} unit={execUnit} />
         ) : (
-          <Metric label="Total cost" value={fmtCount(analysis.totalCost)} accent="text-primary" />
+          <Metric label="Total cost" value={fmtCount(analysis.totalCost)} />
         )}
         <Metric label="Planning" value={planValue} unit={planUnit} />
         <Metric label={analyzed ? 'Est. cost' : 'Mode'} value={analyzed ? fmtCount(analysis.totalCost) : 'plan'} />
         <Metric label="Operators" value={analysis.nodeCount} />
         <Metric
-          label="Warnings"
+          label="Findings"
           value={analysis.warningsCount}
-          accent={analysis.warningsCount > 0 ? 'text-heat-medium' : 'text-heat-low'}
+          className={analysis.warningsCount > 0 ? 'text-heat-medium' : 'text-ok'}
         />
       </div>
 

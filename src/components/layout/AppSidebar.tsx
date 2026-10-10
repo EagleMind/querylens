@@ -13,6 +13,7 @@ import { useState } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router'
 
 import type { Connection } from '@/bindings/Connection'
+import { LogoMark, Wordmark } from '@/components/brand/Logo'
 import { ColorDot, EngineBadge } from '@/components/shared/bits'
 import {
   AlertDialog,
@@ -58,15 +59,9 @@ const NAV = [
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ]
 
-export function LensMark({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 32 32" fill="none" className={className} aria-hidden>
-      <circle cx="14" cy="14" r="8" stroke="currentColor" strokeWidth="2.5" />
-      <path d="M20 20 26 26" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-      <path d="M10.5 16.5v-2M14 16.5v-5M17.5 16.5v-3.5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
-    </svg>
-  )
-}
+/** Active item: a signal-yellow tick on the left edge instead of a filled pill. */
+const ACTIVE =
+  'relative data-[active=true]:bg-sidebar-accent data-[active=true]:font-semibold data-[active=true]:before:absolute data-[active=true]:before:inset-y-1.5 data-[active=true]:before:-left-2 data-[active=true]:before:w-[3px] data-[active=true]:before:rounded-r-sm data-[active=true]:before:bg-signal'
 
 export function AppSidebar() {
   const { pathname } = useLocation()
@@ -85,13 +80,8 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="h-12 justify-center border-b border-sidebar-border px-3">
         <div className="flex items-center gap-2 overflow-hidden">
-          <div className="relative flex size-6 shrink-0 items-center justify-center text-primary">
-            <div className="absolute inset-0 rounded-md bg-primary/15 blur-md" />
-            <LensMark className="relative size-6" />
-          </div>
-          <span className="truncate text-[15px] font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
-            Query<span className="text-primary">Lens</span>
-          </span>
+          <LogoMark className="size-[22px] shrink-0 text-foreground" />
+          <Wordmark className="group-data-[collapsible=icon]:hidden" />
         </div>
       </SidebarHeader>
 
@@ -101,7 +91,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {NAV.map((item) => (
                 <SidebarMenuItem key={item.to}>
-                  <SidebarMenuButton asChild isActive={pathname === item.to} tooltip={item.label}>
+                  <SidebarMenuButton asChild isActive={pathname === item.to} tooltip={item.label} className={ACTIVE}>
                     <NavLink to={item.to}>
                       <item.icon />
                       <span>{item.label}</span>
@@ -133,6 +123,7 @@ export function AppSidebar() {
                 <SidebarMenuItem key={c.id}>
                   <SidebarMenuButton
                     isActive={c.id === connectionId}
+                    className={ACTIVE}
                     tooltip={c.name}
                     onClick={() => {
                       setConnectionId(c.id)
@@ -173,7 +164,7 @@ export function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton asChild size="lg" tooltip="Advisor">
               <NavLink to="/settings">
-                <LightbulbIcon className="text-primary" />
+                <LightbulbIcon className="text-foreground/70" />
                 <div className="grid min-w-0 leading-tight">
                   <span className="truncate text-xs font-medium">{provider?.label ?? 'Advisor'}</span>
                   <span className="truncate font-mono text-[10px] text-muted-foreground">

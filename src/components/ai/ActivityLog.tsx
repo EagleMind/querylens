@@ -15,7 +15,7 @@ function Entry({ a, running }: { a: Activity; running: boolean }) {
         className="flex w-full items-center gap-2 py-1 text-left text-xs disabled:cursor-default"
       >
         {running ? (
-          <Loader2Icon className="size-3 shrink-0 animate-spin text-primary" />
+          <Loader2Icon className="size-3 shrink-0 animate-spin text-signal" />
         ) : (
           <CheckIcon className="size-3 shrink-0 text-muted-foreground" />
         )}
@@ -42,7 +42,7 @@ function Entry({ a, running }: { a: Activity; running: boolean }) {
 export function ActivityLog({ activities, live }: { activities: Activity[]; live: boolean }) {
   if (!activities.length) return null
   return (
-    <ol className="rounded-lg border border-dashed px-3 py-1.5">
+    <ol className="space-y-0.5">
       {activities.map((a, i) => (
         <Entry key={a.id} a={a} running={live && i === activities.length - 1} />
       ))}

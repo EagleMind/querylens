@@ -1,21 +1,28 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
-@import '@fontsource-variable/plus-jakarta-sans';
-@import '@fontsource-variable/jetbrains-mono';
+@import '@fontsource-variable/bricolage-grotesque/standard.css';
+@import '@fontsource-variable/hanken-grotesk';
+@import '@fontsource/fragment-mono';
+@import '@fontsource/fragment-mono/400-italic.css';
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-heading: var(--font-sans);
-  --font-sans: 'Plus Jakarta Sans Variable', ui-sans-serif, sans-serif;
-  --font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+  --font-display: 'Bricolage Grotesque Variable', ui-sans-serif, sans-serif;
+  --font-heading: var(--font-display);
+  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, sans-serif;
+  --font-mono: 'Fragment Mono', ui-monospace, monospace;
 
   --color-heat-high: var(--heat-high);
   --color-heat-medium: var(--heat-medium);
   --color-heat-low: var(--heat-low);
   --color-panel: var(--panel);
   --color-panel-raised: var(--panel-raised);
+  --color-signal: var(--signal);
+  --color-signal-foreground: var(--signal-foreground);
+  --color-rule: var(--rule);
+  --color-ok: var(--ok);
 
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -58,52 +65,64 @@
 }
 
 /*
- * QueryLens is dark-only for the MVP. Near-black with a faint cool cast, one teal
- * accent for interaction, and heat colors reserved strictly for plan data.
+ * QueryLens — "blueprint & signal".
+ * Ink-blue paper, cream ink, hairline rules. One signal yellow marks what you act on.
+ * Plan heat runs cool → hot (slate → ochre → vermilion) and is reserved for data.
  */
 :root,
 .dark {
-  --radius: 0.5rem;
+  --radius: 0.3rem;
 
-  --background: oklch(0.155 0.006 255);
-  --foreground: oklch(0.95 0.004 255);
-  --panel: oklch(0.175 0.007 255);
-  --panel-raised: oklch(0.2 0.008 255);
-  --card: oklch(0.185 0.007 255);
-  --card-foreground: oklch(0.95 0.004 255);
-  --popover: oklch(0.2 0.008 255);
-  --popover-foreground: oklch(0.95 0.004 255);
-  --primary: oklch(0.8 0.13 178);
-  --primary-foreground: oklch(0.18 0.03 190);
-  --secondary: oklch(0.24 0.008 255);
-  --secondary-foreground: oklch(0.93 0.004 255);
-  --muted: oklch(0.235 0.008 255);
-  --muted-foreground: oklch(0.66 0.012 255);
-  --accent: oklch(0.25 0.01 255);
-  --accent-foreground: oklch(0.96 0.004 255);
-  --destructive: oklch(0.68 0.19 22);
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 11%);
-  --ring: oklch(0.8 0.13 178 / 60%);
+  /* paper */
+  --background: oklch(0.2 0.032 262);
+  --panel: oklch(0.225 0.034 262);
+  --panel-raised: oklch(0.255 0.036 262);
+  --card: oklch(0.235 0.034 262);
+  --popover: oklch(0.255 0.036 262);
+  --sidebar: oklch(0.175 0.03 262);
 
-  --heat-high: oklch(0.68 0.2 25);
-  --heat-medium: oklch(0.8 0.15 75);
-  --heat-low: oklch(0.72 0.13 165);
+  /* ink */
+  --foreground: oklch(0.93 0.025 85);
+  --card-foreground: var(--foreground);
+  --popover-foreground: var(--foreground);
+  --muted-foreground: oklch(0.7 0.03 250);
+  --rule: oklch(0.93 0.025 85 / 7%);
 
-  --chart-1: oklch(0.8 0.13 178);
-  --chart-2: oklch(0.7 0.12 230);
-  --chart-3: oklch(0.75 0.14 300);
-  --chart-4: oklch(0.8 0.15 75);
-  --chart-5: oklch(0.68 0.2 25);
+  /* signal */
+  --signal: oklch(0.88 0.165 98);
+  --signal-foreground: oklch(0.2 0.032 262);
+  --primary: var(--signal);
+  --primary-foreground: var(--signal-foreground);
 
-  --sidebar: oklch(0.135 0.006 255);
-  --sidebar-foreground: oklch(0.9 0.005 255);
-  --sidebar-primary: oklch(0.8 0.13 178);
-  --sidebar-primary-foreground: oklch(0.18 0.03 190);
-  --sidebar-accent: oklch(0.21 0.008 255);
-  --sidebar-accent-foreground: oklch(0.96 0.004 255);
-  --sidebar-border: oklch(1 0 0 / 7%);
-  --sidebar-ring: oklch(0.8 0.13 178 / 60%);
+  --secondary: oklch(0.28 0.036 262);
+  --secondary-foreground: var(--foreground);
+  --muted: oklch(0.27 0.035 262);
+  --accent: oklch(0.29 0.04 262);
+  --accent-foreground: var(--foreground);
+  --destructive: oklch(0.68 0.19 32);
+  --ok: oklch(0.8 0.11 155);
+  --border: oklch(0.93 0.025 85 / 10%);
+  --input: oklch(0.93 0.025 85 / 13%);
+  --ring: oklch(0.88 0.165 98 / 55%);
+
+  /* heat: cool → hot */
+  --heat-low: oklch(0.62 0.06 245);
+  --heat-medium: oklch(0.8 0.14 72);
+  --heat-high: oklch(0.67 0.2 33);
+
+  --chart-1: var(--signal);
+  --chart-2: oklch(0.72 0.09 230);
+  --chart-3: oklch(0.76 0.1 150);
+  --chart-4: var(--heat-medium);
+  --chart-5: var(--heat-high);
+
+  --sidebar-foreground: var(--foreground);
+  --sidebar-primary: var(--signal);
+  --sidebar-primary-foreground: var(--signal-foreground);
+  --sidebar-accent: oklch(0.24 0.036 262);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-border: var(--rule);
+  --sidebar-ring: var(--ring);
 
   color-scheme: dark;
 }
@@ -114,9 +133,16 @@
   }
   html {
     @apply font-sans antialiased;
+    font-size: 14.5px;
   }
   body {
     @apply bg-background text-foreground overflow-hidden select-none;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-display;
+    font-stretch: 90%;
   }
   input,
   textarea,
@@ -125,7 +151,7 @@
     @apply select-text;
   }
   ::selection {
-    background: oklch(0.8 0.13 178 / 28%);
+    background: oklch(0.88 0.165 98 / 30%);
   }
 }
 
@@ -136,24 +162,21 @@
     'zero' 1;
 }
 
-/* Faint measurement grid behind data panes. */
-@utility grid-paper {
-  background-image:
-    linear-gradient(to right, oklch(1 0 0 / 2.5%) 1px, transparent 1px),
-    linear-gradient(to bottom, oklch(1 0 0 / 2.5%) 1px, transparent 1px);
-  background-size: 24px 24px;
+/* Blueprint field: a quiet registration grid for empty canvases. */
+@utility blueprint {
+  background-image: radial-gradient(circle at 1px 1px, oklch(0.93 0.025 85 / 9%) 1px, transparent 0);
+  background-size: 22px 22px;
 }
 
-/* Thin, unobtrusive scrollbars (WebView2 / WebKit). */
 * {
   scrollbar-width: thin;
-  scrollbar-color: oklch(1 0 0 / 12%) transparent;
+  scrollbar-color: oklch(0.93 0.025 85 / 14%) transparent;
 }
 
 @keyframes ql-rise {
   from {
     opacity: 0;
-    transform: translateY(4px);
+    transform: translateY(3px);
   }
   to {
     opacity: 1;
@@ -161,17 +184,18 @@
   }
 }
 @utility animate-rise {
-  animation: ql-rise 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: ql-rise 220ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
-@keyframes ql-scan {
+/* Indeterminate progress: a ruler tick sweeping across. */
+@keyframes ql-sweep {
   0% {
     transform: translateX(-100%);
   }
   100% {
-    transform: translateX(400%);
+    transform: translateX(500%);
   }
 }
-@utility animate-scan {
-  animation: ql-scan 1.4s ease-in-out infinite;
+@utility animate-sweep {
+  animation: ql-sweep 1.6s cubic-bezier(0.6, 0, 0.4, 1) infinite;
 }

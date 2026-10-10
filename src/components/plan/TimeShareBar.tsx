@@ -9,10 +9,11 @@ import { useWorkspace } from '@/store/workspace'
 import { HEAT_BG, flatten, nodeLabel } from './heat'
 
 const MIN_SEGMENT = 0.015
+const TICKS = [0, 25, 50, 75, 100]
 
 /**
- * "Where the time goes": one stacked bar, a segment per operator sized by its
- * exclusive share. The hottest operator is unmissable before reading a single row.
+ * "Where the time goes", drawn as a measuring ruler: one segment per operator sized by
+ * its exclusive share, hottest first, with quarter ticks underneath.
  */
 export function TimeShareBar({ analysis }: { analysis: AnalysisResult }) {
   const selectedNodeId = useWorkspace((s) => s.selectedNodeId)
@@ -29,42 +30,53 @@ export function TimeShareBar({ analysis }: { analysis: AnalysisResult }) {
   if (segments.length === 0) return null
 
   return (
-    <div className="space-y-1.5">
-      <div className="flex h-2.5 w-full gap-px overflow-hidden rounded-full bg-muted/40">
-        {segments.map((n, i) => (
-          <Tooltip key={n.id}>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => selectNode(n.id)}
-                className={cn(
-                  'h-full transition-[opacity,filter] hover:brightness-125 animate-rise',
-                  HEAT_BG[n.heat],
-                  selectedNodeId && selectedNodeId !== n.id && 'opacity-35',
-                  n.heat === 'low' && 'opacity-60',
-                )}
-                style={{ width: `${n.share * 100}%`, animationDelay: `${i * 40}ms` }}
-              />
-            </TooltipTrigger>
-            <TooltipContent className="font-mono text-xs">
-              <span className="text-muted-foreground">{n.id}</span> {nodeLabel(n)} ·{' '}
-              {timed ? fmtMs(n.selfTimeMs) : `cost ${Math.round(n.selfCost ?? 0)}`} · {fmtPct(n.share)}
-            </TooltipContent>
-          </Tooltip>
-        ))}
-        {rest > 0 && <div className="h-full bg-muted-foreground/25" style={{ width: `${rest * 100}%` }} />}
+    <div className="space-y-2">
+      <div>
+        <div className="flex h-3 w-full divide-x divide-background overflow-hidden rounded-[2px] bg-muted">
+          {segments.map((n) => (
+            <Tooltip key={n.id}>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={() => selectNode(n.id)}
+                  className={cn(
+                    'h-full transition-opacity hover:opacity-80',
+                    HEAT_BG[n.heat],
+                    selectedNodeId && selectedNodeId !== n.id && 'opacity-30',
+                  )}
+                  style={{ width: `${n.share * 100}%` }}
+                />
+              </TooltipTrigger>
+              <TooltipContent className="font-mono text-xs">
+                {nodeLabel(n)} · {timed ? fmtMs(n.selfTimeMs) : `cost ${Math.round(n.selfCost ?? 0)}`} ·{' '}
+                {fmtPct(n.share)}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+          {rest > 0 && <div className="h-full bg-muted-foreground/30" style={{ width: `${rest * 100}%` }} />}
+        </div>
+        <div className="relative mt-0.5 h-2">
+          {TICKS.map((t) => (
+            <span
+              key={t}
+              className="absolute top-0 h-1.5 w-px bg-foreground/25"
+              style={{ left: `calc(${t}% - ${t === 100 ? 1 : 0}px)` }}
+            />
+          ))}
+        </div>
       </div>
-      <div className="flex items-center gap-3 overflow-hidden font-mono text-[10px] text-muted-foreground">
-        {segments.slice(0, 3).map((n) => (
+      <div className="flex items-center gap-4 overflow-hidden text-[12px] text-muted-foreground">
+        {segments.slice(0, 3).map((n, i) => (
           <button
             key={n.id}
             type="button"
             onClick={() => selectNode(n.id)}
             className="flex min-w-0 items-center gap-1.5 hover:text-foreground"
           >
-            <span className={cn('size-1.5 shrink-0 rounded-full', HEAT_BG[n.heat])} />
+            <span className="font-mono text-[10.5px] text-foreground/40">{String(i + 1).padStart(2, '0')}</span>
+            <span className={cn('size-2 shrink-0 rounded-[1px]', HEAT_BG[n.heat])} />
             <span className="truncate">{nodeLabel(n)}</span>
-            <span className="text-foreground/80 tabular">{fmtPct(n.share)}</span>
+            <span className="font-mono text-foreground tabular">{fmtPct(n.share)}</span>
           </button>
         ))}
       </div>

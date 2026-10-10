@@ -162,12 +162,12 @@ function SettingsForm({ saved }: { saved: Settings }) {
                     onClick={() => pickProvider(p)}
                     className={cn(
                       'relative flex flex-col items-start gap-2 rounded-lg border bg-card p-3 text-left transition hover:border-foreground/20',
-                      active && 'border-primary/50 bg-primary/[0.06] ring-1 ring-primary/25',
+                      active && 'border-signal bg-accent shadow-[inset_0_-3px_0_var(--signal)]',
                     )}
                   >
-                    <Icon className={cn('size-4', active ? 'text-primary' : 'text-muted-foreground')} />
+                    <Icon className={cn('size-4', active ? 'text-foreground' : 'text-muted-foreground')} />
                     <span className="text-xs font-medium">{PROVIDERS[p].label}</span>
-                    <span className="font-mono text-[9px] tracking-wider text-muted-foreground uppercase">
+                    <span className="font-mono text-[10.5px] text-muted-foreground">
                       {PROVIDERS[p].local ? 'local' : p === 'claude_code' ? 'cli · mcp' : 'cloud'}
                     </span>
                   </button>
@@ -189,7 +189,7 @@ function SettingsForm({ saved }: { saved: Settings }) {
                 <div className="flex items-start justify-between gap-6 rounded-lg border bg-card p-3">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 text-xs font-medium">
-                      <ShieldCheckIcon className="size-3.5 text-primary" /> Verify fixes with EXPLAIN
+                      <ShieldCheckIcon className="size-3.5 text-ok" /> Verify fixes with EXPLAIN
                     </div>
                     <p className="text-[11px]/relaxed text-muted-foreground">
                       Gives Claude a QueryLens MCP tool to EXPLAIN candidate rewrites and indexes on the analyzed
@@ -259,7 +259,7 @@ function SettingsForm({ saved }: { saved: Settings }) {
                       onClick={() => setLlm({ model: m })}
                       className={cn(
                         'rounded border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground hover:text-foreground',
-                        m === llm.model && 'border-primary/50 text-primary',
+                        m === llm.model && 'border-signal text-foreground',
                       )}
                     >
                       {m}
@@ -290,7 +290,7 @@ function SettingsForm({ saved }: { saved: Settings }) {
                 className={cn(
                   'flex items-start gap-2 rounded-md border px-3 py-2 text-xs animate-rise',
                   test.status === 'ok'
-                    ? 'border-heat-low/30 bg-heat-low/5 text-heat-low'
+                    ? 'border-ok/35 text-ok'
                     : 'border-destructive/30 bg-destructive/5 text-destructive',
                 )}
               >
@@ -362,7 +362,7 @@ function SettingsForm({ saved }: { saved: Settings }) {
               </li>
               <li>
                 <PaneLabel className="mr-2 text-foreground/70">Sent to the advisor</PaneLabel>
-                Only when you click Get suggestions: the SQL, the normalized plan, and table schema facts (column names,
+                Only when you click Review plan: the SQL, the normalized plan, and table schema facts (column names,
                 indexes, row counts). Never row data.
               </li>
               <li>

@@ -1,10 +1,9 @@
-import { AlertCircleIcon, KeyRoundIcon, RotateCcwIcon, LightbulbIcon, SquareIcon } from 'lucide-react'
+import { AlertCircleIcon, KeyRoundIcon, RotateCcwIcon, NotebookPenIcon, SquareIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
 import { EmptyState } from '@/components/shared/EmptyState'
-import { PaneLabel } from '@/components/shared/bits'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { useSuggestionStream } from '@/hooks/useSuggestionStream'
@@ -39,10 +38,9 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
 
   return (
     <div className="flex h-full flex-col bg-panel">
-      <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
-        <LightbulbIcon className="size-3.5 text-primary" />
-        <PaneLabel className="text-foreground">Advisor</PaneLabel>
-        <span className="truncate font-mono text-[10px] text-muted-foreground">
+      <div className="flex h-11 shrink-0 items-center gap-2.5 border-b px-4">
+        <h2 className="text-[16px] font-semibold">Advisor</h2>
+        <span className="truncate font-mono text-[11px] text-muted-foreground">
           {streaming
             ? [stream.provider, stream.model].filter(Boolean).join(' · ')
             : result
@@ -73,16 +71,16 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
       </div>
 
       {streaming && (
-        <div className="relative h-px shrink-0 overflow-hidden bg-primary/10">
-          <div className="absolute inset-y-0 w-1/4 animate-scan bg-linear-to-r from-transparent via-primary to-transparent" />
+        <div className="relative h-0.5 shrink-0 overflow-hidden bg-rule">
+          <div className="absolute inset-y-0 w-1/5 animate-sweep bg-signal" />
         </div>
       )}
 
       <ScrollArea className="min-h-0 flex-1">
-        <div className="space-y-3 p-3">
+        <div className="space-y-4 p-4">
           {!analysis && (
-            <EmptyState icon={LightbulbIcon} title="Recommendations appear here" className="py-16">
-              Analyze a query, then ask the advisor to explain the plan and propose fixes.
+            <EmptyState icon={NotebookPenIcon} title="No review yet" className="py-16">
+              Analyze a query, then ask the advisor to review the plan and propose fixes.
             </EmptyState>
           )}
 
@@ -102,20 +100,19 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
           )}
 
           {analysis && !missingKey && stream.status === 'idle' && !result && (
-            <div className="relative overflow-hidden rounded-lg border bg-card p-4 animate-rise">
-              <div className="pointer-events-none absolute -top-16 -right-16 size-40 rounded-full bg-primary/10 blur-3xl" />
-              <p className="text-sm font-medium">Explain this plan and suggest fixes</p>
-              <p className="mt-1 text-xs/relaxed text-muted-foreground">
+            <div className="border-t-2 border-foreground/80 pt-3 animate-rise">
+              <h3 className="text-[17px] font-semibold">Review this plan</h3>
+              <p className="mt-1.5 text-[13px]/relaxed text-muted-foreground">
                 {analysis.warningsCount > 0
-                  ? `${analysis.warningsCount} heuristic warning${analysis.warningsCount > 1 ? 's' : ''} found. `
-                  : 'No heuristic warnings. '}
+                  ? `${analysis.warningsCount} finding${analysis.warningsCount > 1 ? 's' : ''} flagged. `
+                  : 'Nothing flagged by the built-in checks. '}
                 {provider?.label} gets the normalized plan and schema context
                 {providerKind === 'claude_code' && settings?.llm.verifyWithTools
                   ? ', and can test its fixes with EXPLAIN before recommending them.'
                   : '.'}
               </p>
-              <Button size="sm" className="mt-3" onClick={start}>
-                <LightbulbIcon /> Get recommendations
+              <Button className="mt-4" onClick={start}>
+                <NotebookPenIcon /> Review plan
               </Button>
             </div>
           )}
@@ -125,9 +122,9 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
           )}
 
           {stream.status === 'error' && (
-            <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 animate-rise">
+            <div className="space-y-2 rounded-[3px] border border-destructive/40 p-3 animate-rise">
               <div className="flex items-center gap-2 text-xs font-medium text-destructive">
-                <AlertCircleIcon className="size-3.5" /> Couldn't get recommendations
+                <AlertCircleIcon className="size-3.5" /> The review didn't finish
               </div>
               <p className="font-mono text-[11px]/relaxed whitespace-pre-wrap text-destructive/90" data-selectable>
                 {stream.error}
@@ -154,18 +151,18 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
                   key={i}
                   suggestion={s}
                   root={analysis.root}
-                  index={0}
+                  index={i}
                   streaming={i === draft.suggestions.length - 1}
                 />
               ))}
               {!draft.summary && draft.suggestions.length === 0 && (
-                <div className="space-y-2 px-1">
-                  <div className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-                  <div className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-                  <p className="pt-1 text-[11px] text-muted-foreground">
+                <div className="space-y-2">
+                  <div className="h-2.5 w-3/4 animate-pulse bg-muted" />
+                  <div className="h-2.5 w-1/2 animate-pulse bg-muted" />
+                  <p className="pt-1 text-[12px] text-muted-foreground italic">
                     {stream.buffer.length > 0
                       ? `Receiving… ${stream.buffer.length.toLocaleString()} chars`
-                      : 'Thinking it through…'}
+                      : 'Reading the plan…'}
                   </p>
                 </div>
               )}
@@ -189,11 +186,11 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
 
 function Summary({ text }: { text: string }) {
   return (
-    <div className="rounded-lg bg-primary/[0.06] px-3 py-2.5 animate-rise">
-      <PaneLabel className="text-primary/80">Bottleneck</PaneLabel>
-      <p className="mt-1 text-[13px]/relaxed text-pretty" data-selectable>
+    <section className="animate-rise">
+      <h3 className="text-[12px] font-semibold text-muted-foreground">Diagnosis</h3>
+      <p className="mt-1.5 border-l-2 border-signal pl-3 text-[14px]/relaxed text-pretty" data-selectable>
         {text}
       </p>
-    </div>
+    </section>
   )
 }

@@ -4,8 +4,8 @@
     {
       "name": "ui-mock",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev"],
-      "port": 1420
+      "runtimeArgs": ["exec", "vite", "--port", "1430"],
+      "port": 1430
     }
   ]
 }
