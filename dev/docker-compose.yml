@@ -9,6 +9,8 @@ services:
       POSTGRES_DB: shop
       POSTGRES_USER: querylens
       POSTGRES_PASSWORD: querylens
+      # Dev only: lets automated tests connect without touching the OS keychain.
+      POSTGRES_HOST_AUTH_METHOD: trust
     ports:
       - "54329:5432"
     volumes:

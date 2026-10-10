@@ -10,10 +10,17 @@ use crate::error::{AppError, AppResult};
 /// Must match `identifier` in tauri.conf.json.
 pub const APP_ID: &str = "dev.querylens.app";
 
+/// Overrides the data directory (portable installs, tests). Propagated to the MCP
+/// subprocess so both modes keep sharing one database.
+pub const DATA_DIR_ENV: &str = "QUERYLENS_DATA_DIR";
+
 pub fn data_dir() -> AppResult<PathBuf> {
-    let dir = dirs::data_dir()
-        .ok_or_else(|| AppError::internal("Could not determine the OS data directory"))?
-        .join(APP_ID);
+    let dir = match std::env::var_os(DATA_DIR_ENV) {
+        Some(custom) => PathBuf::from(custom),
+        None => dirs::data_dir()
+            .ok_or_else(|| AppError::internal("Could not determine the OS data directory"))?
+            .join(APP_ID),
+    };
     std::fs::create_dir_all(&dir)?;
     Ok(dir)
 }

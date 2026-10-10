@@ -1,0 +1,6 @@
+src/components/ui
+src/bindings
+src/dev/fixtures
+dist
+src-tauri
+pnpm-lock.yaml

@@ -24,5 +24,7 @@ export default defineConfig({
     target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari15',
     minify: !process.env.TAURI_ENV_DEBUG ? 'oxc' : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    // Served from disk by the webview; one larger chunk is fine.
+    chunkSizeWarningLimit: 1500,
   },
 })

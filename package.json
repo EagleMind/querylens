@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "typecheck": "tsc -b --noEmit",
+    "typecheck": "tsc -b",
     "lint": "oxlint",
     "preview": "vite preview",
     "tauri": "tauri",
-    "bindings": "cd src-tauri && cargo test export_bindings"
+    "bindings": "cd src-tauri && cargo test export_bindings",
+    "format": "prettier --write src"
   },
   "dependencies": {
     "@codemirror/lang-sql": "^6.10.0",
@@ -27,7 +28,6 @@
     "class-variance-authority": "^0.7.1",
     "cn": "^0.4.0",
     "lucide-react": "^1.54.0",
-    "next-themes": "^0.4.6",
     "partial-json": "^0.1.7",
     "radix-ui": "^1.7.0",
     "react": "^19.3.0",
@@ -47,6 +47,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.1.2",
     "oxlint": "^1.87.0",
+    "prettier": "^3.9.9",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "vite": "^8.3.4"

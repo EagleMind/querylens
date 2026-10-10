@@ -63,13 +63,23 @@ struct McpConfig(PathBuf);
 
 impl McpConfig {
     fn write(connection_id: &str) -> AppResult<Self> {
-        let exe = std::env::current_exe()?;
+        // The MCP server is this executable in `--mcp` mode. Tests run from a test
+        // harness binary, so they point at the built app via QUERYLENS_MCP_EXE.
+        let exe = match std::env::var_os("QUERYLENS_MCP_EXE") {
+            Some(p) => PathBuf::from(p),
+            None => std::env::current_exe()?,
+        };
+        let mut env = serde_json::Map::new();
+        if let Ok(dir) = std::env::var(paths::DATA_DIR_ENV) {
+            env.insert(paths::DATA_DIR_ENV.into(), dir.into());
+        }
         let config = json!({
             "mcpServers": {
                 MCP_SERVER_NAME: {
                     "type": "stdio",
                     "command": exe,
                     "args": ["--mcp", "--connection", connection_id],
+                    "env": env,
                 }
             }
         });
