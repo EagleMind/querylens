@@ -1,12 +1,17 @@
-import { CheckIcon, CornerDownRightIcon } from 'lucide-react'
+import { CheckIcon, CornerDownRightIcon, Loader2Icon, PlayIcon } from 'lucide-react'
+import { useState } from 'react'
+import { toast } from 'sonner'
 
 import type { PlanNode } from '@/bindings/PlanNode'
 import type { SuggestionSeverity } from '@/bindings/SuggestionSeverity'
 import { findNode, nodeLabel } from '@/components/plan/heat'
 import { CopyButton } from '@/components/shared/CopyButton'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { api } from '@/lib/ipc'
 import type { DraftSuggestion } from '@/lib/suggestions'
 import { cn } from '@/lib/utils'
+import { useUi } from '@/store/ui'
 import { useWorkspace } from '@/store/workspace'
 
 const SEVERITY: Record<SuggestionSeverity, { label: string; swatch: string; text: string }> = {
@@ -21,17 +26,21 @@ export function SuggestionCard({
   root,
   index,
   streaming,
+  analysisId,
 }: {
   suggestion: DraftSuggestion
   root: PlanNode
   index: number
   streaming?: boolean
+  /** Enables "Preview fix" (re-run with the fix applied, then compare). */
+  analysisId?: string
 }) {
   const selectNode = useWorkspace((st) => st.selectNode)
   const selectedNodeId = useWorkspace((st) => st.selectedNodeId)
   const sev = SEVERITY[s.severity ?? 'medium']
   const target = s.nodeId ? findNode(root, s.nodeId) : null
   const active = !!target && selectedNodeId === target.id
+  const evidence = s.evidence ?? (s.verified ? 'measured' : null)
 
   return (
     <article
@@ -53,15 +62,22 @@ export function SuggestionCard({
             <span className={cn('size-2 rounded-[1px]', sev.swatch)} />
             {sev.label}
           </span>
-          {s.verified && (
+          {evidence && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="inline-flex cursor-default items-center gap-1 font-semibold text-ok">
-                  <CheckIcon className="size-3" strokeWidth={3} /> Measured
+                <span
+                  className={cn(
+                    'inline-flex cursor-default items-center gap-1 font-semibold',
+                    evidence === 'measured' ? 'text-ok' : 'text-chart-2',
+                  )}
+                >
+                  <CheckIcon className="size-3" strokeWidth={3} /> {evidence === 'measured' ? 'Measured' : 'Estimated'}
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">
-                This fix was tested with EXPLAIN against your database, inside a rolled-back transaction.
+                {evidence === 'measured'
+                  ? 'Tested against your database with real execution, inside a rolled-back transaction.'
+                  : "Tested with the planner only (e.g. a hypothetical index): the estimate says it helps, but it wasn't executed."}
               </TooltipContent>
             </Tooltip>
           )}
@@ -103,7 +119,45 @@ export function SuggestionCard({
             )}
           </div>
         )}
+        {!streaming && s.sqlFix && analysisId && previewable(s.sqlFix) && (
+          <PreviewFix analysisId={analysisId} fix={s.sqlFix} />
+        )}
       </div>
     </article>
+  )
+}
+
+/** Fixes QueryLens can apply inside a rolled-back transaction to measure them. */
+function previewable(fix: string): boolean {
+  return /^\s*(create\s+(unique\s+)?index|create\s+statistics|set\s|analy[sz]e|select|with)/i.test(fix)
+}
+
+function PreviewFix({ analysisId, fix }: { analysisId: string; fix: string }) {
+  const openCompare = useUi((st) => st.openCompare)
+  const [busy, setBusy] = useState(false)
+  async function run() {
+    setBusy(true)
+    try {
+      const after = await api.previewFix(analysisId, fix)
+      openCompare(analysisId, after.id)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button size="xs" variant="outline" onClick={run} disabled={busy}>
+          {busy ? <Loader2Icon className="animate-spin" /> : <PlayIcon />}
+          {busy ? 'Applying in a rolled-back transaction…' : 'Preview fix'}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72">
+        Re-runs the query with this fix applied inside a transaction that is rolled back, then compares the plans. Large
+        tables use a hypothetical index (estimate) when HypoPG is installed.
+      </TooltipContent>
+    </Tooltip>
   )
 }

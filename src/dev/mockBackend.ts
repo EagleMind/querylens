@@ -18,6 +18,8 @@ import type { HistoryEntry } from '@/bindings/HistoryEntry'
 import type { Settings } from '@/bindings/Settings'
 import type { SuggestionEvent } from '@/bindings/SuggestionEvent'
 import type { SuggestionSet } from '@/bindings/SuggestionSet'
+import type { WhatIfEvent } from '@/bindings/WhatIfEvent'
+import type { WhatIfResult } from '@/bindings/WhatIfResult'
 
 import fixture from './fixtures/postgres-analysis.json'
 
@@ -71,6 +73,8 @@ let settings: Settings = {
 }
 
 const analyses = new Map<string, AnalysisResult>()
+/** Unsaved analyses (fix previews, what-if scenarios). */
+const scratch = new Map<string, AnalysisResult>()
 
 function toEntry(a: AnalysisResult): HistoryEntry {
   return {
@@ -145,9 +149,14 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         return a
       }
       case 'compare_analyses': {
-        const before = analyses.get(String(args.beforeId))!
-        const after = analyses.get(String(args.afterId))!
-        return mockDiff(before, after)
+        const find = (id: unknown) => analyses.get(String(id)) ?? scratch.get(String(id))!
+        return mockDiff(find(args.beforeId), find(args.afterId))
+      }
+      case 'preview_fix': {
+        const base = analyses.get(String(args.analysisId))!
+        const after = { ...base, id: crypto.randomUUID(), analyzedAt: now() }
+        scratch.set(after.id, after)
+        return after
       }
       case 'list_history': {
         const q = String(args.search ?? '').toLowerCase()
@@ -196,6 +205,7 @@ const CANNED: Omit<SuggestionSet, 'createdAt'> = {
         "CREATE INDEX CONCURRENTLY orders_user_id_status_idx\n  ON orders (user_id) INCLUDE (total)\n  WHERE status = 'paid';",
       nodeId: '0.0.0.0.0.0.0',
       verified: true,
+      evidence: 'measured',
     },
     {
       severity: 'medium',
@@ -205,6 +215,7 @@ const CANNED: Omit<SuggestionSet, 'createdAt'> = {
       sqlFix: 'CREATE INDEX CONCURRENTLY users_country_idx ON users (country);',
       nodeId: '0.0.0.0.0.0.1.0',
       verified: false,
+      evidence: null,
     },
     {
       severity: 'low',
@@ -213,6 +224,7 @@ const CANNED: Omit<SuggestionSet, 'createdAt'> = {
       sqlFix: null,
       nodeId: '0.0',
       verified: false,
+      evidence: null,
     },
   ],
 }
@@ -284,4 +296,71 @@ function mockDiff(before: AnalysisResult, after: AnalysisResult): PlanDiff {
     planChanged: true,
     root: walk(before.root),
   }
+}
+
+const WHATIF: WhatIfResult[] = [
+  {
+    scenario: {
+      kind: 'nestloop_off',
+      label: 'Hash/merge joins instead of nested loops',
+      setup: ['SET enable_nestloop = off'],
+      rationale: '',
+    },
+    outcome: 'faster',
+    planChanged: true,
+    before: 103,
+    after: 31,
+    speedup: 3.3,
+    timed: true,
+    analysisId: null,
+    verdict:
+      "3.3× faster without nested loops. The planner's row estimates are wrong (cost model), not the schema. Fix the estimates (ANALYZE, extended statistics) rather than disabling nested loops globally.",
+  },
+  {
+    scenario: { kind: 'work_mem', label: 'work_mem × 4 (16 MB)', setup: ["SET work_mem = '16384kB'"], rationale: '' },
+    outcome: 'no_change',
+    planChanged: false,
+    before: 103,
+    after: 103,
+    speedup: 1,
+    timed: true,
+    analysisId: null,
+    verdict: "Same plan. This lever doesn't matter for this query.",
+  },
+  {
+    scenario: {
+      kind: 'random_page_cost',
+      label: 'SSD cost model (random_page_cost = 1.1)',
+      setup: ['SET random_page_cost = 1.1'],
+      rationale: '',
+    },
+    outcome: 'slower',
+    planChanged: true,
+    before: 103,
+    after: 160,
+    speedup: 0.64,
+    timed: true,
+    analysisId: null,
+    verdict: "1.6× slower. The planner's current choice is right here.",
+  },
+]
+
+export async function mockWhatif(analysisId: string, onEvent: (e: WhatIfEvent) => void): Promise<string> {
+  ;(async () => {
+    onEvent({ type: 'started', scenarios: WHATIF.map((r) => r.scenario) })
+    for (const r of WHATIF) {
+      onEvent({ type: 'running', kind: r.scenario.kind, phase: 'planning' })
+      await sleep(500)
+      if (r.planChanged) {
+        onEvent({ type: 'running', kind: r.scenario.kind, phase: 'profiling' })
+        await sleep(900)
+      }
+      onEvent({ type: 'result', result: r })
+    }
+    const report = { results: WHATIF, summary: WHATIF[0].verdict, createdAt: now() }
+    const a = analyses.get(analysisId)
+    if (a) a.whatif = report
+    onEvent({ type: 'done', report })
+  })()
+  return crypto.randomUUID()
 }

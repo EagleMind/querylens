@@ -1,5 +1,5 @@
 import { AlertCircleIcon, KeyRoundIcon, RotateCcwIcon, NotebookPenIcon, SquareIcon } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router'
 
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
@@ -24,7 +24,7 @@ function Elapsed({ since }: { since: number }) {
   return <span className="font-mono tabular">{((now - since) / 1000).toFixed(1)}s</span>
 }
 
-export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null }) {
+export function SuggestionPanel({ analysis, tabs }: { analysis: AnalysisResult | null; tabs: ReactNode }) {
   const stream = useWorkspace((s) => s.stream)
   const { data: settings } = useSettings()
   const { start, stop } = useSuggestionStream()
@@ -39,7 +39,7 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
   return (
     <div className="flex h-full flex-col bg-panel">
       <div className="flex h-11 shrink-0 items-center gap-2.5 border-b px-4">
-        <h2 className="text-[16px] font-semibold">Advisor</h2>
+        {tabs}
         <span className="truncate font-mono text-[11px] text-muted-foreground">
           {streaming
             ? [stream.provider, stream.model].filter(Boolean).join(' · ')
@@ -174,7 +174,7 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
             <>
               {result.summary && <Summary text={result.summary} />}
               {result.suggestions.map((s, i) => (
-                <SuggestionCard key={i} suggestion={s} root={analysis.root} index={i} />
+                <SuggestionCard key={i} suggestion={s} root={analysis.root} index={i} analysisId={analysis.id} />
               ))}
             </>
           )}
