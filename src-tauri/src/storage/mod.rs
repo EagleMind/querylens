@@ -57,7 +57,41 @@ pub struct Store {
 
 impl Store {
     pub fn open(path: &Path) -> AppResult<Self> {
+        let db = match Self::open_checked(path) {
+            Ok(db) => db,
+            Err(e) => {
+                // A damaged file must never brick the app: keep it for inspection and
+                // start fresh (secrets live in the OS keychain, so nothing is unrecoverable).
+                log::error!("local database unusable ({e}); moving it aside");
+                Self::quarantine(path)?;
+                Self::open_checked(path)?
+            }
+        };
+        Self::init(db)
+    }
+
+    fn open_checked(path: &Path) -> AppResult<Db> {
         let db = Db::open(path)?;
+        let status: String = db.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
+        if status != "ok" {
+            return Err(AppError::internal(format!("integrity check failed: {status}")));
+        }
+        Ok(db)
+    }
+
+    /// Rename the database and its WAL/SHM side files to `*.corrupt-<timestamp>`.
+    fn quarantine(path: &Path) -> AppResult<()> {
+        let stamp = chrono::Utc::now().format("%Y%m%d-%H%M%S");
+        for suffix in ["", "-wal", "-shm"] {
+            let file = std::path::PathBuf::from(format!("{}{suffix}", path.display()));
+            if file.exists() {
+                std::fs::rename(&file, format!("{}.corrupt-{stamp}", file.display()))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn init(db: Db) -> AppResult<Self> {
         // WAL lets the `--mcp` subprocess read while the GUI writes.
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
@@ -133,6 +167,19 @@ mod tests {
         assert!(!all[0].has_password);
         store.delete_connection("c1").unwrap();
         assert!(store.get_connection("c1").is_err());
+    }
+
+    #[test]
+    fn corrupt_file_is_quarantined_and_replaced() {
+        let dir = std::env::temp_dir().join(format!("ql-corrupt-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("querylens.db");
+        std::fs::write(&path, b"this is not a sqlite database, just garbage bytes......").unwrap();
+        let store = Store::open(&path).unwrap();
+        assert!(store.list_connections().unwrap().is_empty());
+        let backups = std::fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().contains(".corrupt-")).count();
+        assert_eq!(backups, 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
