@@ -50,12 +50,30 @@ fn resolve_binary(configured: &str) -> AppResult<PathBuf> {
     [home.join(".local/bin").join(exe), home.join(".claude/local").join(exe), PathBuf::from("/opt/homebrew/bin/claude"), PathBuf::from("/usr/local/bin/claude")]
         .into_iter()
         .find(|p| p.exists())
+        .or_else(|| desktop_bundled(exe))
         .ok_or_else(|| {
             AppError::llm(
                 "Claude Code CLI not found. Install it (https://claude.com/claude-code) and sign in, \
                  or set the path to `claude` in Settings.",
             )
         })
+}
+
+/// The Claude desktop app ships its own CLI under
+/// `<config dir>/Claude/claude-code/<version>/<build>/claude(.exe)`; pick the newest version.
+fn desktop_bundled(exe: &str) -> Option<PathBuf> {
+    let root = dirs::config_dir()?.join("Claude").join("claude-code");
+    let version_key = |p: &Path| -> Vec<u64> {
+        p.file_name()
+            .and_then(|n| n.to_str())
+            .map(|v| v.split('.').filter_map(|x| x.parse().ok()).collect())
+            .unwrap_or_default()
+    };
+    let mut versions: Vec<PathBuf> = std::fs::read_dir(&root).ok()?.flatten().map(|e| e.path()).collect();
+    versions.sort_by_key(|p| std::cmp::Reverse(version_key(p)));
+    versions.into_iter().find_map(|v| {
+        std::fs::read_dir(v).ok()?.flatten().map(|b| b.path().join(exe)).find(|p| p.exists())
+    })
 }
 
 /// Temporary MCP config file, removed when dropped.
@@ -243,4 +261,15 @@ impl LlmProvider for ClaudeCli {
 
 fn display(p: &Path) -> String {
     p.to_string_lossy().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn finds_some_claude_binary_if_installed() {
+        if let Ok(p) = super::resolve_binary("") {
+            println!("resolved claude: {}", p.display());
+            assert!(p.exists());
+        }
+    }
 }

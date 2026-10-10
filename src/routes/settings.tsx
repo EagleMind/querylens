@@ -138,7 +138,7 @@ function SettingsForm({ saved }: { saved: Settings }) {
     <div className="flex h-full flex-col">
       <PageHeader title="Settings">
         <Button size="sm" variant="outline" onClick={onTest} disabled={test.status === 'running'}>
-          {test.status === 'running' ? <Loader2Icon className="animate-spin" /> : <PlugZapIcon />} Test AI provider
+          {test.status === 'running' ? <Loader2Icon className="animate-spin" /> : <PlugZapIcon />} Test advisor
         </Button>
         <Button size="sm" onClick={onSave} disabled={!dirty || save.isPending}>
           {save.isPending ? <Loader2Icon className="animate-spin" /> : <SaveIcon />} Save
@@ -148,8 +148,8 @@ function SettingsForm({ saved }: { saved: Settings }) {
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto max-w-4xl px-8">
           <Section
-            title="AI provider"
-            description="Who explains your plans. Local models keep everything on this machine; Claude Code can verify its fixes against your database."
+            title="Advisor"
+            description="Who explains your plans. Local engines keep everything on this machine; Claude Code can verify its fixes against your database."
           >
             <div className="grid grid-cols-5 gap-2">
               {(Object.keys(PROVIDERS) as LlmProviderKind[]).map((p) => {
@@ -361,7 +361,7 @@ function SettingsForm({ saved }: { saved: Settings }) {
                 the OS keychain.
               </li>
               <li>
-                <PaneLabel className="mr-2 text-foreground/70">Sent to the AI</PaneLabel>
+                <PaneLabel className="mr-2 text-foreground/70">Sent to the advisor</PaneLabel>
                 Only when you click Get suggestions: the SQL, the normalized plan, and table schema facts (column names,
                 indexes, row counts). Never row data.
               </li>

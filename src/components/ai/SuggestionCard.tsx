@@ -59,7 +59,7 @@ export function SuggestionCard({
                 </span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs">
-                The model measured this fix with EXPLAIN against your database (in a rolled-back transaction).
+                The advisor measured this fix with EXPLAIN against your database (in a rolled-back transaction).
               </TooltipContent>
             </Tooltip>
           )}

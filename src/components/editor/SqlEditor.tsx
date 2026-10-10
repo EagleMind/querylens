@@ -20,7 +20,7 @@ const theme = createTheme({
     gutterBackground: 'transparent',
     gutterForeground: 'oklch(0.45 0.01 255)',
     gutterBorder: 'transparent',
-    fontFamily: '"Geist Mono Variable", ui-monospace, monospace',
+    fontFamily: '"JetBrains Mono Variable", ui-monospace, monospace',
   },
   styles: [
     { tag: [t.keyword, t.operatorKeyword], color: 'oklch(0.8 0.13 178)' },

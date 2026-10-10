@@ -104,5 +104,15 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 - [x] Settings screen + Test LLM
 
 ### Ship
+- [x] Windows release build (`.msi` + NSIS `.exe`)
 - [ ] GitHub Actions matrix + release artifacts
 - [ ] Manual QA on macOS + Linux (Windows verified during development)
+
+### Verified so far
+- 44 unit tests: parsers, self-time math, every warning rule, SQL sanitizing, storage.
+- Live Postgres: DML really is rolled back, multi-statement input is rejected,
+  model-issued writes fail read-only, and a `setup_sql` index is measured and leaves
+  no trace.
+- Live Claude Code + MCP: Claude test-built `(user_id, created_at DESC)` inside a
+  rolled-back transaction, measured 47 ms → 0.17 ms, and returned it as a *verified*
+  suggestion.

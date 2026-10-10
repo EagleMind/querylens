@@ -79,12 +79,13 @@ and more direct for this.
 │   │   ├── editor/            # SqlEditor, AnalyzeToolbar
 │   │   ├── plan/              # PlanView, PlanTree, PlanNodeRow, PlanSummary, NodeDetails
 │   │   ├── ai/                # SuggestionPanel, SuggestionCard, ActivityLog
-│   │   └── shared/            # CopyButton, EmptyState, EngineBadge
+│   │   └── shared/            # CopyButton, EmptyState, bits (EngineBadge, ColorDot, Kbd)
 │   ├── hooks/                 # useAnalyze, useSuggestionStream, useHotkey
 │   ├── lib/                   # ipc.ts, queries.ts, format.ts, suggestions.ts, utils.ts
 │   ├── routes/                # analyze.tsx, history.tsx, settings.tsx
 │   ├── store/                 # workspace.ts
-│   └── dev/                   # browser-only mock backend (UI work without Tauri)
+│   └── dev/                   # browser-only mock backend + real captured plan fixture
+├── dev/                       # docker-compose Postgres with seeded demo data
 └── src-tauri/
     └── src/
         ├── main.rs            # `--mcp` → MCP server, otherwise GUI
@@ -99,7 +100,9 @@ and more direct for this.
         ├── llm/               # mod (trait), prompt, parse, openai_compat, claude_cli
         ├── mcp/               # JSON-RPC 2.0 stdio server
         ├── storage/           # mod (Store + migrations), connections, analyses, settings
+        ├── state.rs           # AppState (store + in-flight LLM task handles)
         └── secrets.rs
+    └── tests/                 # live_postgres.rs, live_claude.rs (opt-in, env-gated)
 ```
 
 ---
@@ -183,6 +186,11 @@ interface SuggestionSet { summary: string; suggestions: Suggestion[]; provider: 
    ```
    DML is analyzed and then rolled back. Known non-transactional side effects (sequence
    `nextval`, `dblink`, NOTIFY after commit…) are documented in the UI tooltip.
+   Model-issued queries (MCP) additionally run with `SET LOCAL transaction_read_only = on`
+   after their optional `setup_sql`, so a prompt-injected `UPDATE`/`DELETE` can't execute
+   at all. `setup_sql` is restricted to a single `CREATE [UNIQUE] INDEX`, `SET` (forced to
+   `SET LOCAL`) or `ANALYZE`, and `CONCURRENTLY` is stripped because it can't run in a
+   transaction.
    **DuckDB** file databases are opened `read_only`. `:memory:` is useful for querying
    Parquet/CSV with `read_parquet()`. Uses `EXPLAIN (ANALYZE, FORMAT JSON)`.
 3. **Parse** the engine output into a `PlanNode` tree (`plan/postgres.rs`, `plan/duckdb.rs`).
@@ -257,9 +265,11 @@ mode**, scoped to the connection being analyzed:
 ```
 
 The MCP server (`src-tauri/src/mcp/`) speaks JSON-RPC 2.0 over stdio and exposes:
-- `explain_query(sql, analyze?)` runs through the same safety envelope (transaction +
-  rollback + timeout) and returns a compact plan summary. Claude uses it to check that
-  a rewrite is actually faster.
+- `explain_query(sql, analyze?, setup_sql?)` runs through the same safety envelope
+  (transaction + rollback + timeout, read-only after setup) and returns a compact plan
+  summary. Claude uses it to check that a rewrite is actually faster, and passes a
+  candidate `CREATE INDEX` as `setup_sql` to measure an index *before* recommending it.
+  The index is built inside the transaction and vanishes on rollback.
 - `table_info(table)` returns columns, indexes, row estimate and size.
 
 Built-in tools (Bash, file edits…) are disabled with `--tools ""`. Claude can only
@@ -324,6 +334,7 @@ Keychain entries use service `querylens`, with accounts `conn:<id>` and `llm:api
 | `get_analysis` | `id` | `AnalysisResult` |
 | `delete_analysis` / `clear_history` | `id` / – | – |
 | `get_settings` / `save_settings` | – / `Settings` | `Settings` |
+| `list_llm_models` | `LlmSettings` (unsaved form values) | `string[]` |
 | `test_llm` | – | `{ latencyMs, reply }` |
 | `get_suggestions` | `analysisId, Channel<SuggestionEvent>` | `requestId` |
 | `cancel_suggestions` | `requestId` | – |
@@ -363,8 +374,20 @@ cd src-tauri && cargo test  # parser/scoring unit tests + regenerates src/bindin
 pnpm tauri build            # .msi/.exe (Windows), .dmg (macOS), .AppImage/.deb (Linux)
 ```
 
-Postgres integration test DB: `docker compose up -d` (see `dev/docker-compose.yml`,
-which seeds an `orders`/`users` dataset with a deliberately missing index).
+Postgres integration test DB: `docker compose -f dev/docker-compose.yml up -d`. It seeds
+`orders`/`users` with deliberately missing indexes, listens on port 54329, and uses trust
+auth (dev only).
+
+```bash
+cd src-tauri
+QUERYLENS_PG_PORT=54329 cargo test --test live_postgres     # safety envelope, rollback, read-only, setup_sql
+QUERYLENS_PG_PORT=54329 QUERYLENS_CLAUDE_PATH=$(which claude)   cargo test --test live_claude -- --nocapture              # full Claude Code + MCP loop
+QUERYLENS_PG_PORT=54329 QUERYLENS_WRITE_FIXTURE=1   cargo test --test live_postgres                           # refresh the UI mock fixture
+```
+
+Environment hooks: `QUERYLENS_DATA_DIR` overrides the data directory (portable installs
+and tests) and is forwarded to the MCP subprocess. `QUERYLENS_MCP_EXE` points the
+Claude provider at a specific `querylens` binary (used by tests).
 
 CI (planned): a GitHub Actions matrix on ubuntu/windows/macos running
 `cargo test` + typecheck + `tauri build`, with releases published on tags.

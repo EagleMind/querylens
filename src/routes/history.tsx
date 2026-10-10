@@ -3,7 +3,7 @@ import {
   Loader2Icon,
   PencilLineIcon,
   SearchIcon,
-  SparklesIcon,
+  LightbulbIcon,
   Trash2Icon,
   TriangleAlertIcon,
 } from 'lucide-react'
@@ -66,7 +66,7 @@ function Row({
           <span className="text-foreground/90">{entry.connectionName}</span>
           <EngineBadge engine={entry.engine} />
           <span className="font-mono text-[9px] tracking-wider uppercase">{entry.mode}</span>
-          {entry.hasSuggestions && <SparklesIcon className="size-3 text-primary" />}
+          {entry.hasSuggestions && <LightbulbIcon className="size-3 text-primary" />}
         </div>
         <p className="line-clamp-2 font-mono text-xs/relaxed text-foreground/85">{entry.sqlPreview}</p>
       </div>

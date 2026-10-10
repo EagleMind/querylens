@@ -1,4 +1,4 @@
-import { AlertCircleIcon, KeyRoundIcon, RotateCcwIcon, SparklesIcon, SquareIcon, WandSparklesIcon } from 'lucide-react'
+import { AlertCircleIcon, KeyRoundIcon, RotateCcwIcon, LightbulbIcon, SquareIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 
@@ -40,8 +40,8 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
   return (
     <div className="flex h-full flex-col bg-panel">
       <div className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
-        <SparklesIcon className="size-3.5 text-primary" />
-        <PaneLabel className="text-foreground">AI suggestions</PaneLabel>
+        <LightbulbIcon className="size-3.5 text-primary" />
+        <PaneLabel className="text-foreground">Advisor</PaneLabel>
         <span className="truncate font-mono text-[10px] text-muted-foreground">
           {streaming
             ? [stream.provider, stream.model].filter(Boolean).join(' · ')
@@ -81,8 +81,8 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
       <ScrollArea className="min-h-0 flex-1">
         <div className="space-y-3 p-3">
           {!analysis && (
-            <EmptyState icon={WandSparklesIcon} title="Suggestions appear here" className="py-16">
-              Analyze a query, then ask the model to explain the plan and propose fixes.
+            <EmptyState icon={LightbulbIcon} title="Recommendations appear here" className="py-16">
+              Analyze a query, then ask the advisor to explain the plan and propose fixes.
             </EmptyState>
           )}
 
@@ -97,7 +97,7 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
                 </Button>
               }
             >
-              Or switch to Claude Code or a local model (LM Studio, Ollama).
+              Or switch to Claude Code or a local engine (LM Studio, Ollama).
             </EmptyState>
           )}
 
@@ -115,7 +115,7 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
                   : '.'}
               </p>
               <Button size="sm" className="mt-3" onClick={start}>
-                <SparklesIcon /> Get suggestions
+                <LightbulbIcon /> Get recommendations
               </Button>
             </div>
           )}
@@ -127,7 +127,7 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
           {stream.status === 'error' && (
             <div className="space-y-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 animate-rise">
               <div className="flex items-center gap-2 text-xs font-medium text-destructive">
-                <AlertCircleIcon className="size-3.5" /> Suggestions failed
+                <AlertCircleIcon className="size-3.5" /> Couldn't get recommendations
               </div>
               <p className="font-mono text-[11px]/relaxed whitespace-pre-wrap text-destructive/90" data-selectable>
                 {stream.error}
@@ -165,7 +165,7 @@ export function SuggestionPanel({ analysis }: { analysis: AnalysisResult | null 
                   <p className="pt-1 text-[11px] text-muted-foreground">
                     {stream.buffer.length > 0
                       ? `Receiving… ${stream.buffer.length.toLocaleString()} chars`
-                      : 'Waiting for the model…'}
+                      : 'Thinking it through…'}
                   </p>
                 </div>
               )}

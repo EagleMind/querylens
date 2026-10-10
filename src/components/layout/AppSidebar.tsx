@@ -6,7 +6,7 @@ import {
   PlusIcon,
   ScanSearchIcon,
   SettingsIcon,
-  SparklesIcon,
+  LightbulbIcon,
   Trash2Icon,
 } from 'lucide-react'
 import { useState } from 'react'
@@ -171,11 +171,11 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild size="lg" tooltip="AI provider">
+            <SidebarMenuButton asChild size="lg" tooltip="Advisor">
               <NavLink to="/settings">
-                <SparklesIcon className="text-primary" />
+                <LightbulbIcon className="text-primary" />
                 <div className="grid min-w-0 leading-tight">
-                  <span className="truncate text-xs font-medium">{provider?.label ?? 'AI provider'}</span>
+                  <span className="truncate text-xs font-medium">{provider?.label ?? 'Advisor'}</span>
                   <span className="truncate font-mono text-[10px] text-muted-foreground">
                     {settings?.llm.model || 'default model'}
                   </span>
