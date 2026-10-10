@@ -9,6 +9,8 @@ const HIGH_SHARE: f64 = 0.25;
 const MEDIUM_SHARE: f64 = 0.05;
 const ESTIMATE_ERROR_RATIO: f64 = 10.0;
 const ESTIMATE_ERROR_MIN_ROWS: f64 = 100.0;
+/// A node's misestimate must be this many times worse than its inputs' to count as its own.
+const ORIGIN_FACTOR: f64 = 3.0;
 
 pub(super) fn finalize(root: &mut PlanNode) {
     fill_times(root);
@@ -81,19 +83,29 @@ fn score(node: &mut PlanNode, basis: Basis, under_limit: bool) {
     }
 }
 
+/// Estimated-vs-actual rows factor (≥ 1), when both are known and the node ran.
+fn estimate_ratio(node: &PlanNode) -> Option<f64> {
+    let (est, actual) = (node.estimated_rows?, node.actual_rows?);
+    if node.loops == Some(0.0) || est <= 0.0 {
+        return None;
+    }
+    Some(est.max(actual) / est.min(actual).max(1.0))
+}
+
 fn row_estimate_warning(node: &mut PlanNode, under_limit: bool) {
     // Hash / Materialize just mirror their child's rows; warning there is noise.
     if matches!(node.node_type.as_str(), "Hash" | "Materialize" | "Memoize") {
         return;
     }
-    let (Some(est), Some(actual)) = (node.estimated_rows, node.actual_rows) else { return };
-    if node.loops == Some(0.0) || est <= 0.0 {
+    let Some(ratio) = estimate_ratio(node) else { return };
+    let (est, actual) = (node.estimated_rows.unwrap_or(0.0), node.actual_rows.unwrap_or(0.0));
+    if ratio < ESTIMATE_ERROR_RATIO || est.max(actual) < ESTIMATE_ERROR_MIN_ROWS {
         return;
     }
-    let hi = est.max(actual);
-    let lo = est.min(actual).max(1.0);
-    let ratio = hi / lo;
-    if ratio < ESTIMATE_ERROR_RATIO || hi < ESTIMATE_ERROR_MIN_ROWS {
+    // Misestimates propagate upward through every join above them. Flag only the
+    // operator where the error originates (clearly worse than any of its inputs).
+    let worst_input = node.children.iter().filter_map(estimate_ratio).fold(1.0, f64::max);
+    if ratio < worst_input * ORIGIN_FACTOR {
         return;
     }
     // Below a LIMIT, "fewer rows than estimated" is early termination, not bad stats.

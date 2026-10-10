@@ -230,8 +230,15 @@ fn warnings(o: &Obj, raw_type: &str, n: &PlanNode) -> Vec<crate::model::PlanWarn
     }
 
     if raw_type == "Nested Loop" {
-        if let Some(inner_loops) = n.children.get(1).and_then(|c| c.loops) {
-            if inner_loops >= NESTED_LOOP_INNER_LOOPS {
+        if let Some(inner) = n.children.get(1) {
+            let inner_loops = inner.loops.unwrap_or(0.0);
+            // Index nested loops routinely run their inner side thousands of times;
+            // only flag it when those repeats are where this join's time goes.
+            let dominant = match (inner.total_time_ms, n.total_time_ms) {
+                (Some(inner_ms), Some(join_ms)) if join_ms > 0.0 => inner_ms / join_ms >= 0.5 && join_ms >= 10.0,
+                _ => inner.node_type.contains("Seq Scan"),
+            };
+            if inner_loops >= NESTED_LOOP_INNER_LOOPS && dominant {
                 out.push(warning(
                     WarningKind::NestedLoopBlowup,
                     WarningSeverity::Warning,
@@ -334,14 +341,14 @@ mod tests {
                "Total Cost": 10, "Plan Rows": 1000, "Actual Total Time": 5.0, "Actual Rows": 1000,
                "Actual Loops": 3},
               {"Node Type": "Index Scan", "Relation Name": "b", "Total Cost": 70, "Plan Rows": 1,
-               "Actual Total Time": 0.03, "Actual Rows": 1, "Actual Loops": 3000}
+               "Actual Total Time": 0.09, "Actual Rows": 1, "Actual Loops": 3000}
             ]}]}}]"#;
         let p = plan::parse(crate::model::Engine::Postgres, ExplainMode::Analyze, raw).unwrap();
         let nl = &p.root.children[0];
         assert_eq!(nl.total_time_ms, Some(95.0)); // 3 loops across 3 processes → ×1
         assert_eq!(nl.children[0].node_type, "Parallel Seq Scan");
-        // 3000 loops / 3 processes = 1000 sequential repeats × 0.03 ms
-        assert!((nl.children[1].total_time_ms.unwrap() - 30.0).abs() < 1e-6);
+        // 3000 loops / 3 processes = 1000 sequential repeats × 0.09 ms
+        assert!((nl.children[1].total_time_ms.unwrap() - 90.0).abs() < 1e-6);
         assert!(nl.warnings.iter().any(|w| w.kind == WarningKind::NestedLoopBlowup));
     }
 

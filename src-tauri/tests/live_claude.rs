@@ -3,7 +3,8 @@
 //! Skipped unless both are set (dev Postgres from dev/docker-compose.yml uses trust auth):
 //!   QUERYLENS_PG_PORT=54329 QUERYLENS_CLAUDE_PATH=/path/to/claude \
 //!     cargo test --test live_claude -- --nocapture
-//! Optional: QUERYLENS_CLAUDE_MODEL (default "sonnet").
+//! Optional: QUERYLENS_CLAUDE_MODEL (default "sonnet"), QUERYLENS_CLAUDE_DB (default "shop"),
+//! QUERYLENS_CLAUDE_SQL_FILE (default: a single-table lookup on the demo data).
 
 use std::sync::Mutex;
 
@@ -45,7 +46,7 @@ async fn claude_suggests_and_verifies_with_mcp() {
         color: "#2dd4bf".into(),
         host: Some("localhost".into()),
         port: Some(port.parse().unwrap()),
-        database: Some("shop".into()),
+        database: Some(std::env::var("QUERYLENS_CLAUDE_DB").unwrap_or_else(|_| "shop".into())),
         username: Some("querylens".into()),
         ssl_mode: SslMode::Disable,
         file_path: None,
@@ -60,9 +61,12 @@ async fn claude_suggests_and_verifies_with_mcp() {
     settings.llm.verify_with_tools = true;
     store.save_settings(&settings).unwrap();
 
-    let sql = "SELECT * FROM orders WHERE user_id = 4242 ORDER BY created_at DESC LIMIT 10";
+    let sql = match std::env::var("QUERYLENS_CLAUDE_SQL_FILE") {
+        Ok(path) => std::fs::read_to_string(path).unwrap(),
+        Err(_) => "SELECT * FROM orders WHERE user_id = 4242 ORDER BY created_at DESC LIMIT 10".into(),
+    };
     let opts = analysis::RunOptions { mode: ExplainMode::Analyze, persist: true, setup_sql: None, read_only: false };
-    let a = analysis::run(&store, "it-conn", sql, opts).await.unwrap();
+    let a = analysis::run(&store, "it-conn", &sql, opts).await.unwrap();
 
     let sink = Collect::default();
     let set = suggestions::generate(&store, &a.id, &sink).await.unwrap();
