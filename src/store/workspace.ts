@@ -69,6 +69,8 @@ interface WorkspaceState {
   isReplay: boolean
   selectedNodeId: string | null
   planView: 'tree' | 'icicle'
+  /** Inputs for `$1…$n` (the text NULL = SQL NULL). */
+  params: string[]
   stream: SuggestionStream
   whatif: WhatIfState
   insightsTab: 'advisor' | 'whatif'
@@ -78,6 +80,8 @@ interface WorkspaceState {
   setAnalysis: (a: AnalysisResult | null, opts?: { replay?: boolean }) => void
   selectNode: (id: string | null) => void
   setPlanView: (v: 'tree' | 'icicle') => void
+  setParam: (index: number, value: string) => void
+  setParams: (values: string[]) => void
   setSuggestions: (set: SuggestionSet) => void
   updateStream: (patch: Partial<SuggestionStream>) => void
   appendDelta: (text: string) => void
@@ -106,6 +110,7 @@ export const useWorkspace = create<WorkspaceState>()(
       isReplay: false,
       selectedNodeId: null,
       planView: 'tree',
+      params: [],
       stream: idleStream,
       whatif: idleWhatIf,
       insightsTab: 'advisor',
@@ -124,6 +129,13 @@ export const useWorkspace = create<WorkspaceState>()(
         }),
       selectNode: (selectedNodeId) => set({ selectedNodeId }),
       setPlanView: (planView) => set({ planView }),
+      setParam: (index, value) =>
+        set((s) => {
+          const params = [...s.params]
+          params[index] = value
+          return { params }
+        }),
+      setParams: (params) => set({ params }),
       setSuggestions: (suggestions) => set((s) => (s.analysis ? { analysis: { ...s.analysis, suggestions } } : {})),
       updateStream: (patch) => set((s) => ({ stream: { ...s.stream, ...patch } })),
       appendDelta: (text) => set((s) => ({ stream: { ...s.stream, buffer: s.stream.buffer + text } })),
@@ -143,7 +155,7 @@ export const useWorkspace = create<WorkspaceState>()(
       name: 'querylens.workspace',
       storage: createJSONStorage(() => localStorage),
       // Only the editor draft survives restarts; results come from history.
-      partialize: (s) => ({ sql: s.sql, connectionId: s.connectionId, planView: s.planView }),
+      partialize: (s) => ({ sql: s.sql, connectionId: s.connectionId, planView: s.planView, params: s.params }),
     },
   ),
 )

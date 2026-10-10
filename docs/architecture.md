@@ -222,6 +222,28 @@ interface SuggestionSet { summary: string; suggestions: Suggestion[]; provider: 
 
 ---
 
+## 5b. Advanced profiling (v1.1)
+
+All of these run inside the same safety envelope as §5: a rolled-back transaction with
+statement and lock timeouts, single statements only, and read-only for anything a model
+issues.
+
+| Feature | How it works | Code |
+|---|---|---|
+| **Capabilities** | Detected once per session: server version, `hypopg`, `pg_stat_statements`, `track_io_timing`, superuser, `work_mem`, `random_page_cost`. Shipped on every analysis as `server`. | `engines/postgres.rs::detect_server_info` |
+| **Richer EXPLAIN** | Version-aware options: `SETTINGS` (12+), `WAL` (13+, DML only), `SERIALIZE` + `MEMORY` (17+). `track_io_timing` is enabled for the transaction when allowed. Per-node I/O time is split out (self I/O ≤ self time). JIT, serialization and non-default settings are parsed. New warnings: `io_bound`, `jit_overhead`, `serialize_heavy`. `pg_stats` (null fraction, n_distinct, correlation, most common values, histogram samples) goes into the advisor's context for the columns the query uses. | `engines/mod.rs::postgres_explain_options`, `plan/postgres.rs` |
+| **Repeat runs** | Profile runs `repeat_runs` times (default 3). The plan shown is the **median** run, and the first run is reported separately with its disk reads vs. the warm median. Repeats stop at max(2 × first run, 10 s). | `services/analysis.rs::explain` |
+| **Lock timeout** | `SET LOCAL lock_timeout` (default 5 s). SQLSTATE 55P03 is turned into a clear message. | `error.rs` |
+| **Baselines** | Stable FNV fingerprints of the normalized SQL (literals and `$n` → `?`) and of the plan shape. Each persisted analysis is compared with the previous run of the same statement: "plan changed", "N× slower". | `plan/fingerprint.rs`, `storage` migration v2 |
+| **Plan diff** | Top-down alignment by (operator family, relation), so an index swap is *changed*, not added + removed. Self-time deltas per operator. Works across history and the in-memory **scratch** store (what-if and preview runs). | `plan/diff.rs`, `compare_analyses` |
+| **Icicle view** | Width is inclusive time (or cost). Children are squeezed when parallel workers or CTEs over-count. | `components/plan/IcicleView.tsx` |
+| **What-if sweep** | Scenarios chosen from the plan: join methods, `work_mem` ×4, `random_page_cost` 1.1, `enable_seqscan`, JIT, ANALYZE of stale tables, `CREATE STATISTICS` on columns of a misestimated filter. Each is EXPLAINed first; only plan-changing ones are profiled, within 3× the baseline time. Rule-based verdicts name the cause ("row estimates are wrong", "memory-bound", …). The report is persisted and fed to the advisor. | `services/whatif.rs`, `run_whatif` |
+| **HypoPG** | `ExplainRequest.hypothetical` registers indexes with `hypopg_create_index` and forces plain EXPLAIN, then calls `hypopg_reset()`. MCP `test_index` uses it (or a measured rolled-back build when HypoPG is missing). Suggestions carry `evidence: measured \| estimated`. | `engines/postgres.rs`, `mcp/mod.rs` |
+| **Preview fix** | Re-runs the baseline with an index, settings or statistics fix, or runs a rewrite, then opens the diff. Tables over 5M rows use a hypothetical index when available. | `services/analysis.rs::preview_fix` |
+| **Parameters** | `$1…$n` → `PREPARE` + `EXPLAIN EXECUTE` with quoted literals, plus `plan_cache_mode` for custom vs. generic plans (12+). Values are stored on the analysis and reused by what-if and preview. | `engines/postgres.rs` |
+| **Sensitivity** | Maps each `$n` to its column, then plans with most-common, less-common, rare (histogram) and absent values, plus the generic plan. Reports plan flips. Estimates only. | `services/sensitivity.rs` |
+| **Top queries** | `pg_stat_statements` for the current database (version-aware columns), with QueryLens's own and catalog traffic filtered out. Clicking a row opens the normalized statement, with its `$n` parameters, in the Workbench. | `top_queries` |
+
 ## 6. LLM layer
 
 ```rust
@@ -298,7 +320,7 @@ outermost JSON object), validates it, and persists it to the analysis.
 `get_suggestions(analysisId, channel)` returns a `requestId` immediately and runs the
 provider on a Tokio task. Events on the channel:
 `started` → `delta(text)`* / `activity(label)`* → `done(SuggestionSet)` | `error(message)`.
-`cancel_suggestions(requestId)` aborts the task. The HTTP stream is dropped, or the
+`cancel_task(requestId)` aborts the task (it also cancels what-if sweeps). The HTTP stream is dropped, or the
 `claude` child process is killed (`kill_on_drop`).
 
 ---
@@ -329,7 +351,7 @@ Keychain entries use service `querylens`, with accounts `conn:<id>` and `llm:api
 | `save_connection` | `ConnectionInput` (+ optional password) | `Connection` |
 | `delete_connection` | `id` | – |
 | `test_connection` | `ConnectionInput` | `{ latencyMs, serverVersion }` |
-| `analyze_query` | `connectionId, sql, mode` | `AnalysisResult` |
+| `analyze_query` | `connectionId, sql, mode, params?` | `AnalysisResult` |
 | `list_history` | `search?, limit` | `HistoryEntry[]` |
 | `get_analysis` | `id` | `AnalysisResult` |
 | `delete_analysis` / `clear_history` | `id` / – | – |
@@ -337,7 +359,12 @@ Keychain entries use service `querylens`, with accounts `conn:<id>` and `llm:api
 | `list_llm_models` | `LlmSettings` (unsaved form values) | `string[]` |
 | `test_llm` | – | `{ latencyMs, reply }` |
 | `get_suggestions` | `analysisId, Channel<SuggestionEvent>` | `requestId` |
-| `cancel_suggestions` | `requestId` | – |
+| `run_whatif` | `analysisId, Channel<WhatIfEvent>` | `requestId` |
+| `cancel_task` | `requestId` (suggestions or what-if) | – |
+| `compare_analyses` | `beforeId, afterId` | `PlanDiff` |
+| `preview_fix` | `analysisId, fix` | `AnalysisResult` (scratch) |
+| `parameter_sensitivity` | `analysisId` | `SensitivityReport[]` |
+| `top_queries` | `connectionId, orderBy, limit` | `TopQuery[]` |
 
 Errors are `AppError { kind: "validation" | "not_found" | "connection" | "database" | "llm" | "internal", message }`.
 
@@ -418,7 +445,6 @@ CI (planned): a GitHub Actions matrix on ubuntu/windows/macos running
 | MySQL / MariaDB | `EXPLAIN ANALYZE FORMAT=TREE` (MySQL 8.0.18+, text) or `EXPLAIN FORMAT=JSON` (estimates only). |
 | SQLite | `EXPLAIN QUERY PLAN` only (no timings or costs), so the plan is structural. |
 | SQL Server | `SET STATISTICS XML ON` and parse the actual showplan XML. Not `sys.dm_exec_query_plan`, which only has cached *estimated* plans. |
-| Before/After diff | Run `analyze_query` on `sqlFix`, then use a `DiffView` that matches nodes by (type, relation) path. |
 | Cross-engine compare | `compare_engines(connectionIds, sql)` → `join_all` of `services::analysis::run`, bucketed by operator class. |
 | SSH tunnels | `russh` local port-forward before the Postgres connect. |
 

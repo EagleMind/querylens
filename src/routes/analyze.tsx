@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 
 import { InsightsPanel } from '@/components/ai/InsightsPanel'
 import { AnalyzeToolbar } from '@/components/editor/AnalyzeToolbar'
+import { ParamsBar } from '@/components/editor/ParamsBar'
 import { SqlEditor } from '@/components/editor/SqlEditor'
 import { PlanView } from '@/components/plan/PlanView'
 import { PageHeader } from '@/components/layout/PageHeader'
@@ -11,6 +12,7 @@ import { useHotkey } from '@/hooks/useHotkey'
 import type { ExplainMode } from '@/bindings/ExplainMode'
 import type { IpcError } from '@/lib/ipc'
 import { useConnections, useSettings } from '@/lib/queries'
+import { paramValues, placeholderCount } from '@/lib/sql'
 import { useWorkspace } from '@/store/workspace'
 
 export function AnalyzeRoute() {
@@ -37,10 +39,12 @@ export function AnalyzeRoute() {
     }
   }, [connections, connection, setConnectionId])
 
+  const params = useWorkspace((s) => s.params)
+  const paramCount = placeholderCount(sql)
   const canRun = !!connection && sql.trim().length > 0
   const run = (mode: ExplainMode) => {
     if (!canRun || analyze.isPending) return
-    analyze.mutate({ connectionId: connection!.id, sql, mode })
+    analyze.mutate({ connectionId: connection!.id, sql, mode, params: paramValues(params, paramCount) })
   }
   useHotkey('mod+enter', () => run(primary))
   useHotkey('mod+shift+enter', () => run(secondary))
@@ -62,12 +66,17 @@ export function AnalyzeRoute() {
 
       <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="32%" minSize="12%" className="bg-panel">
-          <SqlEditor
-            value={sql}
-            onChange={setSql}
-            onRun={(alt) => run(alt ? secondary : primary)}
-            tables={analysis?.tables}
-          />
+          <div className="flex h-full flex-col">
+            <div className="min-h-0 flex-1">
+              <SqlEditor
+                value={sql}
+                onChange={setSql}
+                onRun={(alt) => run(alt ? secondary : primary)}
+                tables={analysis?.tables}
+              />
+            </div>
+            <ParamsBar count={paramCount} />
+          </div>
         </ResizablePanel>
         <ResizableHandle />
         <ResizablePanel minSize="25%">

@@ -140,6 +140,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
           sql,
           analyzedAt: now(),
           suggestions: null,
+          params: (args.params as (string | null)[] | null) ?? [],
           baseline: prev
             ? { previousId: prev.id, previousAt: prev.analyzedAt, planChanged: false, timeRatio: 1.6 }
             : null,
@@ -158,6 +159,97 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         scratch.set(after.id, after)
         return after
       }
+      case 'top_queries':
+        return [
+          {
+            queryId: '1',
+            query:
+              'SELECT u.email, count(*), sum(o.total) FROM orders o JOIN users u ON u.id = o.user_id WHERE o.status = $1 GROUP BY u.email',
+            calls: 4210,
+            totalMs: 271500,
+            meanMs: 64.5,
+            rows: 84200,
+            hitRatio: 0.97,
+            share: 0.61,
+          },
+          {
+            queryId: '2',
+            query: 'SELECT * FROM events WHERE kind = $1 ORDER BY created_at DESC LIMIT $2',
+            calls: 98100,
+            totalMs: 121300,
+            meanMs: 1.24,
+            rows: 981000,
+            hitRatio: 0.82,
+            share: 0.27,
+          },
+          {
+            queryId: '3',
+            query: 'UPDATE users SET country = $1 WHERE id = $2',
+            calls: 1520,
+            totalMs: 1900,
+            meanMs: 1.25,
+            rows: 1520,
+            hitRatio: 0.999,
+            share: 0.004,
+          },
+        ]
+      case 'parameter_sensitivity':
+        return [
+          {
+            param: 1,
+            column: 'kind',
+            flips: true,
+            summary:
+              "The plan flips with $1 (kind): Index Scan using events_kind_idx on events for your value/absent values; Seq Scan on events for most common values; Bitmap Heap Scan on events for less common values. A prepared statement's generic plan (used after 5 executions) is Bitmap Heap Scan on events, the same for every value.",
+            rows: [
+              {
+                label: 'your value',
+                value: 'refund',
+                frequency: null,
+                planFp: 'a',
+                shape: 'Index Scan using events_kind_idx on events',
+                cost: 410,
+                generic: false,
+              },
+              {
+                label: 'most common',
+                value: 'view',
+                frequency: 0.9,
+                planFp: 'b',
+                shape: 'Seq Scan on events',
+                cost: 19300,
+                generic: false,
+              },
+              {
+                label: 'less common',
+                value: 'purchase',
+                frequency: 0.01,
+                planFp: 'c',
+                shape: 'Bitmap Heap Scan on events',
+                cost: 7300,
+                generic: false,
+              },
+              {
+                label: 'absent',
+                value: '__querylens_absent__',
+                frequency: 0,
+                planFp: 'a',
+                shape: 'Index Scan using events_kind_idx on events',
+                cost: 4,
+                generic: false,
+              },
+              {
+                label: 'generic plan',
+                value: null,
+                frequency: null,
+                planFp: 'c',
+                shape: 'Bitmap Heap Scan on events',
+                cost: 8100,
+                generic: true,
+              },
+            ],
+          },
+        ]
       case 'list_history': {
         const q = String(args.search ?? '').toLowerCase()
         return [...analyses.values()]

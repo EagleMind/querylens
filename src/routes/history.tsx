@@ -192,6 +192,7 @@ export function HistoryRoute() {
       const analysis = await api.getAnalysis(id)
       setAnalysis(analysis, { replay: true })
       setSql(analysis.sql)
+      if (analysis.params?.length) useWorkspace.getState().setParams(analysis.params.map((p) => p ?? 'NULL'))
       if (connections?.some((c) => c.id === analysis.connectionId)) setConnectionId(analysis.connectionId)
       navigate('/')
     } catch (e) {

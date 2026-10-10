@@ -23,6 +23,8 @@ import { cn } from '@/lib/utils'
 import { useUi } from '@/store/ui'
 import { useWorkspace } from '@/store/workspace'
 
+import { SensitivitySection } from './SensitivitySection'
+
 const OUTCOME: Record<WhatIfOutcome, { label: string; className: string }> = {
   faster: { label: 'Faster', className: 'text-ok' },
   slower: { label: 'Slower', className: 'text-heat-high' },
@@ -200,6 +202,8 @@ export function WhatIfPanel({ analysis, tabs }: { analysis: AnalysisResult | nul
                   ))}
             </div>
           )}
+
+          {analysis && supported && !running && <SensitivitySection analysis={analysis} />}
 
           {w.status === 'done' && w.results.length === 0 && (
             <p className="text-[13px] text-muted-foreground">No experiments apply to this plan.</p>

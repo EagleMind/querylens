@@ -8,6 +8,7 @@ import { queryClient } from '@/lib/queries'
 import { AnalyzeRoute } from '@/routes/analyze'
 import { HistoryRoute } from '@/routes/history'
 import { SettingsRoute } from '@/routes/settings'
+import { TopQueriesRoute } from '@/routes/top-queries'
 
 export function App() {
   return (
@@ -18,6 +19,7 @@ export function App() {
             <Route element={<AppShell />}>
               <Route index element={<AnalyzeRoute />} />
               <Route path="history" element={<HistoryRoute />} />
+              <Route path="top-queries" element={<TopQueriesRoute />} />
               <Route path="settings" element={<SettingsRoute />} />
             </Route>
           </Routes>

@@ -37,7 +37,7 @@ pnpm tauri dev
 Optional demo database (seeded with deliberately slow queries):
 
 ```bash
-docker compose -f dev/docker-compose.yml up -d
+docker compose -f dev/docker-compose.yml up -d --build
 ```
 
 Then add a connection: host `localhost`, port `54329`, database `shop`, user `querylens`.

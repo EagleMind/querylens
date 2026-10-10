@@ -16,6 +16,9 @@ import type { HistoryEntry } from '@/bindings/HistoryEntry'
 import type { LlmSettings } from '@/bindings/LlmSettings'
 import type { LlmTestResult } from '@/bindings/LlmTestResult'
 import type { PlanDiff } from '@/bindings/PlanDiff'
+import type { SensitivityReport } from '@/bindings/SensitivityReport'
+import type { TopQuery } from '@/bindings/TopQuery'
+import type { TopQueryOrder } from '@/bindings/TopQueryOrder'
 import type { Settings } from '@/bindings/Settings'
 import type { SuggestionEvent } from '@/bindings/SuggestionEvent'
 import type { WhatIfEvent } from '@/bindings/WhatIfEvent'
@@ -54,8 +57,12 @@ export const api = {
   deleteConnection: (id: string) => call<void>('delete_connection', { id }),
   testConnection: (input: ConnectionInput) => call<ConnectionTestResult>('test_connection', { input }),
 
-  analyze: (connectionId: string, sql: string, mode: ExplainMode) =>
-    call<AnalysisResult>('analyze_query', { connectionId, sql, mode }),
+  analyze: (connectionId: string, sql: string, mode: ExplainMode, params: (string | null)[] = []) =>
+    call<AnalysisResult>('analyze_query', { connectionId, sql, mode, params: params.length ? params : null }),
+
+  sensitivity: (analysisId: string) => call<SensitivityReport[]>('parameter_sensitivity', { analysisId }),
+  topQueries: (connectionId: string, orderBy: TopQueryOrder, limit = 50) =>
+    call<TopQuery[]>('top_queries', { connectionId, orderBy, limit }),
 
   listHistory: (search?: string, limit = 200) =>
     call<HistoryEntry[]>('list_history', { search: search || null, limit }),

@@ -72,7 +72,6 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 
 | Feature | Why deferred | Target |
 |---|---|---|
-| Before/After diff | Needs a node-matching diff renderer. The Claude provider already verifies rewrites. | v1.1 |
 | Light mode | Cosmetic. The tokens are already themeable. | v1.1 |
 | Export (Markdown/JSON report) | Nice to have | v1.1 |
 | Command palette | Nice to have | v1.1 |
@@ -104,6 +103,15 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 - [x] Claude Code CLI provider + QueryLens MCP server (`--mcp`)
 - [x] Channel streaming, progressive cards, cancel
 - [x] Settings screen + Test LLM
+
+### v1.1 profiling (done)
+- [x] Server capabilities, version-aware EXPLAIN (SETTINGS/WAL/SERIALIZE/MEMORY), I/O time, JIT/serialization
+- [x] Repeat runs (median + first run), lock timeout
+- [x] Fingerprints, run-over-run baselines, plan diff + Compare dialog, icicle view
+- [x] What-if planner sweep with causal verdicts
+- [x] HypoPG hypothetical indexes, MCP `test_index`, measured/estimated evidence, Preview fix
+- [x] `$n` parameters (custom/generic plans), parameter sensitivity, Top queries (pg_stat_statements)
+- [x] Dev image with hypopg + pg_stat_statements, `dev/load-job.sh`, JOB / workload live tests
 
 ### Ship
 - [x] Windows release build (`.msi` + NSIS `.exe`)

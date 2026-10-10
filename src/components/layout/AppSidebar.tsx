@@ -1,5 +1,6 @@
 import {
   DatabaseIcon,
+  FlameIcon,
   HistoryIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -55,6 +56,7 @@ import { useWorkspace } from '@/store/workspace'
 
 const NAV = [
   { to: '/', label: 'Workbench', icon: ScanSearchIcon },
+  { to: '/top-queries', label: 'Top queries', icon: FlameIcon },
   { to: '/history', label: 'History', icon: HistoryIcon },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },
 ]

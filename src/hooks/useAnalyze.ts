@@ -10,8 +10,8 @@ export function useAnalyze() {
   const setAnalysis = useWorkspace((s) => s.setAnalysis)
 
   return useMutation({
-    mutationFn: (v: { connectionId: string; sql: string; mode: ExplainMode }) =>
-      api.analyze(v.connectionId, v.sql, v.mode),
+    mutationFn: (v: { connectionId: string; sql: string; mode: ExplainMode; params?: (string | null)[] }) =>
+      api.analyze(v.connectionId, v.sql, v.mode, v.params),
     onSuccess: (analysis) => {
       setAnalysis(analysis)
       qc.setQueryData(keys.analysis(analysis.id), analysis)
