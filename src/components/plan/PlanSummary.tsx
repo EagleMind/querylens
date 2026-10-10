@@ -4,10 +4,11 @@ import type { AnalysisResult } from '@/bindings/AnalysisResult'
 import { CopyButton } from '@/components/shared/CopyButton'
 import { ColorDot, EngineBadge } from '@/components/shared/bits'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { fmtCount, fmtMs, fmtRelative } from '@/lib/format'
+import { fmtBytes, fmtCount, fmtMs, fmtRelative } from '@/lib/format'
 import { useConnections } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
+import { RunStrip } from './RunStrip'
 import { TimeShareBar } from './TimeShareBar'
 
 function Metric({
@@ -15,11 +16,13 @@ function Metric({
   value,
   unit,
   className,
+  extra,
 }: {
   label: string
   value: ReactNode
   unit?: string
   className?: string
+  extra?: ReactNode
 }) {
   return (
     <div className="min-w-0 border-l border-rule pl-3 first:border-l-0 first:pl-0">
@@ -34,6 +37,7 @@ function Metric({
         {value}
         {unit && <span className="font-sans text-xs font-normal text-muted-foreground">{unit}</span>}
       </div>
+      {extra}
     </div>
   )
 }
@@ -79,7 +83,12 @@ export function PlanSummary({ analysis, isReplay }: { analysis: AnalysisResult; 
 
       <div className="grid grid-cols-5 gap-3">
         {analyzed ? (
-          <Metric label="Execution" value={execValue} unit={execUnit} />
+          <Metric
+            label={analysis.timing ? 'Execution · median' : 'Execution'}
+            value={execValue}
+            unit={execUnit}
+            extra={analysis.timing && <RunStrip stats={analysis.timing} />}
+          />
         ) : (
           <Metric label="Total cost" value={fmtCount(analysis.totalCost)} />
         )}
@@ -93,7 +102,40 @@ export function PlanSummary({ analysis, isReplay }: { analysis: AnalysisResult; 
         />
       </div>
 
+      <PlanFacts analysis={analysis} />
       <TimeShareBar analysis={analysis} />
+    </div>
+  )
+}
+
+/** Statement-level costs and settings that don't belong to any one operator. */
+function PlanFacts({ analysis: a }: { analysis: AnalysisResult }) {
+  const settings = a.plannerSettings ?? []
+  if (a.jitMs == null && a.serializeMs == null && settings.length === 0) return null
+  const fact = 'inline-flex items-center gap-1.5 rounded-[2px] border border-rule px-1.5 py-0.5'
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground">
+      {a.jitMs != null && (
+        <span className={fact}>
+          JIT <span className="font-mono text-foreground tabular">{fmtMs(a.jitMs)}</span>
+        </span>
+      )}
+      {a.serializeMs != null && (
+        <span className={fact}>
+          Sending results <span className="font-mono text-foreground tabular">{fmtMs(a.serializeMs)}</span>
+          {a.serializeBytes != null && <span className="font-mono">· {fmtBytes(a.serializeBytes)}</span>}
+        </span>
+      )}
+      {settings.map((p) => (
+        <Tooltip key={p.key}>
+          <TooltipTrigger asChild>
+            <span className={cn(fact, 'cursor-default font-mono')}>
+              {p.key} = <span className="text-foreground">{p.value}</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>Non-default planner setting in effect for this run</TooltipContent>
+        </Tooltip>
+      ))}
     </div>
   )
 }

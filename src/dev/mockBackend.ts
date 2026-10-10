@@ -63,7 +63,7 @@ let settings: Settings = {
     verifyWithTools: true,
     hasApiKey: false,
   },
-  analysis: { defaultMode: 'analyze', statementTimeoutMs: 30000 },
+  analysis: { defaultMode: 'analyze', statementTimeoutMs: 30000, lockTimeoutMs: 5000, repeatRuns: 3 },
 }
 
 const analyses = new Map<string, AnalysisResult>()

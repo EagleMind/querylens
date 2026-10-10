@@ -27,6 +27,12 @@ pub async fn save_settings(
     if !(1_000..=600_000).contains(&settings.analysis.statement_timeout_ms) {
         return Err(AppError::validation("Statement timeout must be between 1 and 600 seconds."));
     }
+    if !(1..=10).contains(&settings.analysis.repeat_runs) {
+        return Err(AppError::validation("Profile runs must be between 1 and 10."));
+    }
+    if !(1_000..=60_000).contains(&settings.analysis.lock_timeout_ms) {
+        return Err(AppError::validation("Lock timeout must be between 1 and 60 seconds."));
+    }
     if let Some(key) = api_key {
         secrets::set(&secrets::llm_account(settings.llm.provider), key.trim())?;
     }

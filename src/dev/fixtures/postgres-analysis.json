@@ -1,5 +1,5 @@
 {
-  "id": "6e2f171d-0c9c-494f-80cd-eef340fe9237",
+  "id": "b8dd2da7-8f52-451a-bb20-2500a89fcfab",
   "connectionId": "live",
   "connectionName": "dev-shop",
   "engine": "postgres",
@@ -17,16 +17,16 @@
     "loops": 1.0,
     "startupCost": 21514.91,
     "totalCost": 21514.96,
-    "totalTimeMs": 68.474,
+    "totalTimeMs": 103.055,
     "selfTimeMs": 0.0040000000000048885,
     "selfCost": 0.0,
-    "ioTimeMs": 21.073,
+    "ioTimeMs": 11.668,
     "selfIoMs": 0.0,
-    "share": 0.000058416333206836,
+    "share": 0.00003881422541366152,
     "heat": "low",
     "buffers": {
-      "sharedHit": 3617.0,
-      "sharedRead": 7963.0,
+      "sharedHit": 4606.0,
+      "sharedRead": 6971.0,
       "tempRead": 0.0,
       "tempWritten": 0.0
     },
@@ -42,11 +42,11 @@
       },
       {
         "key": "Actual Startup Time",
-        "value": "68.349"
+        "value": "102.958"
       },
       {
         "key": "Actual Total Time",
-        "value": "68.474"
+        "value": "103.055"
       },
       {
         "key": "Async Capable",
@@ -98,11 +98,11 @@
       },
       {
         "key": "Shared Hit Blocks",
-        "value": "3617"
+        "value": "4606"
       },
       {
         "key": "Shared I/O Read Time",
-        "value": "21.073"
+        "value": "11.668"
       },
       {
         "key": "Shared I/O Write Time",
@@ -110,7 +110,7 @@
       },
       {
         "key": "Shared Read Blocks",
-        "value": "7963"
+        "value": "6971"
       },
       {
         "key": "Shared Written Blocks",
@@ -154,16 +154,16 @@
         "loops": 1.0,
         "startupCost": 21514.91,
         "totalCost": 21556.31,
-        "totalTimeMs": 68.47,
-        "selfTimeMs": 0.3810000000000002,
+        "totalTimeMs": 103.051,
+        "selfTimeMs": 0.6069999999999993,
         "selfCost": 482.0600000000013,
-        "ioTimeMs": 21.073,
+        "ioTimeMs": 11.668,
         "selfIoMs": 0.0,
-        "share": 0.005564155737944332,
+        "share": 0.005890058706515931,
         "heat": "low",
         "buffers": {
-          "sharedHit": 3617.0,
-          "sharedRead": 7963.0,
+          "sharedHit": 4606.0,
+          "sharedRead": 6971.0,
           "tempRead": 0.0,
           "tempWritten": 0.0
         },
@@ -179,11 +179,11 @@
           },
           {
             "key": "Actual Startup Time",
-            "value": "68.348"
+            "value": "102.955"
           },
           {
             "key": "Actual Total Time",
-            "value": "68.47"
+            "value": "103.051"
           },
           {
             "key": "Async Capable",
@@ -239,11 +239,11 @@
           },
           {
             "key": "Shared Hit Blocks",
-            "value": "3617"
+            "value": "4606"
           },
           {
             "key": "Shared I/O Read Time",
-            "value": "21.073"
+            "value": "11.668"
           },
           {
             "key": "Shared I/O Write Time",
@@ -251,7 +251,7 @@
           },
           {
             "key": "Shared Read Blocks",
-            "value": "7963"
+            "value": "6971"
           },
           {
             "key": "Shared Written Blocks",
@@ -311,16 +311,16 @@
             "loops": 1.0,
             "startupCost": 20867.25,
             "totalCost": 21074.25,
-            "totalTimeMs": 68.089,
-            "selfTimeMs": 5.896000000000001,
+            "totalTimeMs": 102.444,
+            "selfTimeMs": 5.563000000000002,
             "selfCost": 480.97999999999956,
-            "ioTimeMs": 21.073,
+            "ioTimeMs": 11.668,
             "selfIoMs": 0.0,
-            "share": 0.08610567514677105,
+            "share": 0.05398088399398381,
             "heat": "medium",
             "buffers": {
-              "sharedHit": 3614.0,
-              "sharedRead": 7963.0,
+              "sharedHit": 4606.0,
+              "sharedRead": 6971.0,
               "tempRead": 0.0,
               "tempWritten": 0.0
             },
@@ -336,11 +336,11 @@
               },
               {
                 "key": "Actual Startup Time",
-                "value": "67.276"
+                "value": "100.8"
               },
               {
                 "key": "Actual Total Time",
-                "value": "68.089"
+                "value": "102.444"
               },
               {
                 "key": "Async Capable",
@@ -400,7 +400,7 @@
               },
               {
                 "key": "Peak Memory Usage",
-                "value": "2577"
+                "value": "2321"
               },
               {
                 "key": "Plan Rows",
@@ -420,11 +420,11 @@
               },
               {
                 "key": "Shared Hit Blocks",
-                "value": "3614"
+                "value": "4606"
               },
               {
                 "key": "Shared I/O Read Time",
-                "value": "21.073"
+                "value": "11.668"
               },
               {
                 "key": "Shared I/O Write Time",
@@ -432,7 +432,7 @@
               },
               {
                 "key": "Shared Read Blocks",
-                "value": "7963"
+                "value": "6971"
               },
               {
                 "key": "Shared Written Blocks",
@@ -476,20 +476,20 @@
                 "indexName": null,
                 "detail": null,
                 "estimatedRows": 27398.0,
-                "actualRows": 9834.0,
+                "actualRows": 6673.0,
                 "loops": 1.0,
                 "startupCost": 17682.23,
                 "totalCost": 20593.27,
-                "totalTimeMs": 62.193,
-                "selfTimeMs": 4.381,
+                "totalTimeMs": 96.881,
+                "selfTimeMs": 12.926000000000002,
                 "selfCost": 3739.7999999999993,
-                "ioTimeMs": 21.073,
+                "ioTimeMs": 11.668,
                 "selfIoMs": 0.0,
-                "share": 0.06398048894470894,
+                "share": 0.12542816942409393,
                 "heat": "medium",
                 "buffers": {
-                  "sharedHit": 3614.0,
-                  "sharedRead": 7963.0,
+                  "sharedHit": 4606.0,
+                  "sharedRead": 6971.0,
                   "tempRead": 0.0,
                   "tempWritten": 0.0
                 },
@@ -501,15 +501,15 @@
                   },
                   {
                     "key": "Actual Rows",
-                    "value": "9834"
+                    "value": "6673"
                   },
                   {
                     "key": "Actual Startup Time",
-                    "value": "59.987"
+                    "value": "87.297"
                   },
                   {
                     "key": "Actual Total Time",
-                    "value": "62.193"
+                    "value": "96.881"
                   },
                   {
                     "key": "Async Capable",
@@ -565,11 +565,11 @@
                   },
                   {
                     "key": "Shared Hit Blocks",
-                    "value": "3614"
+                    "value": "4606"
                   },
                   {
                     "key": "Shared I/O Read Time",
-                    "value": "21.073"
+                    "value": "11.668"
                   },
                   {
                     "key": "Shared I/O Write Time",
@@ -577,7 +577,7 @@
                   },
                   {
                     "key": "Shared Read Blocks",
-                    "value": "7963"
+                    "value": "6971"
                   },
                   {
                     "key": "Shared Written Blocks",
@@ -629,20 +629,20 @@
                     "indexName": null,
                     "detail": "Group Key: u.email",
                     "estimatedRows": 13699.0,
-                    "actualRows": 3278.0,
+                    "actualRows": 2224.0,
                     "loops": 3.0,
                     "startupCost": 16682.23,
                     "totalCost": 16853.47,
-                    "totalTimeMs": 57.812,
-                    "selfTimeMs": 6.582999999999998,
+                    "totalTimeMs": 83.955,
+                    "selfTimeMs": 6.838999999999999,
                     "selfCost": 273.97999999999956,
-                    "ioTimeMs": 21.073,
+                    "ioTimeMs": 11.668,
                     "selfIoMs": 0.0,
-                    "share": 0.09613868037503283,
+                    "share": 0.06636262190092668,
                     "heat": "medium",
                     "buffers": {
-                      "sharedHit": 3614.0,
-                      "sharedRead": 7963.0,
+                      "sharedHit": 4606.0,
+                      "sharedRead": 6971.0,
                       "tempRead": 0.0,
                       "tempWritten": 0.0
                     },
@@ -654,15 +654,15 @@
                       },
                       {
                         "key": "Actual Rows",
-                        "value": "3278"
+                        "value": "2224"
                       },
                       {
                         "key": "Actual Startup Time",
-                        "value": "56.577"
+                        "value": "83.018"
                       },
                       {
                         "key": "Actual Total Time",
-                        "value": "57.812"
+                        "value": "83.955"
                       },
                       {
                         "key": "Async Capable",
@@ -742,11 +742,11 @@
                       },
                       {
                         "key": "Shared Hit Blocks",
-                        "value": "3614"
+                        "value": "4606"
                       },
                       {
                         "key": "Shared I/O Read Time",
-                        "value": "21.073"
+                        "value": "11.668"
                       },
                       {
                         "key": "Shared I/O Write Time",
@@ -754,7 +754,7 @@
                       },
                       {
                         "key": "Shared Read Blocks",
-                        "value": "7963"
+                        "value": "6971"
                       },
                       {
                         "key": "Shared Written Blocks",
@@ -790,7 +790,7 @@
                       },
                       {
                         "key": "Workers",
-                        "value": "{\"Disk Usage\":0,\"HashAgg Batches\":1,\"Peak Memory Usage\":1937,\"Worker Number\":0}, {\"Disk Usage\":0,\"HashAgg Batches\":1,\"Peak Memory Usage\":1937,\"Worker Number\":1}"
+                        "value": "{\"Disk Usage\":0,\"HashAgg Batches\":1,\"Peak Memory Usage\":409,\"Worker Number\":0}, {\"Disk Usage\":0,\"HashAgg Batches\":1,\"Peak Memory Usage\":1937,\"Worker Number\":1}"
                       }
                     ],
                     "children": [
@@ -806,16 +806,16 @@
                         "loops": 3.0,
                         "startupCost": 2382.0,
                         "totalCost": 16579.49,
-                        "totalTimeMs": 51.229,
-                        "selfTimeMs": 14.0,
+                        "totalTimeMs": 77.116,
+                        "selfTimeMs": 15.680999999999997,
                         "selfCost": 424.1600000000017,
-                        "ioTimeMs": 21.073,
+                        "ioTimeMs": 11.668,
                         "selfIoMs": 0.0,
-                        "share": 0.20445716622367613,
+                        "share": 0.1521614671777206,
                         "heat": "medium",
                         "buffers": {
-                          "sharedHit": 3614.0,
-                          "sharedRead": 7963.0,
+                          "sharedHit": 4606.0,
+                          "sharedRead": 6971.0,
                           "tempRead": 0.0,
                           "tempWritten": 0.0
                         },
@@ -831,11 +831,11 @@
                           },
                           {
                             "key": "Actual Startup Time",
-                            "value": "10.56"
+                            "value": "37.91"
                           },
                           {
                             "key": "Actual Total Time",
-                            "value": "51.229"
+                            "value": "77.116"
                           },
                           {
                             "key": "Async Capable",
@@ -903,11 +903,11 @@
                           },
                           {
                             "key": "Shared Hit Blocks",
-                            "value": "3614"
+                            "value": "4606"
                           },
                           {
                             "key": "Shared I/O Read Time",
-                            "value": "21.073"
+                            "value": "11.668"
                           },
                           {
                             "key": "Shared I/O Write Time",
@@ -915,7 +915,7 @@
                           },
                           {
                             "key": "Shared Read Blocks",
-                            "value": "7963"
+                            "value": "6971"
                           },
                           {
                             "key": "Shared Written Blocks",
@@ -963,16 +963,16 @@
                             "loops": 3.0,
                             "startupCost": 0.0,
                             "totalCost": 13980.33,
-                            "totalTimeMs": 26.969,
-                            "selfTimeMs": 26.969,
+                            "totalTimeMs": 23.758,
+                            "selfTimeMs": 23.758,
                             "selfCost": 13980.33,
-                            "ioTimeMs": 21.073,
-                            "selfIoMs": 21.073,
-                            "share": 0.3938575225633087,
-                            "heat": "high",
+                            "ioTimeMs": 11.668,
+                            "selfIoMs": 11.668,
+                            "share": 0.23053709184416085,
+                            "heat": "medium",
                             "buffers": {
-                              "sharedHit": 809.0,
-                              "sharedRead": 7963.0,
+                              "sharedHit": 1801.0,
+                              "sharedRead": 6971.0,
                               "tempRead": 0.0,
                               "tempWritten": 0.0
                             },
@@ -981,11 +981,6 @@
                                 "kind": "seq_scan_large",
                                 "severity": "warning",
                                 "message": "Full scan of orders touches 1.0M rows."
-                              },
-                              {
-                                "kind": "io_bound",
-                                "severity": "info",
-                                "message": "78% of this operator's 27 ms is spent waiting on reads. It is I/O-bound: an index that reads fewer pages, or a warmer cache, helps more than CPU tuning."
                               }
                             ],
                             "properties": [
@@ -999,11 +994,11 @@
                               },
                               {
                                 "key": "Actual Startup Time",
-                                "value": "0.043"
+                                "value": "0.06"
                               },
                               {
                                 "key": "Actual Total Time",
-                                "value": "26.969"
+                                "value": "23.758"
                               },
                               {
                                 "key": "Alias",
@@ -1075,11 +1070,11 @@
                               },
                               {
                                 "key": "Shared Hit Blocks",
-                                "value": "809"
+                                "value": "1801"
                               },
                               {
                                 "key": "Shared I/O Read Time",
-                                "value": "21.073"
+                                "value": "11.668"
                               },
                               {
                                 "key": "Shared I/O Write Time",
@@ -1087,7 +1082,7 @@
                               },
                               {
                                 "key": "Shared Read Blocks",
-                                "value": "7963"
+                                "value": "6971"
                               },
                               {
                                 "key": "Shared Written Blocks",
@@ -1136,12 +1131,12 @@
                             "loops": 3.0,
                             "startupCost": 2175.0,
                             "totalCost": 2175.0,
-                            "totalTimeMs": 10.26,
-                            "selfTimeMs": 3.061,
+                            "totalTimeMs": 37.677,
+                            "selfTimeMs": 4.869,
                             "selfCost": 0.0,
                             "ioTimeMs": 0.0,
                             "selfIoMs": 0.0,
-                            "share": 0.04470309898647661,
+                            "share": 0.047246615884721746,
                             "heat": "low",
                             "buffers": {
                               "sharedHit": 2775.0,
@@ -1161,11 +1156,11 @@
                               },
                               {
                                 "key": "Actual Startup Time",
-                                "value": "10.259"
+                                "value": "37.676"
                               },
                               {
                                 "key": "Actual Total Time",
-                                "value": "10.26"
+                                "value": "37.677"
                               },
                               {
                                 "key": "Async Capable",
@@ -1301,13 +1296,13 @@
                                 "loops": 3.0,
                                 "startupCost": 0.0,
                                 "totalCost": 2175.0,
-                                "totalTimeMs": 7.199,
-                                "selfTimeMs": 7.199,
+                                "totalTimeMs": 32.808,
+                                "selfTimeMs": 32.808,
                                 "selfCost": 2175.0,
                                 "ioTimeMs": 0.0,
                                 "selfIoMs": 0.0,
-                                "share": 0.1051347956888746,
-                                "heat": "medium",
+                                "share": 0.31835427684246276,
+                                "heat": "high",
                                 "buffers": {
                                   "sharedHit": 2775.0,
                                   "sharedRead": 0.0,
@@ -1332,11 +1327,11 @@
                                   },
                                   {
                                     "key": "Actual Startup Time",
-                                    "value": "0.021"
+                                    "value": "0.019"
                                   },
                                   {
                                     "key": "Actual Total Time",
-                                    "value": "7.199"
+                                    "value": "32.808"
                                   },
                                   {
                                     "key": "Alias",
@@ -1471,17 +1466,17 @@
       }
     ]
   },
-  "planningTimeMs": 0.59,
-  "executionTimeMs": 69.443,
+  "planningTimeMs": 0.178,
+  "executionTimeMs": 103.205,
   "totalCost": 21514.96,
   "nodeCount": 9,
-  "warningsCount": 3,
+  "warningsCount": 2,
   "tables": [
     {
       "name": "orders",
       "rowEstimate": 1000000.0,
       "sizeBytes": 94404608.0,
-      "lastAnalyzed": "2026-10-10 13:41:53.628985+00",
+      "lastAnalyzed": "2026-10-10 13:42:26.885123+00",
       "modifiedSinceAnalyze": 0.0,
       "columns": [
         {
@@ -1643,8 +1638,8 @@
       ]
     }
   ],
-  "rawPlan": "[{\"Execution Time\":69.443,\"Plan\":{\"Actual Loops\":1,\"Actual Rows\":20,\"Actual Startup Time\":68.349,\"Actual Total Time\":68.474,\"Async Capable\":false,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Limit\",\"Parallel Aware\":false,\"Plan Rows\":20,\"Plan Width\":61,\"Plans\":[{\"Actual Loops\":1,\"Actual Rows\":20,\"Actual Startup Time\":68.348,\"Actual Total Time\":68.47,\"Async Capable\":false,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Sort\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Plan Rows\":16560,\"Plan Width\":61,\"Plans\":[{\"Actual Loops\":1,\"Actual Rows\":3333,\"Actual Startup Time\":67.276,\"Actual Total Time\":68.089,\"Async Capable\":false,\"Disk Usage\":0,\"Group Key\":[\"u.email\"],\"HashAgg Batches\":1,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Aggregate\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Partial Mode\":\"Finalize\",\"Peak Memory Usage\":2577,\"Plan Rows\":16560,\"Plan Width\":61,\"Planned Partitions\":0,\"Plans\":[{\"Actual Loops\":1,\"Actual Rows\":9834,\"Actual Startup Time\":59.987,\"Actual Total Time\":62.193,\"Async Capable\":false,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Gather\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Plan Rows\":27398,\"Plan Width\":61,\"Plans\":[{\"Actual Loops\":3,\"Actual Rows\":3278,\"Actual Startup Time\":56.577,\"Actual Total Time\":57.812,\"Async Capable\":false,\"Disk Usage\":0,\"Group Key\":[\"u.email\"],\"HashAgg Batches\":1,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Aggregate\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Partial Mode\":\"Partial\",\"Peak Memory Usage\":1937,\"Plan Rows\":13699,\"Plan Width\":61,\"Planned Partitions\":0,\"Plans\":[{\"Actual Loops\":3,\"Actual Rows\":11110,\"Actual Startup Time\":10.56,\"Actual Total Time\":51.229,\"Async Capable\":false,\"Hash Cond\":\"(o.user_id = u.id)\",\"Inner Unique\":true,\"Join Type\":\"Inner\",\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Hash Join\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Plan Rows\":13699,\"Plan Width\":27,\"Plans\":[{\"Actual Loops\":3,\"Actual Rows\":66667,\"Actual Startup Time\":0.043,\"Actual Total Time\":26.969,\"Alias\":\"o\",\"Async Capable\":false,\"Filter\":\"(status = 'paid'::text)\",\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Seq Scan\",\"Parallel Aware\":true,\"Parent Relationship\":\"Outer\",\"Plan Rows\":82722,\"Plan Width\":14,\"Relation Name\":\"orders\",\"Rows Removed by Filter\":266667,\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":809,\"Shared I/O Read Time\":21.073,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":7963,\"Shared Written Blocks\":0,\"Startup Cost\":0.0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":13980.33,\"Workers\":[]},{\"Actual Loops\":3,\"Actual Rows\":16667,\"Actual Startup Time\":10.259,\"Actual Total Time\":10.26,\"Async Capable\":false,\"Hash Batches\":1,\"Hash Buckets\":32768,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Hash\",\"Original Hash Batches\":1,\"Original Hash Buckets\":32768,\"Parallel Aware\":false,\"Parent Relationship\":\"Inner\",\"Peak Memory Usage\":1298,\"Plan Rows\":16560,\"Plan Width\":29,\"Plans\":[{\"Actual Loops\":3,\"Actual Rows\":16667,\"Actual Startup Time\":0.021,\"Actual Total Time\":7.199,\"Alias\":\"u\",\"Async Capable\":false,\"Filter\":\"(country = 'TN'::text)\",\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Seq Scan\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Plan Rows\":16560,\"Plan Width\":29,\"Relation Name\":\"users\",\"Rows Removed by Filter\":83333,\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":2775,\"Shared I/O Read Time\":0.0,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":0,\"Shared Written Blocks\":0,\"Startup Cost\":0.0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":2175.0,\"Workers\":[]}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":2775,\"Shared I/O Read Time\":0.0,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":0,\"Shared Written Blocks\":0,\"Startup Cost\":2175.0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":2175.0,\"Workers\":[]}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":3614,\"Shared I/O Read Time\":21.073,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":7963,\"Shared Written Blocks\":0,\"Startup Cost\":2382.0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":16579.49,\"Workers\":[]}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":3614,\"Shared I/O Read Time\":21.073,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":7963,\"Shared Written Blocks\":0,\"Startup Cost\":16682.23,\"Strategy\":\"Hashed\",\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":16853.47,\"Workers\":[{\"Disk Usage\":0,\"HashAgg Batches\":1,\"Peak Memory Usage\":1937,\"Worker Number\":0},{\"Disk Usage\":0,\"HashAgg Batches\":1,\"Peak Memory Usage\":1937,\"Worker Number\":1}]}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":3614,\"Shared I/O Read Time\":21.073,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":7963,\"Shared Written Blocks\":0,\"Single Copy\":false,\"Startup Cost\":17682.23,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":20593.27,\"Workers Launched\":2,\"Workers Planned\":2}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":3614,\"Shared I/O Read Time\":21.073,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":7963,\"Shared Written Blocks\":0,\"Startup Cost\":20867.25,\"Strategy\":\"Hashed\",\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":21074.25}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":3617,\"Shared I/O Read Time\":21.073,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":7963,\"Shared Written Blocks\":0,\"Sort Key\":[\"(sum(o.total)) DESC\"],\"Sort Method\":\"top-N heapsort\",\"Sort Space Type\":\"Memory\",\"Sort Space Used\":27,\"Startup Cost\":21514.91,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":21556.31}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":3617,\"Shared I/O Read Time\":21.073,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":7963,\"Shared Written Blocks\":0,\"Startup Cost\":21514.91,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":21514.96},\"Planning\":{\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Memory Allocated\":64,\"Memory Used\":53,\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":244,\"Shared I/O Read Time\":0.0,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":0,\"Shared Written Blocks\":0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0},\"Planning Time\":0.59,\"Serialization\":{\"Format\":\"text\",\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Output Volume\":1,\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":0,\"Shared I/O Read Time\":0.0,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":0,\"Shared Written Blocks\":0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Time\":0.013},\"Settings\":{},\"Triggers\":[]}]",
-  "analyzedAt": "2026-10-10T13:42:26.408Z",
+  "rawPlan": "[{\"Execution Time\":103.205,\"Plan\":{\"Actual Loops\":1,\"Actual Rows\":20,\"Actual Startup Time\":102.958,\"Actual Total Time\":103.055,\"Async Capable\":false,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Limit\",\"Parallel Aware\":false,\"Plan Rows\":20,\"Plan Width\":61,\"Plans\":[{\"Actual Loops\":1,\"Actual Rows\":20,\"Actual Startup Time\":102.955,\"Actual Total Time\":103.051,\"Async Capable\":false,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Sort\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Plan Rows\":16560,\"Plan Width\":61,\"Plans\":[{\"Actual Loops\":1,\"Actual Rows\":3333,\"Actual Startup Time\":100.8,\"Actual Total Time\":102.444,\"Async Capable\":false,\"Disk Usage\":0,\"Group Key\":[\"u.email\"],\"HashAgg Batches\":1,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Aggregate\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Partial Mode\":\"Finalize\",\"Peak Memory Usage\":2321,\"Plan Rows\":16560,\"Plan Width\":61,\"Planned Partitions\":0,\"Plans\":[{\"Actual Loops\":1,\"Actual Rows\":6673,\"Actual Startup Time\":87.297,\"Actual Total Time\":96.881,\"Async Capable\":false,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Gather\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Plan Rows\":27398,\"Plan Width\":61,\"Plans\":[{\"Actual Loops\":3,\"Actual Rows\":2224,\"Actual Startup Time\":83.018,\"Actual Total Time\":83.955,\"Async Capable\":false,\"Disk Usage\":0,\"Group Key\":[\"u.email\"],\"HashAgg Batches\":1,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Aggregate\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Partial Mode\":\"Partial\",\"Peak Memory Usage\":1937,\"Plan Rows\":13699,\"Plan Width\":61,\"Planned Partitions\":0,\"Plans\":[{\"Actual Loops\":3,\"Actual Rows\":11110,\"Actual Startup Time\":37.91,\"Actual Total Time\":77.116,\"Async Capable\":false,\"Hash Cond\":\"(o.user_id = u.id)\",\"Inner Unique\":true,\"Join Type\":\"Inner\",\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Hash Join\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Plan Rows\":13699,\"Plan Width\":27,\"Plans\":[{\"Actual Loops\":3,\"Actual Rows\":66667,\"Actual Startup Time\":0.06,\"Actual Total Time\":23.758,\"Alias\":\"o\",\"Async Capable\":false,\"Filter\":\"(status = 'paid'::text)\",\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Seq Scan\",\"Parallel Aware\":true,\"Parent Relationship\":\"Outer\",\"Plan Rows\":82722,\"Plan Width\":14,\"Relation Name\":\"orders\",\"Rows Removed by Filter\":266667,\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":1801,\"Shared I/O Read Time\":11.668,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":6971,\"Shared Written Blocks\":0,\"Startup Cost\":0.0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":13980.33,\"Workers\":[]},{\"Actual Loops\":3,\"Actual Rows\":16667,\"Actual Startup Time\":37.676,\"Actual Total Time\":37.677,\"Async Capable\":false,\"Hash Batches\":1,\"Hash Buckets\":32768,\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Hash\",\"Original Hash Batches\":1,\"Original Hash Buckets\":32768,\"Parallel Aware\":false,\"Parent Relationship\":\"Inner\",\"Peak Memory Usage\":1298,\"Plan Rows\":16560,\"Plan Width\":29,\"Plans\":[{\"Actual Loops\":3,\"Actual Rows\":16667,\"Actual Startup Time\":0.019,\"Actual Total Time\":32.808,\"Alias\":\"u\",\"Async Capable\":false,\"Filter\":\"(country = 'TN'::text)\",\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Node Type\":\"Seq Scan\",\"Parallel Aware\":false,\"Parent Relationship\":\"Outer\",\"Plan Rows\":16560,\"Plan Width\":29,\"Relation Name\":\"users\",\"Rows Removed by Filter\":83333,\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":2775,\"Shared I/O Read Time\":0.0,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":0,\"Shared Written Blocks\":0,\"Startup Cost\":0.0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":2175.0,\"Workers\":[]}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":2775,\"Shared I/O Read Time\":0.0,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":0,\"Shared Written Blocks\":0,\"Startup Cost\":2175.0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":2175.0,\"Workers\":[]}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":4606,\"Shared I/O Read Time\":11.668,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":6971,\"Shared Written Blocks\":0,\"Startup Cost\":2382.0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":16579.49,\"Workers\":[]}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":4606,\"Shared I/O Read Time\":11.668,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":6971,\"Shared Written Blocks\":0,\"Startup Cost\":16682.23,\"Strategy\":\"Hashed\",\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":16853.47,\"Workers\":[{\"Disk Usage\":0,\"HashAgg Batches\":1,\"Peak Memory Usage\":409,\"Worker Number\":0},{\"Disk Usage\":0,\"HashAgg Batches\":1,\"Peak Memory Usage\":1937,\"Worker Number\":1}]}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":4606,\"Shared I/O Read Time\":11.668,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":6971,\"Shared Written Blocks\":0,\"Single Copy\":false,\"Startup Cost\":17682.23,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":20593.27,\"Workers Launched\":2,\"Workers Planned\":2}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":4606,\"Shared I/O Read Time\":11.668,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":6971,\"Shared Written Blocks\":0,\"Startup Cost\":20867.25,\"Strategy\":\"Hashed\",\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":21074.25}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":4606,\"Shared I/O Read Time\":11.668,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":6971,\"Shared Written Blocks\":0,\"Sort Key\":[\"(sum(o.total)) DESC\"],\"Sort Method\":\"top-N heapsort\",\"Sort Space Type\":\"Memory\",\"Sort Space Used\":27,\"Startup Cost\":21514.91,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":21556.31}],\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":4606,\"Shared I/O Read Time\":11.668,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":6971,\"Shared Written Blocks\":0,\"Startup Cost\":21514.91,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Total Cost\":21514.96},\"Planning\":{\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Memory Allocated\":64,\"Memory Used\":52,\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":8,\"Shared I/O Read Time\":0.0,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":0,\"Shared Written Blocks\":0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0},\"Planning Time\":0.178,\"Serialization\":{\"Format\":\"text\",\"Local Dirtied Blocks\":0,\"Local Hit Blocks\":0,\"Local I/O Read Time\":0.0,\"Local I/O Write Time\":0.0,\"Local Read Blocks\":0,\"Local Written Blocks\":0,\"Output Volume\":1,\"Shared Dirtied Blocks\":0,\"Shared Hit Blocks\":0,\"Shared I/O Read Time\":0.0,\"Shared I/O Write Time\":0.0,\"Shared Read Blocks\":0,\"Shared Written Blocks\":0,\"Temp I/O Read Time\":0.0,\"Temp I/O Write Time\":0.0,\"Temp Read Blocks\":0,\"Temp Written Blocks\":0,\"Time\":0.011},\"Settings\":{},\"Triggers\":[]}]",
+  "analyzedAt": "2026-10-10T13:47:02.831Z",
   "suggestions": null,
   "server": {
     "versionNum": 170011,
@@ -1654,8 +1649,21 @@
     "superuser": true
   },
   "jitMs": null,
-  "serializeMs": 0.013,
+  "serializeMs": 0.011,
   "serializeBytes": 1024.0,
   "plannerSettings": [],
-  "timing": null
+  "timing": {
+    "executionMs": [
+      147.078,
+      103.205,
+      73.038
+    ],
+    "requested": 3,
+    "firstMs": 147.078,
+    "medianMs": 103.205,
+    "minMs": 73.038,
+    "maxMs": 147.078,
+    "firstReadBlocks": 7067.0,
+    "warmReadBlocks": 6903.0
+  }
 }

@@ -108,6 +108,8 @@ export const PlanNodeRow = memo(function PlanNodeRow({
   const ref = useRef<HTMLDivElement>(null)
   const hasChildren = node.children.length > 0
   const hot = node.heat === 'high'
+  const ioShare =
+    node.selfIoMs != null && node.selfTimeMs ? Math.min(1, Math.max(0, node.selfIoMs / node.selfTimeMs)) : 0
 
   useEffect(() => {
     if (selected) ref.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
@@ -202,7 +204,10 @@ export const PlanNodeRow = memo(function PlanNodeRow({
 
         <div className="text-right font-mono text-[12.5px] tabular">
           {timed ? (
-            <span className={cn(hot && 'text-heat-high', node.heat === 'medium' && 'text-heat-medium')}>
+            <span
+              className={cn(hot && 'text-heat-high', node.heat === 'medium' && 'text-heat-medium')}
+              title={ioShare > 0 ? `${Math.round(ioShare * 100)}% of this time is waiting on I/O` : undefined}
+            >
               {fmtMs(node.selfTimeMs)}
             </span>
           ) : (
@@ -211,11 +216,20 @@ export const PlanNodeRow = memo(function PlanNodeRow({
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="h-1 flex-1 overflow-hidden bg-rule">
-            <div
-              className={cn('h-full', HEAT_BG[node.heat])}
-              style={{ width: `${Math.max(node.share * 100, node.share > 0 ? 2 : 0)}%` }}
-            />
+          <div className="h-1.5 flex-1 overflow-hidden bg-rule">
+            {/* Solid = CPU, hatched = waiting on I/O (when track_io_timing is available). */}
+            <div className="flex h-full" style={{ width: `${Math.max(node.share * 100, node.share > 0 ? 2 : 0)}%` }}>
+              <div className={cn('h-full', HEAT_BG[node.heat])} style={{ width: `${(1 - ioShare) * 100}%` }} />
+              {ioShare > 0 && (
+                <div
+                  className="h-full"
+                  style={{
+                    width: `${ioShare * 100}%`,
+                    backgroundImage: `repeating-linear-gradient(135deg, var(--heat-${node.heat}) 0 1.5px, transparent 1.5px 3.5px)`,
+                  }}
+                />
+              )}
+            </div>
           </div>
           <span className="w-10 text-right font-mono text-[11px] text-muted-foreground tabular">
             {fmtPct(node.share)}

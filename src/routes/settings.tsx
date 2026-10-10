@@ -62,6 +62,40 @@ function Field({ label, hint, children }: { label: string; hint?: ReactNode; chi
   )
 }
 
+function NumberField({
+  label,
+  hint,
+  unit,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string
+  hint: string
+  unit?: string
+  min: number
+  max: number
+  value: number
+  onChange: (v: number) => void
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex items-center gap-2">
+        <Input
+          type="number"
+          min={min}
+          max={max}
+          className="w-20 font-mono text-xs"
+          value={value}
+          onChange={(e) => onChange(Math.max(min, Math.min(max, Math.round(Number(e.target.value)) || min)))}
+        />
+        {unit && <span className="text-xs text-muted-foreground">{unit}</span>}
+      </div>
+    </Field>
+  )
+}
+
 type TestState =
   | { status: 'idle' }
   | { status: 'running' }
@@ -339,27 +373,34 @@ function SettingsForm({ saved }: { saved: Settings }) {
                 })}
               </div>
             </Field>
-            <Field label="Statement timeout" hint="Queries running longer are cancelled. 1–600 seconds.">
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={1}
-                  max={600}
-                  className="w-24 font-mono text-xs"
-                  value={Math.round(form.analysis.statementTimeoutMs / 1000)}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      analysis: {
-                        ...form.analysis,
-                        statementTimeoutMs: Math.max(1, Math.min(600, Number(e.target.value) || 1)) * 1000,
-                      },
-                    })
-                  }
-                />
-                <span className="text-xs text-muted-foreground">seconds</span>
-              </div>
-            </Field>
+            <div className="grid max-w-xl grid-cols-3 gap-4">
+              <NumberField
+                label="Profile runs"
+                hint="Median is shown; first run reported apart."
+                min={1}
+                max={10}
+                value={form.analysis.repeatRuns}
+                onChange={(v) => setForm({ ...form, analysis: { ...form.analysis, repeatRuns: v } })}
+              />
+              <NumberField
+                label="Statement timeout"
+                hint="Cancel slower queries."
+                unit="s"
+                min={1}
+                max={600}
+                value={Math.round(form.analysis.statementTimeoutMs / 1000)}
+                onChange={(v) => setForm({ ...form, analysis: { ...form.analysis, statementTimeoutMs: v * 1000 } })}
+              />
+              <NumberField
+                label="Lock timeout"
+                hint="Give up waiting on locks."
+                unit="s"
+                min={1}
+                max={60}
+                value={Math.round(form.analysis.lockTimeoutMs / 1000)}
+                onChange={(v) => setForm({ ...form, analysis: { ...form.analysis, lockTimeoutMs: v * 1000 } })}
+              />
+            </div>
           </Section>
 
           <Section title="Privacy" description="What leaves this machine.">

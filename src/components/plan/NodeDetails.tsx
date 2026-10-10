@@ -28,7 +28,12 @@ export function NodeDetails({ node, timed, indent }: { node: PlanNode; timed: bo
         {timed && <Stat label="Self" value={fmtMs(node.selfTimeMs)} />}
         {node.loops != null && <Stat label="Loops" value={fmtCount(node.loops)} />}
         <Stat label="Rows est." value={fmtCount(node.estimatedRows)} />
-        {node.actualRows != null && <Stat label="Rows actual" value={fmtCount(node.actualRows)} />}
+        {node.actualRows != null && <Stat label="Rows / loop" value={fmtCount(node.actualRows)} />}
+        {node.actualRows != null && node.loops != null && node.loops > 1 && (
+          <Stat label="Rows produced" value={`${fmtCount(node.actualRows * node.loops)} (× ${fmtCount(node.loops)})`} />
+        )}
+        {node.ioTimeMs != null && <Stat label="I/O wait (incl.)" value={fmtMs(node.ioTimeMs)} />}
+        {node.selfIoMs != null && node.selfIoMs > 0 && <Stat label="I/O wait (self)" value={fmtMs(node.selfIoMs)} />}
         {node.totalCost != null && (
           <Stat label="Cost" value={`${node.startupCost?.toFixed(1) ?? '0'} → ${node.totalCost.toFixed(1)}`} />
         )}

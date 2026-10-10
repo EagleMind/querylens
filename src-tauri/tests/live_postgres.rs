@@ -64,7 +64,8 @@ fn opts(mode: ExplainMode) -> RunOptions {
 #[tokio::test]
 async fn analyzes_slow_join_and_finds_missing_index() {
     let Some((conn, spec)) = setup() else { return };
-    let a = explain(&conn, &spec, SLOW_QUERY, &opts(ExplainMode::Analyze), LIMITS).await.unwrap();
+    let profile = RunOptions { runs: 3, ..opts(ExplainMode::Analyze) };
+    let a = explain(&conn, &spec, SLOW_QUERY, &profile, LIMITS).await.unwrap();
 
     assert!(a.execution_time_ms.unwrap() > 0.0);
     let mut kinds = Vec::new();
