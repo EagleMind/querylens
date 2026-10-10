@@ -75,6 +75,9 @@ impl EngineSession for DuckSession {
         // File databases are opened read-only, so `read_only` holds by construction
         // (`:memory:` has nothing to protect).
         let (mode, timeout_ms, sql) = (req.mode, req.timeout_ms, req.sql);
+        if req.params.is_some() {
+            return Err(AppError::validation("Parameterized queries ($1…) are supported for PostgreSQL only."));
+        }
         if !req.setup.is_empty() || !req.hypothetical.is_empty() {
             return Err(AppError::validation(
                 "setup_sql isn't supported for DuckDB (databases are opened read-only).",

@@ -11,8 +11,9 @@ pub async fn analyze_query(
     connection_id: String,
     sql: String,
     mode: ExplainMode,
+    params: Option<Vec<Option<String>>>,
 ) -> AppResult<AnalysisResult> {
     let runs = state.store.get_settings()?.analysis.repeat_runs;
-    let opts = RunOptions { persist: true, runs, ..RunOptions::new(mode) };
+    let opts = RunOptions { persist: true, runs, params: params.unwrap_or_default(), ..RunOptions::new(mode) };
     analysis::run(&state.store, &connection_id, &sql, opts).await
 }

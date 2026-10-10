@@ -57,11 +57,24 @@ pub struct RunOptions {
     pub read_only: bool,
     /// Profile repeats (1 = single run). Ignored for Explain, which is deterministic.
     pub runs: u32,
+    /// Values for `$1…$n`; required when the SQL has placeholders.
+    pub params: Vec<Option<String>>,
+    /// Plan as a prepared statement's generic plan.
+    pub generic_plan: bool,
 }
 
 impl RunOptions {
     pub fn new(mode: ExplainMode) -> Self {
-        Self { mode, persist: false, setup: Vec::new(), hypothetical: Vec::new(), read_only: false, runs: 1 }
+        Self {
+            mode,
+            persist: false,
+            setup: Vec::new(),
+            hypothetical: Vec::new(),
+            read_only: false,
+            runs: 1,
+            params: Vec::new(),
+            generic_plan: false,
+        }
     }
 }
 
@@ -125,6 +138,14 @@ pub async fn explain(
     let hypothetical = opts.hypothetical.iter().map(|s| engines::sanitize_sql(s)).collect::<AppResult<Vec<_>>>()?;
     // Hypothetical indexes are planner-only, so they always produce an estimate.
     let mode = if hypothetical.is_empty() { opts.mode } else { ExplainMode::Estimate };
+    let placeholders = engines::placeholder_count(&sql);
+    if placeholders > 0 && opts.params.len() < placeholders {
+        return Err(crate::error::AppError::validation(format!(
+            "This query has {placeholders} parameter(s) ($1…${placeholders}). Fill in their values in the \
+             Parameters bar under the editor."
+        )));
+    }
+    let params: Option<&[Option<String>]> = (placeholders > 0).then(|| &opts.params[..placeholders]);
 
     let mut session = engines::open(spec).await?;
     let request = ExplainRequest {
@@ -135,6 +156,8 @@ pub async fn explain(
         setup: &setup,
         hypothetical: &hypothetical,
         read_only: opts.read_only,
+        params,
+        generic_plan: opts.generic_plan,
     };
 
     let wanted = if mode == ExplainMode::Analyze { opts.runs.clamp(1, 10) } else { 1 };
@@ -199,6 +222,7 @@ pub async fn explain(
         plan_fp: plan::fingerprint::plan_fp(&root_for_fp),
         baseline: None,
         whatif: None,
+        params: params.map(<[_]>::to_vec).unwrap_or_default(),
     })
 }
 
@@ -212,7 +236,7 @@ pub async fn preview_fix(store: &Store, baseline: &AnalysisResult, fix: &str) ->
     let fix = engines::sanitize_sql(fix)?;
     let lower = fix.to_ascii_lowercase();
     let runs = store.get_settings()?.analysis.repeat_runs;
-    let base = RunOptions { read_only: true, runs, ..RunOptions::new(baseline.mode) };
+    let base = RunOptions { read_only: true, runs, params: baseline.params.clone(), ..RunOptions::new(baseline.mode) };
 
     let (sql, opts) = if lower.starts_with("create index") || lower.starts_with("create unique index") {
         let target_rows = index_target(&lower)

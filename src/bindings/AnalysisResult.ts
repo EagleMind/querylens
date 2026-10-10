@@ -46,4 +46,8 @@ baseline: Baseline | null,
 /**
  * Planner what-if sweep, when one has been run.
  */
-whatif: WhatIfReport | null, };
+whatif: WhatIfReport | null, 
+/**
+ * Values used for `$1…$n` (null = SQL NULL); empty for literal SQL.
+ */
+params: Array<string | null>, };

@@ -6,7 +6,7 @@ mod postgres;
 use async_trait::async_trait;
 
 use crate::error::{AppError, AppResult};
-use crate::model::{ConnectionTestResult, Engine, ExplainMode, ServerInfo, TableContext};
+use crate::model::{ConnectionTestResult, Engine, ExplainMode, ServerInfo, TableContext, TopQuery, TopQueryOrder};
 
 /// Everything needed to open a session; built from a saved connection or a form.
 #[derive(Debug, Clone)]
@@ -37,12 +37,27 @@ pub struct ExplainRequest<'a> {
     /// Make the transaction read-only after setup. Used for model-issued queries so a
     /// prompt-injected UPDATE/DELETE can't even run (let alone commit).
     pub read_only: bool,
+    /// Values for `$1…$n` (None = SQL NULL). The statement is PREPAREd and EXPLAINed via
+    /// `EXECUTE`. Postgres only.
+    pub params: Option<&'a [Option<String>]>,
+    /// With `params`: plan as a prepared statement's *generic* plan would (PG12+).
+    pub generic_plan: bool,
 }
 
 impl<'a> ExplainRequest<'a> {
     /// A request with no setup, no hypothetical indexes and the default lock timeout.
     pub fn new(sql: &'a str, mode: ExplainMode, timeout_ms: u32) -> Self {
-        Self { sql, mode, timeout_ms, lock_timeout_ms: 5_000, setup: &[], hypothetical: &[], read_only: false }
+        Self {
+            sql,
+            mode,
+            timeout_ms,
+            lock_timeout_ms: 5_000,
+            setup: &[],
+            hypothetical: &[],
+            read_only: false,
+            params: None,
+            generic_plan: false,
+        }
     }
 }
 
@@ -60,6 +75,11 @@ pub trait EngineSession: Send {
 
     /// Best-effort schema facts for the given relations; unknown names are skipped.
     async fn table_context(&mut self, relations: &[String]) -> AppResult<Vec<TableContext>>;
+
+    /// The most expensive statements recorded by the server (pg_stat_statements).
+    async fn top_queries(&mut self, _order: TopQueryOrder, _limit: u32) -> AppResult<Vec<TopQuery>> {
+        Err(AppError::validation("Top queries are available for PostgreSQL with pg_stat_statements."))
+    }
 }
 
 pub async fn open(spec: &ConnectSpec) -> AppResult<Box<dyn EngineSession>> {
@@ -96,6 +116,47 @@ pub fn sanitize_setup_sql(setup: &str) -> AppResult<String> {
     }
     // CONCURRENTLY can't run inside a transaction block; a plain build is equivalent here.
     Ok(s.replacen(" CONCURRENTLY", "", 1).replacen(" concurrently", "", 1))
+}
+
+/// Highest `$n` placeholder in the statement (0 = none), ignoring strings and comments.
+pub fn placeholder_count(sql: &str) -> usize {
+    let b = sql.as_bytes();
+    let (mut i, mut max) = (0, 0);
+    while i < b.len() {
+        match b[i] {
+            b'\'' => {
+                i += 1;
+                while i < b.len() && b[i] != b'\'' {
+                    i += 1;
+                }
+                i += 1;
+            }
+            b'-' if b.get(i + 1) == Some(&b'-') => {
+                while i < b.len() && b[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'$' if b.get(i + 1).is_some_and(u8::is_ascii_digit) => {
+                let start = i + 1;
+                i = start;
+                while i < b.len() && b[i].is_ascii_digit() {
+                    i += 1;
+                }
+                max = max.max(sql[start..i].parse().unwrap_or(0));
+            }
+            _ => i += 1,
+        }
+    }
+    max
+}
+
+/// A SQL literal for a parameter value: quoted string (Postgres infers the type from
+/// the prepared statement), or NULL.
+pub fn quote_literal(v: Option<&str>) -> String {
+    match v {
+        None => "NULL".into(),
+        Some(s) => format!("'{}'", s.replace('\'', "''")),
+    }
 }
 
 /// Whether a statement modifies data (at the top level or in a CTE).
@@ -174,6 +235,15 @@ mod tests {
         assert!(sanitize_setup_sql("DROP TABLE orders").is_err());
         assert!(sanitize_setup_sql("delete from orders").is_err());
         assert!(sanitize_setup_sql("CREATE STATISTICS s (dependencies) ON a, b FROM t").is_ok());
+    }
+
+    #[test]
+    fn placeholders_and_literals() {
+        use super::{placeholder_count, quote_literal};
+        assert_eq!(placeholder_count("select * from t where a = $1 and b = $12"), 12);
+        assert_eq!(placeholder_count("select '$1', 1 -- $3\n from t"), 0);
+        assert_eq!(quote_literal(Some("it's")), "'it''s'");
+        assert_eq!(quote_literal(None), "NULL");
     }
 
     #[test]

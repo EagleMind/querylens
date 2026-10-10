@@ -12,4 +12,8 @@ correlation: number | null,
 /**
  * Up to three most common values, with their row fractions.
  */
-commonValues: Array<string>, commonFreqs: Array<number>, };
+commonValues: Array<string>, commonFreqs: Array<number>, 
+/**
+ * A few histogram bounds (values outside the most-common list), low to high.
+ */
+histogram: Array<string>, };

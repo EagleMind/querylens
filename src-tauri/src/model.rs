@@ -262,6 +262,9 @@ pub struct ColumnStats {
     /// Up to three most common values, with their row fractions.
     pub common_values: Vec<String>,
     pub common_freqs: Vec<f64>,
+    /// A few histogram bounds (values outside the most-common list), low to high.
+    #[serde(default)]
+    pub histogram: Vec<String>,
 }
 
 /// What the server supports, detected once per session.
@@ -353,6 +356,67 @@ pub struct AnalysisResult {
     /// Planner what-if sweep, when one has been run.
     #[serde(default)]
     pub whatif: Option<WhatIfReport>,
+    /// Values used for `$1…$n` (null = SQL NULL); empty for literal SQL.
+    #[serde(default)]
+    pub params: Vec<Option<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SensitivityRow {
+    /// e.g. "most common", "rare", "absent", "your value", "generic plan".
+    pub label: String,
+    /// The value tried for the parameter (null for the generic plan row).
+    pub value: Option<String>,
+    /// Fraction of rows with this value, when known from statistics.
+    pub frequency: Option<f64>,
+    pub plan_fp: String,
+    /// Short description of the plan's data access, e.g. "Index Scan on events".
+    pub shape: String,
+    pub cost: Option<f64>,
+    pub generic: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SensitivityReport {
+    /// 1-based parameter number ($1 = 1).
+    pub param: u32,
+    /// The column the parameter is compared with, when it could be determined.
+    pub column: Option<String>,
+    pub rows: Vec<SensitivityRow>,
+    /// More than one plan shape across the tried values (custom plans).
+    pub flips: bool,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum TopQueryOrder {
+    Total,
+    Mean,
+    Calls,
+}
+
+/// A statement from `pg_stat_statements`.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct TopQuery {
+    pub query_id: String,
+    /// Normalized text, literals replaced by `$n`.
+    pub query: String,
+    pub calls: f64,
+    pub total_ms: f64,
+    pub mean_ms: f64,
+    pub rows: f64,
+    /// Shared-buffer cache hit ratio, 0–1.
+    pub hit_ratio: Option<f64>,
+    /// Share of all statement time in this database, 0–1.
+    pub share: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

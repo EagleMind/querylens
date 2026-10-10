@@ -220,7 +220,12 @@ pub async fn sweep(
     let mut results = Vec::new();
     for sc in scenarios {
         emit(WhatIfEvent::Running { kind: sc.kind.clone(), phase: "planning".into() });
-        let estimate_opts = RunOptions { setup: sc.setup.clone(), read_only: true, ..RunOptions::new(ExplainMode::Estimate) };
+        let estimate_opts = RunOptions {
+            setup: sc.setup.clone(),
+            read_only: true,
+            params: baseline.params.clone(),
+            ..RunOptions::new(ExplainMode::Estimate)
+        };
         let limits = Limits::from_settings(&settings);
         let result = match analysis::explain(&conn, &spec, &baseline.sql, &estimate_opts, limits).await {
             Err(e) => WhatIfResult {
@@ -252,6 +257,7 @@ pub async fn sweep(
                         setup: sc.setup.clone(),
                         read_only: true,
                         runs: settings.repeat_runs,
+                        params: baseline.params.clone(),
                         ..RunOptions::new(ExplainMode::Analyze)
                     };
                     let timeout = budget_ms.map(|b| b.min(settings.statement_timeout_ms as f64) as u32).unwrap_or(settings.statement_timeout_ms);
@@ -341,6 +347,7 @@ mod tests {
             plan_fp: String::new(),
             baseline: None,
             whatif: None,
+            params: vec![],
         }
     }
 
