@@ -158,6 +158,9 @@ pub enum WarningKind {
     HashSpill,
     NestedLoopBlowup,
     HeapFetches,
+    JitOverhead,
+    IoBound,
+    SerializeHeavy,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
@@ -221,6 +224,12 @@ pub struct PlanNode {
     pub self_time_ms: Option<f64>,
     /// Exclusive estimated cost (estimate mode).
     pub self_cost: Option<f64>,
+    /// Inclusive time spent waiting on reads/writes, ms (needs `track_io_timing`).
+    #[serde(default)]
+    pub io_time_ms: Option<f64>,
+    /// Exclusive I/O time, ms; always ≤ `self_time_ms`.
+    #[serde(default)]
+    pub self_io_ms: Option<f64>,
     /// Share of the whole plan's self time (or self cost), 0–1.
     pub share: f64,
     pub heat: Heat,
@@ -236,6 +245,36 @@ pub struct PlanNode {
 pub struct ColumnInfo {
     pub name: String,
     pub data_type: String,
+    /// Planner statistics from `pg_stats`, when the column has been analyzed.
+    #[serde(default)]
+    pub stats: Option<ColumnStats>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ColumnStats {
+    pub null_frac: f64,
+    /// Positive: distinct count. Negative: fraction of rows (−1 = unique).
+    pub n_distinct: f64,
+    /// Physical vs. logical order, −1…1. Near ±1 makes index range scans cheap.
+    pub correlation: Option<f64>,
+    /// Up to three most common values, with their row fractions.
+    pub common_values: Vec<String>,
+    pub common_freqs: Vec<f64>,
+}
+
+/// What the server supports, detected once per session.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ServerInfo {
+    /// e.g. 170006 for PostgreSQL 17.6; 0 for engines without a version number.
+    pub version_num: u32,
+    pub hypopg: bool,
+    pub pg_stat_statements: bool,
+    pub io_timing: bool,
+    pub superuser: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -281,6 +320,41 @@ pub struct AnalysisResult {
     pub raw_plan: String,
     pub analyzed_at: String,
     pub suggestions: Option<SuggestionSet>,
+    #[serde(default)]
+    pub server: ServerInfo,
+    /// JIT compilation time, ms (Postgres).
+    #[serde(default)]
+    pub jit_ms: Option<f64>,
+    /// Time to serialize result rows for the client, ms (PG17 `SERIALIZE`).
+    #[serde(default)]
+    pub serialize_ms: Option<f64>,
+    #[serde(default)]
+    pub serialize_bytes: Option<f64>,
+    /// Non-default planner-relevant settings in effect (PG12 `SETTINGS`).
+    #[serde(default)]
+    pub planner_settings: Vec<PlanProperty>,
+    /// Repeat-run statistics when Profile ran more than once.
+    #[serde(default)]
+    pub timing: Option<RunStats>,
+}
+
+/// Profile repeated N times: the median run is the one displayed. The first run is
+/// reported separately; it usually reads from disk while later runs hit the cache.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct RunStats {
+    /// Execution time of every run, in order.
+    pub execution_ms: Vec<f64>,
+    /// How many runs were asked for (fewer ran if the time budget ran out).
+    pub requested: u32,
+    pub first_ms: f64,
+    pub median_ms: f64,
+    pub min_ms: f64,
+    pub max_ms: f64,
+    /// Shared blocks read from disk/OS cache on the first run vs. the warm median.
+    pub first_read_blocks: f64,
+    pub warm_read_blocks: Option<f64>,
 }
 
 // ───────────────────────────── History ─────────────────────────────
@@ -371,6 +445,19 @@ pub struct LlmSettings {
 pub struct AnalysisSettings {
     pub default_mode: ExplainMode,
     pub statement_timeout_ms: u32,
+    /// Give up waiting for row/table locks after this long (Profile on busy tables).
+    #[serde(default = "default_lock_timeout_ms")]
+    pub lock_timeout_ms: u32,
+    /// Profile repeats: the median run is shown, the first run is reported separately.
+    #[serde(default = "default_repeat_runs")]
+    pub repeat_runs: u32,
+}
+
+fn default_lock_timeout_ms() -> u32 {
+    5_000
+}
+fn default_repeat_runs() -> u32 {
+    3
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -396,6 +483,8 @@ impl Default for Settings {
             analysis: AnalysisSettings {
                 default_mode: ExplainMode::Analyze,
                 statement_timeout_ms: 30_000,
+                lock_timeout_ms: default_lock_timeout_ms(),
+                repeat_runs: default_repeat_runs(),
             },
         }
     }

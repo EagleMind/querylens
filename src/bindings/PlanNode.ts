@@ -37,6 +37,14 @@ selfTimeMs: number | null,
  */
 selfCost: number | null, 
 /**
+ * Inclusive time spent waiting on reads/writes, ms (needs `track_io_timing`).
+ */
+ioTimeMs: number | null, 
+/**
+ * Exclusive I/O time, ms; always ≤ `self_time_ms`.
+ */
+selfIoMs: number | null, 
+/**
  * Share of the whole plan's self time (or self cost), 0–1.
  */
 share: number, heat: Heat, buffers: PlanBuffers | null, warnings: Array<PlanWarning>, properties: Array<PlanProperty>, children: Array<PlanNode>, };

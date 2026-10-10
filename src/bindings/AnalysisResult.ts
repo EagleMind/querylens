@@ -2,6 +2,9 @@
 import type { Engine } from "./Engine";
 import type { ExplainMode } from "./ExplainMode";
 import type { PlanNode } from "./PlanNode";
+import type { PlanProperty } from "./PlanProperty";
+import type { RunStats } from "./RunStats";
+import type { ServerInfo } from "./ServerInfo";
 import type { SuggestionSet } from "./SuggestionSet";
 import type { TableContext } from "./TableContext";
 
@@ -9,4 +12,20 @@ export type AnalysisResult = { id: string, connectionId: string, connectionName:
 /**
  * The engine's EXPLAIN output, verbatim.
  */
-rawPlan: string, analyzedAt: string, suggestions: SuggestionSet | null, };
+rawPlan: string, analyzedAt: string, suggestions: SuggestionSet | null, server: ServerInfo, 
+/**
+ * JIT compilation time, ms (Postgres).
+ */
+jitMs: number | null, 
+/**
+ * Time to serialize result rows for the client, ms (PG17 `SERIALIZE`).
+ */
+serializeMs: number | null, serializeBytes: number | null, 
+/**
+ * Non-default planner-relevant settings in effect (PG12 `SETTINGS`).
+ */
+plannerSettings: Array<PlanProperty>, 
+/**
+ * Repeat-run statistics when Profile ran more than once.
+ */
+timing: RunStats | null, };

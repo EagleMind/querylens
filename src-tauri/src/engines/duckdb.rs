@@ -6,7 +6,7 @@ use duckdb::{AccessMode, Config, Connection};
 
 use super::{ConnectSpec, EngineSession, ExplainRequest};
 use crate::error::{AppError, AppResult};
-use crate::model::{ColumnInfo, ConnectionTestResult, ExplainMode, IndexInfo, TableContext};
+use crate::model::{ColumnInfo, ConnectionTestResult, ExplainMode, IndexInfo, ServerInfo, TableContext};
 
 pub const MEMORY: &str = ":memory:";
 
@@ -67,11 +67,15 @@ impl EngineSession for DuckSession {
         .await
     }
 
+    fn server_info(&self) -> ServerInfo {
+        ServerInfo::default()
+    }
+
     async fn explain(&mut self, req: &ExplainRequest<'_>) -> AppResult<String> {
         // File databases are opened read-only, so `read_only` holds by construction
         // (`:memory:` has nothing to protect).
         let (mode, timeout_ms, sql) = (req.mode, req.timeout_ms, req.sql);
-        if req.setup.is_some() {
+        if !req.setup.is_empty() || !req.hypothetical.is_empty() {
             return Err(AppError::validation(
                 "setup_sql isn't supported for DuckDB (databases are opened read-only).",
             ));
@@ -132,7 +136,7 @@ impl EngineSession for DuckSession {
                      WHERE table_name = ?1 ORDER BY column_index LIMIT 60",
                 )?;
                 let columns = cols
-                    .query_map([&rel], |r| Ok(ColumnInfo { name: r.get(0)?, data_type: r.get(1)? }))?
+                    .query_map([&rel], |r| Ok(ColumnInfo { name: r.get(0)?, data_type: r.get(1)?, stats: None }))?
                     .collect::<Result<Vec<_>, _>>()?;
                 let mut idx = c.prepare(
                     "SELECT index_name, coalesce(sql, '') FROM duckdb_indexes() WHERE table_name = ?1",
@@ -174,7 +178,7 @@ mod tests {
             file_path: Some(MEMORY.into()),
         };
         let mut s = DuckSession::open(&spec).await.unwrap();
-        let req = |sql, mode| ExplainRequest { sql, mode, timeout_ms: 10_000, setup: None, read_only: false };
+        let req = |sql, mode| ExplainRequest::new(sql, mode, 10_000);
         let raw = s
             .explain(&req(
                 "SELECT range % 10 AS k, count(*) FROM range(100000) WHERE range > 10 GROUP BY 1",

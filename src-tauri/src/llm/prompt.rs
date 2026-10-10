@@ -67,10 +67,30 @@ pub fn user(a: &AnalysisResult) -> String {
     let _ = writeln!(s, "Engine: {} · Mode: {mode}", a.engine.label());
     if let Some(ms) = a.execution_time_ms {
         let _ = write!(s, "Execution time: {}", fmt_ms(ms));
+        if let Some(t) = &a.timing {
+            let _ = write!(
+                s,
+                " (median of {} runs; first run {}, range {}–{})",
+                t.execution_ms.len(),
+                fmt_ms(t.first_ms),
+                fmt_ms(t.min_ms),
+                fmt_ms(t.max_ms)
+            );
+        }
         if let Some(p) = a.planning_time_ms {
             let _ = write!(s, " · Planning time: {}", fmt_ms(p));
         }
         s.push('\n');
+    }
+    if let Some(j) = a.jit_ms {
+        let _ = writeln!(s, "JIT compilation: {}", fmt_ms(j));
+    }
+    if let Some(ser) = a.serialize_ms {
+        let _ = writeln!(s, "Result serialization: {}", fmt_ms(ser));
+    }
+    if !a.planner_settings.is_empty() {
+        let set: Vec<String> = a.planner_settings.iter().map(|p| format!("{} = {}", p.key, p.value)).collect();
+        let _ = writeln!(s, "Non-default planner settings: {}", set.join(", "));
     }
     if let Some(c) = a.total_cost {
         let _ = writeln!(s, "Total estimated cost: {c:.0}");
@@ -80,8 +100,16 @@ pub fn user(a: &AnalysisResult) -> String {
     s.push_str(&compact_plan(&a.root));
     if !a.tables.is_empty() {
         s.push_str("\n## Tables\n");
+        // Column statistics only for columns the query or plan actually mentions.
+        let mut mentioned = a.sql.to_ascii_lowercase();
+        crate::plan::walk(&a.root, &mut |n| {
+            if let Some(d) = &n.detail {
+                mentioned.push(' ');
+                mentioned.push_str(&d.to_ascii_lowercase());
+            }
+        });
         for t in &a.tables {
-            s.push_str(&table_summary(t));
+            s.push_str(&table_summary(t, Some(&mentioned)));
         }
     }
     s
@@ -147,7 +175,9 @@ fn render(n: &PlanNode, depth: usize, out: &mut String, lines: &mut usize) {
     }
 }
 
-pub fn table_summary(t: &TableContext) -> String {
+/// `mentioned`: lowercase text to look for column names in; statistics are printed only
+/// for columns found there (`None` = every column).
+pub fn table_summary(t: &TableContext, mentioned: Option<&str>) -> String {
     let mut s = format!("{}", t.name);
     let mut facts = Vec::new();
     if let Some(r) = t.row_estimate {
@@ -171,6 +201,31 @@ pub fn table_summary(t: &TableContext) -> String {
     if !t.columns.is_empty() {
         let cols: Vec<String> = t.columns.iter().map(|c| format!("{} {}", c.name, c.data_type)).collect();
         let _ = writeln!(s, "  columns: {}", cols.join(", "));
+        for c in &t.columns {
+            let Some(st) = &c.stats else { continue };
+            if mentioned.is_some_and(|m| !mentions(m, &c.name.to_ascii_lowercase())) {
+                continue;
+            }
+            let distinct = if st.n_distinct < 0.0 {
+                format!("{:.0}% distinct", -st.n_distinct * 100.0)
+            } else {
+                format!("{} distinct", fmt_count(st.n_distinct))
+            };
+            let _ = write!(s, "  stats {}: {distinct}, {:.0}% null", c.name, st.null_frac * 100.0);
+            if let Some(corr) = st.correlation {
+                let _ = write!(s, ", correlation {corr:.2}");
+            }
+            let common: Vec<String> = st
+                .common_values
+                .iter()
+                .zip(&st.common_freqs)
+                .map(|(v, f)| format!("{v} ({:.1}%)", f * 100.0))
+                .collect();
+            if !common.is_empty() {
+                let _ = write!(s, ", most common: {}", common.join(", "));
+            }
+            s.push('\n');
+        }
     }
     if t.indexes.is_empty() {
         s.push_str("  indexes: none\n");
@@ -180,6 +235,16 @@ pub fn table_summary(t: &TableContext) -> String {
         }
     }
     s
+}
+
+/// Whole-word containment (identifiers: letters, digits, underscore).
+fn mentions(haystack: &str, word: &str) -> bool {
+    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    haystack.match_indices(word).any(|(i, _)| {
+        let before = haystack[..i].chars().next_back();
+        let after = haystack[i + word.len()..].chars().next();
+        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
+    })
 }
 
 pub fn fmt_ms(ms: f64) -> String {

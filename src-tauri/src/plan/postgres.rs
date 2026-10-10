@@ -41,13 +41,36 @@ pub(super) fn parse(raw: &str) -> AppResult<ParsedPlan> {
         .ok_or_else(|| AppError::internal("Postgres EXPLAIN output has no \"Plan\""))?;
 
     let root = node(plan, "0".into(), 1.0);
+    let serialization = top.get("Serialization").and_then(Value::as_object);
     Ok(ParsedPlan {
         total_cost: root.total_cost,
         planning_time_ms: num(top, "Planning Time"),
         execution_time_ms: num(top, "Execution Time"),
+        jit_ms: top.get("JIT").and_then(|j| j.pointer("/Timing/Total")).and_then(Value::as_f64),
+        serialize_ms: serialization.and_then(|s| num(s, "Time")),
+        // Reported in kB.
+        serialize_bytes: serialization.and_then(|s| num(s, "Output Volume")).map(|kb| kb * 1024.0),
+        planner_settings: top
+            .get("Settings")
+            .and_then(Value::as_object)
+            .map(|o| o.iter().map(|(k, v)| PlanProperty { key: k.clone(), value: fmt_value(v) }).collect())
+            .unwrap_or_default(),
         root,
     })
 }
+
+/// Read/write wait time (ms, all loops). PG ≤15 reports `I/O Read Time`; PG16+ splits
+/// it into shared/local/temp.
+const IO_TIME_KEYS: &[&str] = &[
+    "I/O Read Time",
+    "I/O Write Time",
+    "Shared I/O Read Time",
+    "Shared I/O Write Time",
+    "Local I/O Read Time",
+    "Local I/O Write Time",
+    "Temp I/O Read Time",
+    "Temp I/O Write Time",
+];
 
 fn num(o: &Obj, k: &str) -> Option<f64> {
     o.get(k).and_then(Value::as_f64)
@@ -81,6 +104,11 @@ fn node(o: &Obj, id: String, procs: f64) -> PlanNode {
         let per_loop = num(o, "Actual Total Time").unwrap_or(0.0);
         let repeats = if loops == 0.0 { 0.0 } else { (loops / procs).max(1.0) };
         n.total_time_ms = Some(per_loop * repeats);
+    }
+
+    let io: Vec<f64> = IO_TIME_KEYS.iter().filter_map(|k| num(o, k)).collect();
+    if !io.is_empty() {
+        n.io_time_ms = Some(io.iter().sum());
     }
 
     if o.contains_key("Shared Hit Blocks") || o.contains_key("Shared Read Blocks") {

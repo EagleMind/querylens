@@ -10,3 +10,6 @@ dist
 # Rust / Tauri
 src-tauri/target
 src-tauri/gen/schemas
+
+# dev data caches
+dev/.cache

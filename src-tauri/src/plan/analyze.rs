@@ -8,6 +8,7 @@ use super::{fmt_count, warning};
 const HIGH_SHARE: f64 = 0.25;
 const MEDIUM_SHARE: f64 = 0.05;
 const ESTIMATE_ERROR_RATIO: f64 = 10.0;
+const IO_BOUND_SHARE: f64 = 0.5;
 const ESTIMATE_ERROR_MIN_ROWS: f64 = 100.0;
 /// A node's misestimate must be this many times worse than its inputs' to count as its own.
 const ORIGIN_FACTOR: f64 = 3.0;
@@ -53,6 +54,12 @@ fn fill_times(node: &mut PlanNode) {
         let child_cost: f64 = node.children.iter().filter_map(|c| c.total_cost).sum();
         node.self_cost = Some((total - child_cost).max(0.0));
     }
+    if let Some(io) = node.io_time_ms {
+        let child_io: f64 = node.children.iter().filter_map(|c| c.io_time_ms).sum();
+        // Exclusive I/O can't exceed exclusive time (parallel workers sum their waits).
+        let cap = node.self_time_ms.unwrap_or(f64::INFINITY);
+        node.self_io_ms = Some((io - child_io).clamp(0.0, cap));
+    }
 }
 
 fn sum(node: &PlanNode, get: &impl Fn(&PlanNode) -> Option<f64>) -> f64 {
@@ -77,6 +84,7 @@ fn score(node: &mut PlanNode, basis: Basis, under_limit: bool) {
         Heat::Low
     };
     row_estimate_warning(node, under_limit);
+    io_bound_warning(node);
     let under_limit = under_limit || EARLY_STOP.contains(&node.node_type.as_str());
     for c in &mut node.children {
         score(c, basis, under_limit);
@@ -90,6 +98,24 @@ fn estimate_ratio(node: &PlanNode) -> Option<f64> {
         return None;
     }
     Some(est.max(actual) / est.min(actual).max(1.0))
+}
+
+/// A hot operator that mostly waits on disk: more memory/cache or fewer pages read
+/// help more than CPU-side changes.
+fn io_bound_warning(node: &mut PlanNode) {
+    let (Some(io), Some(own)) = (node.self_io_ms, node.self_time_ms) else { return };
+    if node.heat != Heat::High || own <= 0.0 || io / own < IO_BOUND_SHARE {
+        return;
+    }
+    node.warnings.push(warning(
+        WarningKind::IoBound,
+        WarningSeverity::Info,
+        format!(
+            "{:.0}% of this operator's {own:.0} ms is spent waiting on reads. It is I/O-bound: \
+             an index that reads fewer pages, or a warmer cache, helps more than CPU tuning.",
+            io / own * 100.0
+        ),
+    ));
 }
 
 fn row_estimate_warning(node: &mut PlanNode, under_limit: bool) {

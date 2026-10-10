@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use querylens_lib::engines::ConnectSpec;
 use querylens_lib::model::{Connection, Engine, ExplainMode, SslMode};
 use querylens_lib::plan;
-use querylens_lib::services::analysis::{RunOptions, explain};
+use querylens_lib::services::analysis::{Limits, RunOptions, explain};
 
 #[tokio::test]
 async fn job_queries_parse_and_score() {
@@ -55,14 +55,15 @@ async fn job_queries_parse_and_score() {
     };
     names.sort_by_key(|n| (n[..n.len() - 1].parse::<u32>().unwrap_or(0), n.clone()));
 
-    let opts = RunOptions { mode: ExplainMode::Analyze, persist: false, setup_sql: None, read_only: true };
+    let opts = RunOptions { read_only: true, ..RunOptions::new(ExplainMode::Analyze) };
+    let limits = Limits { timeout_ms: 120_000, lock_timeout_ms: 5_000 };
     let mut failures = Vec::new();
     let mut warning_totals: BTreeMap<String, u32> = BTreeMap::new();
     println!("{:<5} {:>10} {:>5} {:>4}  {:<44} {}", "query", "exec", "ops", "warn", "hottest operator", "share");
 
     for name in &names {
         let sql = std::fs::read_to_string(format!("{dir}/{name}.sql")).unwrap();
-        match explain(&conn, &spec, &sql, &opts, 120_000).await {
+        match explain(&conn, &spec, &sql, &opts, limits).await {
             Ok(a) => {
                 let mut hottest = &a.root;
                 let mut share_sum = 0.0;

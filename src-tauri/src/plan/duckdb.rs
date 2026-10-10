@@ -47,7 +47,16 @@ pub(super) fn parse(raw: &str, mode: ExplainMode) -> AppResult<ParsedPlan> {
     }
 
     let root = node(top, "0".into(), mode);
-    Ok(ParsedPlan { root, planning_time_ms: None, execution_time_ms, total_cost: None })
+    Ok(ParsedPlan {
+        root,
+        planning_time_ms: None,
+        execution_time_ms,
+        total_cost: None,
+        jit_ms: None,
+        serialize_ms: None,
+        serialize_bytes: None,
+        planner_settings: Vec::new(),
+    })
 }
 
 fn op_name(o: &Obj) -> &str {

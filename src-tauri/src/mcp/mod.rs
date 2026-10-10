@@ -115,27 +115,37 @@ impl Server {
             .and_then(Value::as_str)
             .ok_or_else(|| AppError::validation("`sql` is required"))?;
         let analyze = args.get("analyze").and_then(Value::as_bool).unwrap_or(true);
-        let setup_sql = args.get("setup_sql").and_then(Value::as_str).filter(|s| !s.trim().is_empty());
+        // A single statement, or several (e.g. CREATE STATISTICS + ANALYZE).
+        let setup: Vec<String> = match args.get("setup_sql") {
+            Some(Value::String(s)) if !s.trim().is_empty() => vec![s.clone()],
+            Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).map(String::from).collect(),
+            _ => Vec::new(),
+        };
+        let mode = if analyze { ExplainMode::Analyze } else { ExplainMode::Estimate };
+        let runs = self.store.get_settings()?.analysis.repeat_runs;
         let result = analysis::run(
             &self.store,
             &self.connection_id,
             sql,
-            RunOptions {
-                mode: if analyze { ExplainMode::Analyze } else { ExplainMode::Estimate },
-                persist: false,
-                setup_sql: setup_sql.map(String::from),
-                read_only: true,
-            },
+            RunOptions { setup: setup.clone(), read_only: true, runs, ..RunOptions::new(mode) },
         )
         .await?;
 
         let mut out = String::new();
-        if let Some(setup) = setup_sql {
-            out.push_str(&format!("(setup, rolled back afterwards: {setup})\n"));
+        if !setup.is_empty() {
+            out.push_str(&format!("(setup, rolled back afterwards: {})\n", setup.join("; ")));
         }
-        match result.execution_time_ms {
-            Some(ms) => out.push_str(&format!("Execution time: {}\n", prompt::fmt_ms(ms))),
-            None => out.push_str("Estimate only (not executed)\n"),
+        match (&result.timing, result.execution_time_ms) {
+            (Some(t), _) => out.push_str(&format!(
+                "Execution time: median {} over {} runs (first run {}, range {}–{})\n",
+                prompt::fmt_ms(t.median_ms),
+                t.execution_ms.len(),
+                prompt::fmt_ms(t.first_ms),
+                prompt::fmt_ms(t.min_ms),
+                prompt::fmt_ms(t.max_ms)
+            )),
+            (None, Some(ms)) => out.push_str(&format!("Execution time: {}\n", prompt::fmt_ms(ms))),
+            (None, None) => out.push_str("Estimate only (not executed)\n"),
         }
         if let Some(c) = result.total_cost {
             out.push_str(&format!("Total estimated cost: {c:.0}\n"));
@@ -153,7 +163,7 @@ impl Server {
         let mut session = engines::open(&analysis::spec_for(&conn)?).await?;
         let tables = session.table_context(&[table.to_string()]).await?;
         Ok(match tables.first() {
-            Some(t) => prompt::table_summary(t),
+            Some(t) => prompt::table_summary(t, None),
             None => format!("Table {table} not found."),
         })
     }
@@ -172,7 +182,7 @@ fn tool_definitions() -> Value {
                 "properties": {
                     "sql": { "type": "string", "description": "A single SELECT (or other explainable) statement." },
                     "analyze": { "type": "boolean", "description": "Execute for real timings (default true). false = planner estimate only." },
-                    "setup_sql": { "type": "string", "description": "Optional single CREATE [UNIQUE] INDEX, SET or ANALYZE statement run first in the same rolled-back transaction (PostgreSQL only)." }
+                    "setup_sql": { "description": "Optional statement(s) run first in the same rolled-back transaction (PostgreSQL only): CREATE [UNIQUE] INDEX, CREATE STATISTICS, SET or ANALYZE. A string or an array of strings.", "anyOf": [ { "type": "string" }, { "type": "array", "items": { "type": "string" } } ] }
                 },
                 "required": ["sql"]
             }

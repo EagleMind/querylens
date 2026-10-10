@@ -12,11 +12,7 @@ pub async fn analyze_query(
     sql: String,
     mode: ExplainMode,
 ) -> AppResult<AnalysisResult> {
-    analysis::run(
-        &state.store,
-        &connection_id,
-        &sql,
-        RunOptions { mode, persist: true, setup_sql: None, read_only: false },
-    )
-    .await
+    let runs = state.store.get_settings()?.analysis.repeat_runs;
+    let opts = RunOptions { persist: true, runs, ..RunOptions::new(mode) };
+    analysis::run(&state.store, &connection_id, &sql, opts).await
 }

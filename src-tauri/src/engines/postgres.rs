@@ -3,15 +3,16 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use tokio_postgres::{Client, NoTls};
 
-use super::{ConnectSpec, EngineSession, ExplainRequest};
+use super::{ConnectSpec, EngineSession, ExplainRequest, is_dml, postgres_explain_options};
 use crate::error::{AppError, AppResult};
 use crate::model::{
-    ColumnInfo, ConnectionTestResult, ExplainMode, IndexInfo, SslMode, TableContext,
+    ColumnInfo, ColumnStats, ConnectionTestResult, ExplainMode, IndexInfo, ServerInfo, SslMode, TableContext,
 };
 
 pub struct PgSession {
     client: Client,
     connect_ms: f64,
+    info: ServerInfo,
 }
 
 impl PgSession {
@@ -55,7 +56,39 @@ impl PgSession {
                 client
             }
         };
-        Ok(Self { client, connect_ms: started.elapsed().as_secs_f64() * 1000.0 })
+        let connect_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let info = detect_server_info(&client).await?;
+        Ok(Self { client, connect_ms, info })
+    }
+}
+
+async fn detect_server_info(client: &Client) -> AppResult<ServerInfo> {
+    let row = client
+        .query_one(
+            "SELECT current_setting('server_version_num')::int,
+                    EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'hypopg'),
+                    EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'),
+                    current_setting('track_io_timing')::bool,
+                    current_setting('is_superuser')::bool",
+            &[],
+        )
+        .await?;
+    let version: i32 = row.get(0);
+    Ok(ServerInfo {
+        version_num: version.max(0) as u32,
+        hypopg: row.get(1),
+        pg_stat_statements: row.get(2),
+        io_timing: row.get(3),
+        superuser: row.get(4),
+    })
+}
+
+/// Setup statements run with `execute` (extended protocol → exactly one statement).
+/// Plain SET would outlive the transaction on a pooled session, so force SET LOCAL.
+fn localize_set(stmt: &str) -> String {
+    match stmt.strip_prefix("SET ").or_else(|| stmt.strip_prefix("set ")) {
+        Some(rest) if !rest.to_ascii_lowercase().starts_with("local ") => format!("SET LOCAL {rest}"),
+        _ => stmt.to_string(),
     }
 }
 
@@ -72,35 +105,50 @@ impl EngineSession for PgSession {
         })
     }
 
+    fn server_info(&self) -> ServerInfo {
+        self.info.clone()
+    }
+
     async fn explain(&mut self, req: &ExplainRequest<'_>) -> AppResult<String> {
-        let options = match req.mode {
-            ExplainMode::Analyze => "ANALYZE, BUFFERS, FORMAT JSON",
-            ExplainMode::Estimate => "FORMAT JSON",
-        };
+        // Hypothetical indexes only exist for the planner, so they force a plain EXPLAIN.
+        let mode = if req.hypothetical.is_empty() { req.mode } else { ExplainMode::Estimate };
+        let options = postgres_explain_options(mode, &self.info, is_dml(req.sql));
+
         // Safety envelope: EXPLAIN ANALYZE really executes the statement, so it runs
-        // in a transaction that is always rolled back, under a statement timeout.
-        // `query_one` uses the extended protocol, which rejects multiple statements.
+        // in a transaction that is always rolled back, under statement and lock
+        // timeouts. `query_one`/`execute` use the extended protocol, which rejects
+        // multiple statements.
         let tx = self.client.transaction().await?;
-        tx.batch_execute(&format!("SET LOCAL statement_timeout = {}", req.timeout_ms)).await?;
-        if let Some(setup) = req.setup {
-            // `execute` = extended protocol → exactly one statement. Plain SET would
-            // outlive the transaction on a pooled session, so force SET LOCAL.
-            let setup = match setup.strip_prefix("SET ").or_else(|| setup.strip_prefix("set ")) {
-                Some(rest) if !rest.to_ascii_lowercase().starts_with("local ") => format!("SET LOCAL {rest}"),
-                _ => setup.to_string(),
-            };
-            if let Err(e) = tx.execute(setup.as_str(), &[]).await {
-                let _ = tx.rollback().await;
-                return Err(e.into());
+        let mut prelude = format!(
+            "SET LOCAL statement_timeout = {}; SET LOCAL lock_timeout = {};",
+            req.timeout_ms, req.lock_timeout_ms
+        );
+        if mode == ExplainMode::Analyze && !self.info.io_timing && self.info.superuser {
+            // Per-node I/O time; settable by superusers only (checked at connect).
+            prelude.push_str(" SET LOCAL track_io_timing = on;");
+        }
+        tx.batch_execute(&prelude).await?;
+
+        let result = async {
+            for stmt in req.setup {
+                tx.execute(localize_set(stmt).as_str(), &[]).await?;
             }
+            for ddl in req.hypothetical {
+                tx.query_one("SELECT indexrelid FROM hypopg_create_index($1)", &[ddl]).await?;
+            }
+            if req.read_only {
+                // Allowed mid-transaction (only read-only → read-write is restricted).
+                tx.batch_execute("SET LOCAL transaction_read_only = on").await?;
+            }
+            tx.query_one(&format!("EXPLAIN ({options}) {}", req.sql), &[]).await
         }
-        if req.read_only {
-            // Allowed mid-transaction (only read-only → read-write is restricted).
-            tx.batch_execute("SET LOCAL transaction_read_only = on").await?;
-        }
-        let result = tx.query_one(&format!("EXPLAIN ({options}) {}", req.sql), &[]).await;
+        .await;
         // Roll back explicitly (dropping would too, but asynchronously).
         let _ = tx.rollback().await;
+        if !req.hypothetical.is_empty() {
+            // HypoPG state is per-backend, not transactional.
+            let _ = self.client.batch_execute("SELECT hypopg_reset()").await;
+        }
         let row = result?;
         let plan: serde_json::Value = row.try_get(0)?;
         Ok(plan.to_string())
@@ -139,15 +187,32 @@ impl EngineSession for PgSession {
             let columns = self
                 .client
                 .query(
-                    "SELECT attname::text, format_type(atttypid, atttypmod)
-                     FROM pg_attribute
-                     WHERE attrelid = to_regclass($1) AND attnum > 0 AND NOT attisdropped
-                     ORDER BY attnum LIMIT 60",
+                    "SELECT a.attname::text, format_type(a.atttypid, a.atttypmod),
+                            s.null_frac::float8, s.n_distinct::float8, s.correlation::float8,
+                            (s.most_common_vals::text::text[])[1:3],
+                            (s.most_common_freqs)[1:3]::float8[]
+                     FROM pg_attribute a
+                     JOIN pg_class c ON c.oid = a.attrelid
+                     JOIN pg_namespace n ON n.oid = c.relnamespace
+                     LEFT JOIN pg_stats s
+                       ON s.schemaname = n.nspname AND s.tablename = c.relname AND s.attname = a.attname
+                     WHERE a.attrelid = to_regclass($1) AND a.attnum > 0 AND NOT a.attisdropped
+                     ORDER BY a.attnum LIMIT 60",
                     &[rel],
                 )
                 .await?
                 .iter()
-                .map(|r| ColumnInfo { name: r.get(0), data_type: r.get(1) })
+                .map(|r| ColumnInfo {
+                    name: r.get(0),
+                    data_type: r.get(1),
+                    stats: r.get::<_, Option<f64>>(2).map(|null_frac| ColumnStats {
+                        null_frac,
+                        n_distinct: r.get::<_, Option<f64>>(3).unwrap_or(0.0),
+                        correlation: r.get(4),
+                        common_values: r.get::<_, Option<Vec<String>>>(5).unwrap_or_default(),
+                        common_freqs: r.get::<_, Option<Vec<f64>>>(6).unwrap_or_default(),
+                    }),
+                })
                 .collect();
             let reltuples: f64 = meta.get(1);
             out.push(TableContext {

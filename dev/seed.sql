@@ -2,6 +2,11 @@
 --   * orders.user_id has no index (seq scan + hash join on every lookup)
 --   * orders.status is low-cardinality and unindexed
 --   * statistics on order_items are stale (ANALYZE skipped) → row misestimates
+--   * events.kind is heavily skewed, so `WHERE kind = $1` flips between an index scan
+--     (rare kinds) and a seq scan (common kinds): the parameter-sensitivity demo
+CREATE EXTENSION IF NOT EXISTS hypopg;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
 CREATE TABLE users (
   id         bigint PRIMARY KEY,
   email      text NOT NULL UNIQUE,
@@ -56,3 +61,21 @@ ALTER TABLE order_items SET (autovacuum_enabled = false);
 INSERT INTO order_items
 SELECT 1 + (g % 1000000), 1 + (g * 13) % 5000, 1 + g % 4
 FROM generate_series(1::bigint, 2000000) g;
+
+-- Skewed event stream: ~90% view, ~9% click, ~1% purchase, a handful of refunds.
+CREATE TABLE events (
+  id         bigint PRIMARY KEY,
+  user_id    bigint NOT NULL,
+  kind       text NOT NULL,
+  created_at timestamptz NOT NULL
+);
+INSERT INTO events
+SELECT g, 1 + (g * 7919) % 100000,
+       CASE WHEN g % 10000 = 0 THEN 'refund'
+            WHEN g % 100 = 0   THEN 'purchase'
+            WHEN g % 10 = 0    THEN 'click'
+            ELSE 'view' END,
+       now() - (g % 365) * interval '1 day'
+FROM generate_series(1::bigint, 1000000) g;
+CREATE INDEX events_kind_idx ON events (kind);
+ANALYZE events;

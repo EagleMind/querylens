@@ -65,7 +65,7 @@ async fn claude_suggests_and_verifies_with_mcp() {
         Ok(path) => std::fs::read_to_string(path).unwrap(),
         Err(_) => "SELECT * FROM orders WHERE user_id = 4242 ORDER BY created_at DESC LIMIT 10".into(),
     };
-    let opts = analysis::RunOptions { mode: ExplainMode::Analyze, persist: true, setup_sql: None, read_only: false };
+    let opts = analysis::RunOptions { persist: true, ..analysis::RunOptions::new(ExplainMode::Analyze) };
     let a = analysis::run(&store, "it-conn", &sql, opts).await.unwrap();
 
     let sink = Collect::default();

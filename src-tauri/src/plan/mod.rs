@@ -7,14 +7,22 @@ mod postgres;
 use serde_json::Value;
 
 use crate::error::AppResult;
-use crate::model::{Engine, ExplainMode, Heat, PlanNode, PlanWarning, WarningKind, WarningSeverity};
+use crate::model::{Engine, ExplainMode, Heat, PlanNode, PlanProperty, PlanWarning, WarningKind, WarningSeverity};
 
 pub struct ParsedPlan {
     pub root: PlanNode,
     pub planning_time_ms: Option<f64>,
     pub execution_time_ms: Option<f64>,
     pub total_cost: Option<f64>,
+    pub jit_ms: Option<f64>,
+    pub serialize_ms: Option<f64>,
+    pub serialize_bytes: Option<f64>,
+    pub planner_settings: Vec<PlanProperty>,
 }
+
+/// Plan-level warning thresholds (fractions of execution time).
+const JIT_OVERHEAD_SHARE: f64 = 0.1;
+const SERIALIZE_HEAVY_SHARE: f64 = 0.2;
 
 pub fn parse(engine: Engine, mode: ExplainMode, raw: &str) -> AppResult<ParsedPlan> {
     let mut plan = match engine {
@@ -22,7 +30,36 @@ pub fn parse(engine: Engine, mode: ExplainMode, raw: &str) -> AppResult<ParsedPl
         Engine::Duckdb => duckdb::parse(raw, mode)?,
     };
     analyze::finalize(&mut plan.root);
+    plan_level_warnings(&mut plan);
     Ok(plan)
+}
+
+/// Costs that belong to the whole statement are reported on the root node.
+fn plan_level_warnings(plan: &mut ParsedPlan) {
+    let Some(exec) = plan.execution_time_ms.filter(|e| *e > 0.0) else { return };
+    if let Some(jit) = plan.jit_ms.filter(|j| j / exec >= JIT_OVERHEAD_SHARE) {
+        plan.root.warnings.push(warning(
+            WarningKind::JitOverhead,
+            WarningSeverity::Warning,
+            format!(
+                "JIT compilation took {jit:.0} ms ({:.0}% of execution). For short queries it rarely \
+                 pays off: try SET jit = off, or raise jit_above_cost.",
+                jit / exec * 100.0
+            ),
+        ));
+    }
+    if let Some(ser) = plan.serialize_ms.filter(|s| s / exec >= SERIALIZE_HEAVY_SHARE) {
+        let size = plan.serialize_bytes.map(|b| format!(" ({} kB)", fmt_count(b / 1024.0))).unwrap_or_default();
+        plan.root.warnings.push(warning(
+            WarningKind::SerializeHeavy,
+            WarningSeverity::Info,
+            format!(
+                "Sending the results{size} took {ser:.0} ms, {:.0}% of execution. Return fewer rows \
+                 or columns, or paginate.",
+                ser / exec * 100.0
+            ),
+        ));
+    }
 }
 
 /// Distinct relation names referenced anywhere in the plan, in first-seen order.
@@ -73,6 +110,8 @@ pub(crate) fn blank_node(id: String, node_type: String) -> PlanNode {
         total_time_ms: None,
         self_time_ms: None,
         self_cost: None,
+        io_time_ms: None,
+        self_io_ms: None,
         share: 0.0,
         heat: Heat::Low,
         buffers: None,

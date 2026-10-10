@@ -1,6 +1,8 @@
+use std::time::{Duration, Instant};
+
 use crate::engines::{self, ConnectSpec, ExplainRequest};
 use crate::error::AppResult;
-use crate::model::{AnalysisResult, Connection, ConnectionInput, ExplainMode};
+use crate::model::{AnalysisResult, Connection, ConnectionInput, ExplainMode, RunStats};
 use crate::storage::Store;
 use crate::{plan, secrets};
 
@@ -46,17 +48,45 @@ pub struct RunOptions {
     pub mode: ExplainMode,
     /// Save to history (false for MCP tool calls the model makes).
     pub persist: bool,
-    /// Statement run first inside the same rolled-back transaction (MCP verification).
-    pub setup_sql: Option<String>,
+    /// Statements run first inside the same rolled-back transaction (verification,
+    /// what-if scenarios). Validated with `sanitize_setup_sql`.
+    pub setup: Vec<String>,
+    /// HypoPG hypothetical indexes (`CREATE INDEX …`); forces a plain EXPLAIN.
+    pub hypothetical: Vec<String>,
     /// Model-issued query: run the EXPLAIN in a read-only transaction.
     pub read_only: bool,
+    /// Profile repeats (1 = single run). Ignored for Explain, which is deterministic.
+    pub runs: u32,
 }
+
+impl RunOptions {
+    pub fn new(mode: ExplainMode) -> Self {
+        Self { mode, persist: false, setup: Vec::new(), hypothetical: Vec::new(), read_only: false, runs: 1 }
+    }
+}
+
+/// Statement/lock timeouts from Settings.
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    pub timeout_ms: u32,
+    pub lock_timeout_ms: u32,
+}
+
+impl Limits {
+    pub fn from_settings(s: &crate::model::AnalysisSettings) -> Self {
+        Self { timeout_ms: s.statement_timeout_ms, lock_timeout_ms: s.lock_timeout_ms }
+    }
+}
+
+/// Repeat-run budget: a single run longer than this is never repeated, and repeats stop
+/// once the total exceeds max(2 × first run, this).
+const REPEAT_BUDGET: Duration = Duration::from_secs(10);
 
 /// Analyze against a saved connection: resolve credentials, explain, (persist).
 pub async fn run(store: &Store, connection_id: &str, sql: &str, opts: RunOptions) -> AppResult<AnalysisResult> {
     let conn = store.get_connection(connection_id)?;
-    let timeout_ms = store.get_settings()?.analysis.statement_timeout_ms;
-    let result = explain(&conn, &spec_for(&conn)?, sql, &opts, timeout_ms).await?;
+    let limits = Limits::from_settings(&store.get_settings()?.analysis);
+    let result = explain(&conn, &spec_for(&conn)?, sql, &opts, limits).await?;
     if opts.persist {
         store.insert_analysis(&result)?;
         store.touch_connection(&conn.id)?;
@@ -64,28 +94,65 @@ pub async fn run(store: &Store, connection_id: &str, sql: &str, opts: RunOptions
     Ok(result)
 }
 
-/// Connect → EXPLAIN → parse/score → schema context. No storage or keychain access.
+struct Sample {
+    raw: String,
+    parsed: plan::ParsedPlan,
+    execution_ms: f64,
+    read_blocks: f64,
+}
+
+/// Connect → EXPLAIN (×runs) → parse/score → schema context. No storage or keychain access.
 pub async fn explain(
     conn: &Connection,
     spec: &ConnectSpec,
     sql: &str,
     opts: &RunOptions,
-    timeout_ms: u32,
+    limits: Limits,
 ) -> AppResult<AnalysisResult> {
     let sql = engines::sanitize_sql(sql)?;
-    let setup = opts.setup_sql.as_deref().map(engines::sanitize_setup_sql).transpose()?;
+    let setup = opts.setup.iter().map(|s| engines::sanitize_setup_sql(s)).collect::<AppResult<Vec<_>>>()?;
+    let hypothetical = opts.hypothetical.iter().map(|s| engines::sanitize_sql(s)).collect::<AppResult<Vec<_>>>()?;
+    // Hypothetical indexes are planner-only, so they always produce an estimate.
+    let mode = if hypothetical.is_empty() { opts.mode } else { ExplainMode::Estimate };
 
     let mut session = engines::open(spec).await?;
-    let raw = session
-        .explain(&ExplainRequest {
-            sql: &sql,
-            mode: opts.mode,
-            timeout_ms,
-            setup: setup.as_deref(),
-            read_only: opts.read_only,
-        })
-        .await?;
-    let parsed = plan::parse(conn.engine, opts.mode, &raw)?;
+    let request = ExplainRequest {
+        sql: &sql,
+        mode,
+        timeout_ms: limits.timeout_ms,
+        lock_timeout_ms: limits.lock_timeout_ms,
+        setup: &setup,
+        hypothetical: &hypothetical,
+        read_only: opts.read_only,
+    };
+
+    let wanted = if mode == ExplainMode::Analyze { opts.runs.clamp(1, 10) } else { 1 };
+    let started = Instant::now();
+    let mut first_wall = Duration::ZERO;
+    let mut samples: Vec<Sample> = Vec::new();
+    while samples.len() < wanted as usize {
+        let run_started = Instant::now();
+        let raw = session.explain(&request).await?;
+        let parsed = plan::parse(conn.engine, mode, &raw)?;
+        let execution_ms = parsed.execution_time_ms.unwrap_or(0.0);
+        let read_blocks = parsed.root.buffers.as_ref().map(|b| b.shared_read).unwrap_or(0.0);
+        samples.push(Sample { raw, parsed, execution_ms, read_blocks });
+        if samples.len() == 1 {
+            first_wall = run_started.elapsed();
+            if first_wall > REPEAT_BUDGET {
+                break;
+            }
+        } else if started.elapsed() > (first_wall * 2).max(REPEAT_BUDGET) {
+            break;
+        }
+    }
+
+    let timing = (samples.len() > 1).then(|| run_stats(&samples, wanted));
+    // Show the median run: it is the most representative plan and timing.
+    let median_idx = median_index(&samples);
+    let server = session.server_info();
+    let Sample { raw, parsed, .. } = samples.swap_remove(median_idx);
+
     // Schema context improves suggestions but must never fail an analysis.
     let tables = session.table_context(&plan::relations(&parsed.root)).await.unwrap_or_else(|e| {
         log::warn!("table context failed: {e}");
@@ -97,17 +164,74 @@ pub async fn explain(
         connection_id: conn.id.clone(),
         connection_name: conn.name.clone(),
         engine: conn.engine,
-        mode: opts.mode,
+        mode,
         sql,
         node_count: plan::count_nodes(&parsed.root),
         warnings_count: plan::count_warnings(&parsed.root),
         planning_time_ms: parsed.planning_time_ms,
         execution_time_ms: parsed.execution_time_ms,
         total_cost: parsed.total_cost,
+        jit_ms: parsed.jit_ms,
+        serialize_ms: parsed.serialize_ms,
+        serialize_bytes: parsed.serialize_bytes,
+        planner_settings: parsed.planner_settings,
         root: parsed.root,
         tables,
         raw_plan: raw,
         analyzed_at: crate::storage::now(),
         suggestions: None,
+        server,
+        timing,
     })
+}
+
+fn median_index(samples: &[Sample]) -> usize {
+    let mut order: Vec<usize> = (0..samples.len()).collect();
+    order.sort_by(|&a, &b| samples[a].execution_ms.total_cmp(&samples[b].execution_ms));
+    order[(order.len() - 1) / 2]
+}
+
+fn run_stats(samples: &[Sample], requested: u32) -> RunStats {
+    let times: Vec<f64> = samples.iter().map(|s| s.execution_ms).collect();
+    let mut sorted = times.clone();
+    sorted.sort_by(f64::total_cmp);
+    let mut warm_reads: Vec<f64> = samples[1..].iter().map(|s| s.read_blocks).collect();
+    warm_reads.sort_by(f64::total_cmp);
+    RunStats {
+        first_ms: times[0],
+        median_ms: sorted[(sorted.len() - 1) / 2],
+        min_ms: sorted[0],
+        max_ms: sorted[sorted.len() - 1],
+        first_read_blocks: samples[0].read_blocks,
+        warm_read_blocks: warm_reads.get((warm_reads.len().max(1) - 1) / 2).copied(),
+        requested,
+        execution_ms: times,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample(ms: f64, reads: f64) -> Sample {
+        let raw = r#"[{"Plan": {"Node Type": "Result", "Total Cost": 1, "Plan Rows": 1}}]"#;
+        Sample {
+            raw: raw.into(),
+            parsed: plan::parse(crate::model::Engine::Postgres, ExplainMode::Estimate, raw).unwrap(),
+            execution_ms: ms,
+            read_blocks: reads,
+        }
+    }
+
+    #[test]
+    fn stats_separate_first_run_from_warm_median() {
+        let samples = vec![sample(400.0, 8000.0), sample(40.0, 0.0), sample(36.0, 0.0)];
+        let st = run_stats(&samples, 3);
+        assert_eq!(st.first_ms, 400.0);
+        assert_eq!(st.median_ms, 40.0);
+        assert_eq!((st.min_ms, st.max_ms), (36.0, 400.0));
+        assert_eq!(st.first_read_blocks, 8000.0);
+        assert_eq!(st.warm_read_blocks, Some(0.0));
+        assert_eq!(samples[median_index(&samples)].execution_ms, 40.0);
+    }
 }

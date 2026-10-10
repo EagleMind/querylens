@@ -93,6 +93,10 @@ impl From<tokio_postgres::Error> for AppError {
                 if let Some(hint) = db.hint() {
                     msg.push_str(&format!("\nHint: {hint}"));
                 }
+                if db.code() == &tokio_postgres::error::SqlState::LOCK_NOT_AVAILABLE {
+                    msg = "Waited too long for a lock held by another session (see Settings →                            Running queries → Lock timeout). Try again, or use Explain, which                            doesn't need row locks."
+                        .into();
+                }
                 if db.code() == &tokio_postgres::error::SqlState::QUERY_CANCELED {
                     msg = format!("{msg} — the statement timeout was reached (see Settings → Analysis).");
                 }
