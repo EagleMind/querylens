@@ -31,49 +31,89 @@ impl ClaudeCli {
     }
 }
 
+/// Where the CLI is: a configured path (if it still exists), then PATH, then the copy
+/// the Claude desktop app ships, then the usual install locations. A stale configured
+/// path falls through instead of failing: desktop-app updates delete old version folders.
 fn resolve_binary(configured: &str) -> AppResult<PathBuf> {
     let configured = configured.trim();
-    if !configured.is_empty() {
-        let p = PathBuf::from(configured);
-        return if p.exists() {
-            Ok(p)
-        } else {
-            Err(AppError::llm(format!("Claude Code binary not found at {configured}")))
-        };
+    if !configured.is_empty() && Path::new(configured).exists() {
+        return Ok(PathBuf::from(configured));
     }
     if let Ok(p) = which::which("claude") {
         return Ok(p);
     }
-    // GUI apps don't always inherit the shell PATH (notably on macOS).
     let exe = if cfg!(windows) { "claude.exe" } else { "claude" };
+    if let Some(p) = desktop_bundled(exe) {
+        return Ok(p);
+    }
+    // GUI apps don't always inherit the shell PATH (notably on macOS).
     let home = dirs::home_dir().unwrap_or_default();
-    [home.join(".local/bin").join(exe), home.join(".claude/local").join(exe), PathBuf::from("/opt/homebrew/bin/claude"), PathBuf::from("/usr/local/bin/claude")]
-        .into_iter()
-        .find(|p| p.exists())
-        .or_else(|| desktop_bundled(exe))
-        .ok_or_else(|| {
-            AppError::llm(
-                "Claude Code CLI not found. Install it (https://claude.com/claude-code) and sign in, \
-                 or set the path to `claude` in Settings.",
-            )
-        })
+    let mut candidates = vec![
+        home.join(".claude/local").join(exe),
+        home.join(".local/bin").join(exe),
+        PathBuf::from("/opt/homebrew/bin/claude"),
+        PathBuf::from("/usr/local/bin/claude"),
+    ];
+    if let Some(local) = dirs::data_local_dir() {
+        candidates.push(local.join("Programs/claude").join(exe));
+    }
+    if let Some(roaming) = dirs::config_dir() {
+        candidates.push(roaming.join("npm/claude.cmd"));
+    }
+    candidates.into_iter().find(|p| p.exists()).ok_or_else(|| {
+        let hint = if configured.is_empty() {
+            String::new()
+        } else {
+            format!(" (the path in Settings no longer exists: {configured})")
+        };
+        AppError::llm(format!(
+            "Claude Code CLI not found{hint}. Install Claude Code or the Claude desktop app and sign in,              or set the path to `claude` in Settings."
+        ))
+    })
 }
 
-/// The Claude desktop app ships its own CLI under
-/// `<config dir>/Claude/claude-code/<version>/<build>/claude(.exe)`; pick the newest version.
+/// The CLI copy the Claude desktop app ships. It lives in a per-version folder and is not
+/// on PATH. Roots: `%APPDATA%\Claude\claude-code`, plus, for the Microsoft Store (MSIX)
+/// install, `%LOCALAPPDATA%\Packages\Claude_*\LocalCache\Roaming\Claude\claude-code`.
+/// It has two layouts: older builds put the binary in the version folder, newer ones
+/// one level down in a hash folder next to a `.verified` marker. The newest version wins.
 fn desktop_bundled(exe: &str) -> Option<PathBuf> {
-    let root = dirs::config_dir()?.join("Claude").join("claude-code");
-    let version_key = |p: &Path| -> Vec<u64> {
-        p.file_name()
-            .and_then(|n| n.to_str())
-            .map(|v| v.split('.').filter_map(|x| x.parse().ok()).collect())
-            .unwrap_or_default()
-    };
-    let mut versions: Vec<PathBuf> = std::fs::read_dir(&root).ok()?.flatten().map(|e| e.path()).collect();
-    versions.sort_by_key(|p| std::cmp::Reverse(version_key(p)));
-    versions.into_iter().find_map(|v| {
-        std::fs::read_dir(v).ok()?.flatten().map(|b| b.path().join(exe)).find(|p| p.exists())
-    })
+    let mut roots = Vec::new();
+    if let Some(roaming) = dirs::config_dir() {
+        roots.push(roaming.join("Claude/claude-code"));
+    }
+    if let Some(local) = dirs::data_local_dir() {
+        for pkg in std::fs::read_dir(local.join("Packages")).into_iter().flatten().flatten() {
+            if pkg.file_name().to_string_lossy().starts_with("Claude") {
+                roots.push(pkg.path().join("LocalCache/Roaming/Claude/claude-code"));
+            }
+        }
+    }
+    let mut found: Vec<(Vec<u64>, PathBuf)> = Vec::new();
+    for root in roots {
+        for version in std::fs::read_dir(&root).into_iter().flatten().flatten() {
+            let vdir = version.path();
+            let key = version.file_name().to_string_lossy().split('.').filter_map(|x| x.parse().ok()).collect();
+            let direct = vdir.join(exe);
+            if direct.exists() {
+                found.push((key, direct));
+                continue;
+            }
+            // A hash folder without `.verified` may be an unfinished download.
+            let hashed: Vec<PathBuf> = std::fs::read_dir(&vdir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .map(|h| h.path())
+                .filter(|h| h.join(exe).exists())
+                .collect();
+            if let Some(pick) = hashed.iter().find(|h| h.join(".verified").exists()).or(hashed.first()) {
+                found.push((key, pick.join(exe)));
+            }
+        }
+    }
+    found.sort_by(|a, b| b.0.cmp(&a.0));
+    found.into_iter().next().map(|(_, p)| p)
 }
 
 /// Temporary MCP config file, removed when dropped.
