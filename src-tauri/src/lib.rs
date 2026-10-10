@@ -45,7 +45,8 @@ pub fn run() {
             commands::settings::list_llm_models,
             commands::settings::test_llm,
             commands::llm::get_suggestions,
-            commands::llm::cancel_suggestions,
+            commands::llm::cancel_task,
+            commands::compare::compare_analyses,
         ])
         .run(tauri::generate_context!())
         .expect("error while running QueryLens");

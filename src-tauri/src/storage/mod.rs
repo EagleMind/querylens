@@ -4,6 +4,8 @@ mod analyses;
 mod connections;
 mod settings;
 
+pub use analyses::PreviousRun;
+
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -49,6 +51,11 @@ const MIGRATIONS: &[&str] = &[r#"
         key         TEXT PRIMARY KEY,
         value_json  TEXT NOT NULL
     );
+"#, r#"
+    ALTER TABLE analyses ADD COLUMN query_fp TEXT;
+    ALTER TABLE analyses ADD COLUMN plan_fp TEXT;
+    ALTER TABLE analyses ADD COLUMN whatif_json TEXT;
+    CREATE INDEX analyses_query ON analyses (connection_id, query_fp, created_at DESC);
 "#];
 
 pub struct Store {

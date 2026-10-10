@@ -15,6 +15,7 @@ import type { ExplainMode } from '@/bindings/ExplainMode'
 import type { HistoryEntry } from '@/bindings/HistoryEntry'
 import type { LlmSettings } from '@/bindings/LlmSettings'
 import type { LlmTestResult } from '@/bindings/LlmTestResult'
+import type { PlanDiff } from '@/bindings/PlanDiff'
 import type { Settings } from '@/bindings/Settings'
 import type { SuggestionEvent } from '@/bindings/SuggestionEvent'
 
@@ -78,7 +79,10 @@ export const api = {
     channel.onmessage = onEvent
     return call<string>('get_suggestions', { analysisId, onEvent: channel })
   },
-  cancelSuggestions: (requestId: string) => call<void>('cancel_suggestions', { requestId }),
+  /** Cancel any background job (suggestions, what-if sweep, sensitivity). */
+  cancelTask: (requestId: string) => call<void>('cancel_task', { requestId }),
+
+  compare: (beforeId: string, afterId: string) => call<PlanDiff>('compare_analyses', { beforeId, afterId }),
 }
 
 /** Native file picker for DuckDB databases; null when cancelled or unavailable. */

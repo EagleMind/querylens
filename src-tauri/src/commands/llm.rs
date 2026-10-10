@@ -36,17 +36,14 @@ pub async fn get_suggestions(
         sink.emit(event);
     });
 
-    let mut tasks = state.llm_tasks.lock().expect("llm task map poisoned");
-    tasks.retain(|_, handle| !handle.is_finished());
-    tasks.insert(request_id.clone(), task.abort_handle());
+    state.track_task(request_id.clone(), task.abort_handle());
     Ok(request_id)
 }
 
-/// Aborting drops the in-flight HTTP stream / kills the `claude` child process.
+/// Cancel any background job (suggestions, what-if sweep, sensitivity). Aborting drops
+/// in-flight HTTP streams / kills the `claude` child process / abandons DB work.
 #[tauri::command]
-pub async fn cancel_suggestions(state: State<'_, AppState>, request_id: String) -> AppResult<()> {
-    if let Some(handle) = state.llm_tasks.lock().expect("llm task map poisoned").remove(&request_id) {
-        handle.abort();
-    }
+pub async fn cancel_task(state: State<'_, AppState>, request_id: String) -> AppResult<()> {
+    state.cancel_task(&request_id);
     Ok(())
 }

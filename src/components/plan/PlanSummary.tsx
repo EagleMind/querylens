@@ -3,10 +3,13 @@ import type { ReactNode } from 'react'
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
 import { CopyButton } from '@/components/shared/CopyButton'
 import { ColorDot, EngineBadge } from '@/components/shared/bits'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmtBytes, fmtCount, fmtMs, fmtRelative } from '@/lib/format'
 import { useConnections } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { useUi } from '@/store/ui'
+import { useWorkspace } from '@/store/workspace'
 
 import { RunStrip } from './RunStrip'
 import { TimeShareBar } from './TimeShareBar'
@@ -77,6 +80,7 @@ export function PlanSummary({ analysis, isReplay }: { analysis: AnalysisResult; 
         <span className="ml-auto flex items-center gap-3">
           {isReplay && <span className="italic">from history</span>}
           <span>{fmtRelative(analysis.analyzedAt)}</span>
+          <ViewSwitch />
           <CopyButton value={analysis.rawPlan} label="Raw plan" variant="ghost" />
         </span>
       </div>
@@ -102,6 +106,7 @@ export function PlanSummary({ analysis, isReplay }: { analysis: AnalysisResult; 
         />
       </div>
 
+      <BaselineNote analysis={analysis} />
       <PlanFacts analysis={analysis} />
       <TimeShareBar analysis={analysis} />
     </div>
@@ -111,18 +116,22 @@ export function PlanSummary({ analysis, isReplay }: { analysis: AnalysisResult; 
 /** Statement-level costs and settings that don't belong to any one operator. */
 function PlanFacts({ analysis: a }: { analysis: AnalysisResult }) {
   const settings = a.plannerSettings ?? []
-  if (a.jitMs == null && a.serializeMs == null && settings.length === 0) return null
+  const exec = a.executionTimeMs ?? 0
+  // Only worth a chip when it is a noticeable share of the run.
+  const jit = a.jitMs != null && a.jitMs > 0 ? a.jitMs : null
+  const serialize = a.serializeMs != null && exec > 0 && a.serializeMs / exec >= 0.05 ? a.serializeMs : null
+  if (jit == null && serialize == null && settings.length === 0) return null
   const fact = 'inline-flex items-center gap-1.5 rounded-[2px] border border-rule px-1.5 py-0.5'
   return (
     <div className="flex flex-wrap items-center gap-1.5 text-[11.5px] text-muted-foreground">
-      {a.jitMs != null && (
+      {jit != null && (
         <span className={fact}>
-          JIT <span className="font-mono text-foreground tabular">{fmtMs(a.jitMs)}</span>
+          JIT <span className="font-mono text-foreground tabular">{fmtMs(jit)}</span>
         </span>
       )}
-      {a.serializeMs != null && (
+      {serialize != null && (
         <span className={fact}>
-          Sending results <span className="font-mono text-foreground tabular">{fmtMs(a.serializeMs)}</span>
+          Sending results <span className="font-mono text-foreground tabular">{fmtMs(serialize)}</span>
           {a.serializeBytes != null && <span className="font-mono">· {fmtBytes(a.serializeBytes)}</span>}
         </span>
       )}
@@ -137,5 +146,55 @@ function PlanFacts({ analysis: a }: { analysis: AnalysisResult }) {
         </Tooltip>
       ))}
     </div>
+  )
+}
+
+/** "Plan changed" / "1.8× slower than last run", with a one-click comparison. */
+function BaselineNote({ analysis: a }: { analysis: AnalysisResult }) {
+  const openCompare = useUi((s) => s.openCompare)
+  const b = a.baseline
+  if (!b) return null
+  const ratio = b.timeRatio
+  const slower = ratio != null && ratio >= 1.25
+  const faster = ratio != null && ratio <= 0.8
+  if (!b.planChanged && !slower && !faster) return null
+  const parts: string[] = []
+  if (b.planChanged) parts.push(`Plan changed since ${fmtRelative(b.previousAt)}`)
+  if (slower) parts.push(`${ratio!.toFixed(1)}× slower than the last run`)
+  if (faster) parts.push(`${(1 / ratio!).toFixed(1)}× faster than the last run`)
+  return (
+    <div
+      className={cn(
+        'flex items-center gap-3 border-l-2 py-1 pl-3 text-[12.5px]',
+        slower ? 'border-heat-high' : faster ? 'border-ok' : 'border-heat-medium',
+      )}
+    >
+      <span>{parts.join(' · ')}</span>
+      <Button size="xs" variant="outline" onClick={() => openCompare(b.previousId, a.id)}>
+        Compare
+      </Button>
+    </div>
+  )
+}
+
+function ViewSwitch() {
+  const view = useWorkspace((s) => s.planView)
+  const setView = useWorkspace((s) => s.setPlanView)
+  return (
+    <span className="inline-flex rounded-[3px] border border-rule p-0.5 text-[11.5px]">
+      {(['tree', 'icicle'] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => setView(v)}
+          className={cn(
+            'rounded-[2px] px-2 py-0.5 capitalize',
+            view === v ? 'bg-accent font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
+          )}
+        >
+          {v}
+        </button>
+      ))}
+    </span>
   )
 }

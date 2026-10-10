@@ -7,8 +7,10 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { modKey } from '@/hooks/useHotkey'
 import type { IpcError } from '@/lib/ipc'
 import { cn } from '@/lib/utils'
+import { useWorkspace } from '@/store/workspace'
 
 import { PlanSummary } from './PlanSummary'
+import { IcicleView } from './IcicleView'
 import { PlanTree } from './PlanTree'
 
 function Running() {
@@ -69,6 +71,7 @@ export function PlanView({
   running: boolean
   error: IpcError | null
 }) {
+  const view = useWorkspace((s) => s.planView)
   if (running) return <Running />
   if (error) return <ErrorView error={error} />
   if (!analysis) {
@@ -84,15 +87,16 @@ export function PlanView({
     )
   }
 
+  const timed = analysis.mode === 'analyze' && analysis.root.selfTimeMs != null
   return (
     <div className={cn('flex h-full flex-col')}>
       <PlanSummary analysis={analysis} isReplay={isReplay} />
       <ScrollArea className="min-h-0 flex-1">
-        <PlanTree
-          key={analysis.id}
-          root={analysis.root}
-          timed={analysis.mode === 'analyze' && analysis.root.selfTimeMs != null}
-        />
+        {view === 'icicle' ? (
+          <IcicleView key={analysis.id} root={analysis.root} timed={timed} />
+        ) : (
+          <PlanTree key={analysis.id} root={analysis.root} timed={timed} />
+        )}
       </ScrollArea>
     </div>
   )

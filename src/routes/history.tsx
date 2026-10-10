@@ -6,6 +6,8 @@ import {
   NotebookPenIcon,
   Trash2Icon,
   TriangleAlertIcon,
+  CheckIcon,
+  GitCompareArrowsIcon,
 } from 'lucide-react'
 import { useDeferredValue, useState } from 'react'
 import { useNavigate } from 'react-router'
@@ -34,18 +36,25 @@ import { fmtCount, fmtMs, fmtRelative } from '@/lib/format'
 import { api } from '@/lib/ipc'
 import { useClearHistory, useConnections, useDeleteAnalysis, useHistory } from '@/lib/queries'
 import { cn } from '@/lib/utils'
+import { useUi } from '@/store/ui'
 import { useWorkspace } from '@/store/workspace'
+
+const GRID = 'grid grid-cols-[20px_minmax(0,1fr)_110px_90px_auto] items-center gap-4'
 
 function Row({
   entry,
   color,
   onOpen,
   opening,
+  checked,
+  onToggle,
 }: {
   entry: HistoryEntry
   color: string
   onOpen: () => void
   opening: boolean
+  checked: boolean
+  onToggle: () => void
 }) {
   const del = useDeleteAnalysis()
   const setSql = useWorkspace((s) => s.setSql)
@@ -58,8 +67,28 @@ function Row({
       tabIndex={0}
       onClick={onOpen}
       onKeyDown={(e) => e.key === 'Enter' && onOpen()}
-      className="group grid grid-cols-[minmax(0,1fr)_110px_90px_auto] items-center gap-4 border-b px-4 py-3 outline-none hover:bg-accent/40 focus-visible:bg-accent/50"
+      className={cn(
+        GRID,
+        'group border-b px-4 py-3 outline-none hover:bg-accent/40 focus-visible:bg-accent/50',
+        checked && 'bg-accent/50',
+      )}
     >
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={checked}
+        aria-label="Select for comparison"
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggle()
+        }}
+        className={cn(
+          'flex size-4 items-center justify-center rounded-[2px] border border-foreground/30 transition',
+          checked ? 'border-signal bg-signal text-signal-foreground' : 'opacity-40 group-hover:opacity-100',
+        )}
+      >
+        {checked && <CheckIcon className="size-3" strokeWidth={3} />}
+      </button>
       <div className="min-w-0 space-y-1.5">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <ColorDot color={color} />
@@ -145,6 +174,17 @@ export function HistoryRoute() {
   const setSql = useWorkspace((s) => s.setSql)
   const setConnectionId = useWorkspace((s) => s.setConnectionId)
   const [opening, setOpening] = useState<string | null>(null)
+  // Pick two analyses to compare; the third pick replaces the oldest pick.
+  const [picked, setPicked] = useState<string[]>([])
+  const openCompare = useUi((s) => s.openCompare)
+  const toggle = (id: string) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id].slice(-2)))
+  function compare() {
+    const byTime = picked
+      .map((id) => entries?.find((e) => e.id === id))
+      .filter((e): e is HistoryEntry => !!e)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    if (byTime.length === 2) openCompare(byTime[0].id, byTime[1].id)
+  }
 
   async function open(id: string) {
     setOpening(id)
@@ -175,6 +215,14 @@ export function HistoryRoute() {
             className="h-7 w-64 pl-8 text-xs"
           />
         </div>
+        <Button
+          size="sm"
+          variant={picked.length === 2 ? 'default' : 'outline'}
+          disabled={picked.length !== 2}
+          onClick={compare}
+        >
+          <GitCompareArrowsIcon /> Compare {picked.length > 0 && `(${picked.length}/2)`}
+        </Button>
         <AlertDialog>
           <AlertDialogTrigger asChild>
             <Button size="sm" variant="ghost" disabled={!entries?.length}>
@@ -204,7 +252,8 @@ export function HistoryRoute() {
         </EmptyState>
       ) : (
         <ScrollArea className="min-h-0 flex-1">
-          <div className="grid grid-cols-[minmax(0,1fr)_110px_90px_auto] gap-4 border-b bg-panel px-4 py-2 text-[12px] font-semibold text-muted-foreground">
+          <div className={cn(GRID, 'border-b bg-panel px-4 py-2 text-[12px] font-semibold text-muted-foreground')}>
+            <span />
             <span>Query</span>
             <span className="text-right">Time</span>
             <span className="text-right">Warnings</span>
@@ -217,6 +266,8 @@ export function HistoryRoute() {
               color={colorOf(e.connectionId)}
               onOpen={() => open(e.id)}
               opening={opening === e.id}
+              checked={picked.includes(e.id)}
+              onToggle={() => toggle(e.id)}
             />
           ))}
         </ScrollArea>

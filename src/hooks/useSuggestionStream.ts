@@ -62,7 +62,7 @@ export function useSuggestionStream() {
   const stop = useCallback(async () => {
     const { stream, updateStream } = useWorkspace.getState()
     updateStream({ status: 'cancelled' })
-    if (stream.requestId) await api.cancelSuggestions(stream.requestId).catch(() => {})
+    if (stream.requestId) await api.cancelTask(stream.requestId).catch(() => {})
   }, [])
 
   return { start, stop }

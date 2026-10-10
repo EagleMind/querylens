@@ -44,12 +44,14 @@ interface WorkspaceState {
   /** True when the plan was opened from History rather than just run. */
   isReplay: boolean
   selectedNodeId: string | null
+  planView: 'tree' | 'icicle'
   stream: SuggestionStream
 
   setSql: (sql: string) => void
   setConnectionId: (id: string | null) => void
   setAnalysis: (a: AnalysisResult | null, opts?: { replay?: boolean }) => void
   selectNode: (id: string | null) => void
+  setPlanView: (v: 'tree' | 'icicle') => void
   setSuggestions: (set: SuggestionSet) => void
   updateStream: (patch: Partial<SuggestionStream>) => void
   appendDelta: (text: string) => void
@@ -75,6 +77,7 @@ export const useWorkspace = create<WorkspaceState>()(
       analysis: null,
       isReplay: false,
       selectedNodeId: null,
+      planView: 'tree',
       stream: idleStream,
 
       setSql: (sql) => set({ sql }),
@@ -87,6 +90,7 @@ export const useWorkspace = create<WorkspaceState>()(
           stream: analysis?.suggestions ? { ...idleStream, status: 'done' } : idleStream,
         }),
       selectNode: (selectedNodeId) => set({ selectedNodeId }),
+      setPlanView: (planView) => set({ planView }),
       setSuggestions: (suggestions) => set((s) => (s.analysis ? { analysis: { ...s.analysis, suggestions } } : {})),
       updateStream: (patch) => set((s) => ({ stream: { ...s.stream, ...patch } })),
       appendDelta: (text) => set((s) => ({ stream: { ...s.stream, buffer: s.stream.buffer + text } })),
@@ -104,7 +108,7 @@ export const useWorkspace = create<WorkspaceState>()(
       name: 'querylens.workspace',
       storage: createJSONStorage(() => localStorage),
       // Only the editor draft survives restarts; results come from history.
-      partialize: (s) => ({ sql: s.sql, connectionId: s.connectionId }),
+      partialize: (s) => ({ sql: s.sql, connectionId: s.connectionId, planView: s.planView }),
     },
   ),
 )

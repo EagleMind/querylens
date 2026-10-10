@@ -1,7 +1,9 @@
 //! Engine EXPLAIN output → normalized `PlanNode` tree → scored and annotated.
 
 mod analyze;
+pub mod diff;
 mod duckdb;
+pub mod fingerprint;
 mod postgres;
 
 use serde_json::Value;

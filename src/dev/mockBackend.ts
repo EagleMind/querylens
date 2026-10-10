@@ -8,6 +8,10 @@
  * `QUERYLENS_WRITE_FIXTURE=1 cargo test --test live_postgres`.
  */
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
+import type { DiffNode } from '@/bindings/DiffNode'
+import type { DiffSide } from '@/bindings/DiffSide'
+import type { PlanDiff } from '@/bindings/PlanDiff'
+import type { PlanNode } from '@/bindings/PlanNode'
 import type { Connection } from '@/bindings/Connection'
 import type { ConnectionInput } from '@/bindings/ConnectionInput'
 import type { HistoryEntry } from '@/bindings/HistoryEntry'
@@ -123,6 +127,7 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         if (/^\s*$/.test(sql)) fail('validation', 'Enter a SQL statement to analyze.')
         if (/\bnope\b/i.test(sql)) fail('database', 'relation "nope" does not exist')
         const conn = connections.find((c) => c.id === args.connectionId)!
+        const prev = [...analyses.values()].reverse().find((p) => p.sql === sql && p.connectionId === conn.id)
         const a = {
           ...(fixture as unknown as AnalysisResult),
           id: crypto.randomUUID(),
@@ -131,10 +136,18 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
           sql,
           analyzedAt: now(),
           suggestions: null,
+          baseline: prev
+            ? { previousId: prev.id, previousAt: prev.analyzedAt, planChanged: false, timeRatio: 1.6 }
+            : null,
         } satisfies AnalysisResult
         analyses.set(a.id, a)
         conn.lastUsedAt = now()
         return a
+      }
+      case 'compare_analyses': {
+        const before = analyses.get(String(args.beforeId))!
+        const after = analyses.get(String(args.afterId))!
+        return mockDiff(before, after)
       }
       case 'list_history': {
         const q = String(args.search ?? '').toLowerCase()
@@ -228,4 +241,47 @@ export async function mockSuggestions(analysisId: string, onEvent: (e: Suggestio
     onEvent({ type: 'done', result: set })
   })()
   return requestId
+}
+
+/** A plausible "after adding an index" comparison built from the fixture plan. */
+function mockDiff(before: AnalysisResult, after: AnalysisResult): PlanDiff {
+  const side = (n: PlanNode, faster: boolean): DiffSide => ({
+    id: n.id,
+    nodeType: n.nodeType,
+    indexName: n.indexName,
+    selfTimeMs: n.selfTimeMs == null ? null : faster ? n.selfTimeMs / 8 : n.selfTimeMs,
+    selfCost: n.selfCost,
+    actualRows: n.actualRows,
+    estimatedRows: n.estimatedRows,
+    loops: n.loops,
+    heat: n.heat,
+  })
+  const walk = (n: PlanNode): DiffNode => {
+    const swapped = n.nodeType.includes('Seq Scan') && n.relation === 'orders'
+    return {
+      status: swapped ? 'changed' : 'same',
+      relation: n.relation,
+      detail: n.detail,
+      before: side(n, false),
+      after: swapped
+        ? { ...side(n, true), nodeType: 'Index Scan', indexName: 'orders_user_id_status_idx', heat: 'low' }
+        : side(n, true),
+      children: n.children.map(walk),
+    }
+  }
+  return {
+    beforeId: before.id,
+    afterId: after.id,
+    beforeSql: before.sql,
+    afterSql: after.sql,
+    beforeLabel: before.analyzedAt,
+    afterLabel: after.analyzedAt,
+    beforeMs: before.executionTimeMs,
+    afterMs: (after.executionTimeMs ?? 0) / 8,
+    beforeCost: before.totalCost,
+    afterCost: after.totalCost,
+    timed: true,
+    planChanged: true,
+    root: walk(before.root),
+  }
 }

@@ -336,6 +336,85 @@ pub struct AnalysisResult {
     /// Repeat-run statistics when Profile ran more than once.
     #[serde(default)]
     pub timing: Option<RunStats>,
+    /// Same statement modulo literals/parameters/whitespace.
+    #[serde(default)]
+    pub query_fp: String,
+    /// Same plan shape (operators, relations, indexes).
+    #[serde(default)]
+    pub plan_fp: String,
+    /// The previous analysis of this statement on this connection, if any.
+    #[serde(default)]
+    pub baseline: Option<Baseline>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Baseline {
+    pub previous_id: String,
+    pub previous_at: String,
+    pub plan_changed: bool,
+    /// This run's time ÷ the previous run's (both Profile). >1 = slower.
+    pub time_ratio: Option<f64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum DiffStatus {
+    Same,
+    Changed,
+    Added,
+    Removed,
+}
+
+/// One operator as it appears on one side of a comparison.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct DiffSide {
+    pub id: String,
+    pub node_type: String,
+    pub index_name: Option<String>,
+    pub self_time_ms: Option<f64>,
+    pub self_cost: Option<f64>,
+    pub actual_rows: Option<f64>,
+    pub estimated_rows: Option<f64>,
+    pub loops: Option<f64>,
+    pub heat: Heat,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct DiffNode {
+    pub status: DiffStatus,
+    pub relation: Option<String>,
+    pub detail: Option<String>,
+    pub before: Option<DiffSide>,
+    pub after: Option<DiffSide>,
+    pub children: Vec<DiffNode>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PlanDiff {
+    pub before_id: String,
+    pub after_id: String,
+    pub before_sql: String,
+    pub after_sql: String,
+    pub before_label: String,
+    pub after_label: String,
+    /// Median execution time (or single-run time), ms.
+    pub before_ms: Option<f64>,
+    pub after_ms: Option<f64>,
+    pub before_cost: Option<f64>,
+    pub after_cost: Option<f64>,
+    /// Both sides have real timings (Profile), not just estimates.
+    pub timed: bool,
+    pub plan_changed: bool,
+    pub root: DiffNode,
 }
 
 /// Profile repeated N times: the median run is the one displayed. The first run is

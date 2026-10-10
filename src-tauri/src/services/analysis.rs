@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use crate::engines::{self, ConnectSpec, ExplainRequest};
 use crate::error::AppResult;
-use crate::model::{AnalysisResult, Connection, ConnectionInput, ExplainMode, RunStats};
+use crate::model::{AnalysisResult, Baseline, Connection, ConnectionInput, ExplainMode, RunStats};
 use crate::storage::Store;
 use crate::{plan, secrets};
 
@@ -86,8 +86,19 @@ const REPEAT_BUDGET: Duration = Duration::from_secs(10);
 pub async fn run(store: &Store, connection_id: &str, sql: &str, opts: RunOptions) -> AppResult<AnalysisResult> {
     let conn = store.get_connection(connection_id)?;
     let limits = Limits::from_settings(&store.get_settings()?.analysis);
-    let result = explain(&conn, &spec_for(&conn)?, sql, &opts, limits).await?;
+    let mut result = explain(&conn, &spec_for(&conn)?, sql, &opts, limits).await?;
     if opts.persist {
+        result.baseline = store.previous_analysis(&conn.id, &result.query_fp)?.map(|prev| Baseline {
+            plan_changed: !prev.plan_fp.is_empty() && prev.plan_fp != result.plan_fp,
+            time_ratio: match (prev.mode, result.mode, prev.execution_time_ms, result.execution_time_ms) {
+                (ExplainMode::Analyze, ExplainMode::Analyze, Some(before), Some(now)) if before > 0.0 => {
+                    Some(now / before)
+                }
+                _ => None,
+            },
+            previous_id: prev.id,
+            previous_at: prev.created_at,
+        });
         store.insert_analysis(&result)?;
         store.touch_connection(&conn.id)?;
     }
@@ -159,6 +170,8 @@ pub async fn explain(
         Vec::new()
     });
 
+    let sql_for_fp = sql.clone();
+    let root_for_fp = parsed.root.clone();
     Ok(AnalysisResult {
         id: uuid::Uuid::new_v4().to_string(),
         connection_id: conn.id.clone(),
@@ -182,6 +195,9 @@ pub async fn explain(
         suggestions: None,
         server,
         timing,
+        query_fp: plan::fingerprint::query_fp(&sql_for_fp),
+        plan_fp: plan::fingerprint::plan_fp(&root_for_fp),
+        baseline: None,
     })
 }
 
