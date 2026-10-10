@@ -7,4 +7,8 @@ export type ServerInfo = {
 /**
  * e.g. 170006 for PostgreSQL 17.6; 0 for engines without a version number.
  */
-versionNum: number, hypopg: boolean, pgStatStatements: boolean, ioTiming: boolean, superuser: boolean, };
+versionNum: number, hypopg: boolean, pgStatStatements: boolean, ioTiming: boolean, superuser: boolean, 
+/**
+ * Current `work_mem` in kB (what-if scenarios scale it).
+ */
+workMemKb: number, randomPageCost: number, };

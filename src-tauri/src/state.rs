@@ -10,31 +10,41 @@ use crate::storage::Store;
 /// Unsaved analyses (what-if scenarios, fix previews) kept so they can be compared.
 const SCRATCH_CAPACITY: usize = 40;
 
+/// Recent unsaved analyses, newest first.
+#[derive(Default)]
+pub struct Scratch(Mutex<VecDeque<AnalysisResult>>);
+
+impl Scratch {
+    pub fn remember(&self, analysis: AnalysisResult) {
+        let mut items = self.0.lock().expect("scratch poisoned");
+        items.retain(|a| a.id != analysis.id);
+        items.push_front(analysis);
+        items.truncate(SCRATCH_CAPACITY);
+    }
+
+    pub fn get(&self, id: &str) -> Option<AnalysisResult> {
+        self.0.lock().expect("scratch poisoned").iter().find(|a| a.id == id).cloned()
+    }
+}
+
 pub struct AppState {
     pub store: Arc<Store>,
+    pub scratch: Arc<Scratch>,
     /// In-flight background jobs (suggestions, what-if sweeps…), so they can be cancelled.
     pub tasks: Mutex<HashMap<String, AbortHandle>>,
-    scratch: Mutex<VecDeque<AnalysisResult>>,
 }
 
 impl AppState {
     pub fn new(store: Store) -> Self {
-        Self { store: Arc::new(store), tasks: Mutex::new(HashMap::new()), scratch: Mutex::new(VecDeque::new()) }
-    }
-
-    pub fn remember(&self, analysis: AnalysisResult) {
-        let mut scratch = self.scratch.lock().expect("scratch poisoned");
-        scratch.retain(|a| a.id != analysis.id);
-        scratch.push_front(analysis);
-        scratch.truncate(SCRATCH_CAPACITY);
+        Self { store: Arc::new(store), scratch: Arc::default(), tasks: Mutex::new(HashMap::new()) }
     }
 
     /// An analysis from the unsaved scratch area, or else from history.
     pub fn find_analysis(&self, id: &str) -> AppResult<AnalysisResult> {
-        if let Some(a) = self.scratch.lock().expect("scratch poisoned").iter().find(|a| a.id == id) {
-            return Ok(a.clone());
+        match self.scratch.get(id) {
+            Some(a) => Ok(a),
+            None => self.store.get_analysis(id),
         }
-        self.store.get_analysis(id)
     }
 
     pub fn track_task(&self, id: String, handle: AbortHandle) {

@@ -198,7 +198,62 @@ pub async fn explain(
         query_fp: plan::fingerprint::query_fp(&sql_for_fp),
         plan_fp: plan::fingerprint::plan_fp(&root_for_fp),
         baseline: None,
+        whatif: None,
     })
+}
+
+/// Above this many rows a candidate index is tested hypothetically (HypoPG) instead
+/// of being built inside the transaction.
+const HYPOTHETICAL_ABOVE_ROWS: f64 = 5_000_000.0;
+
+/// Re-run the baseline query with a suggested fix applied, inside the usual rolled-back
+/// transaction. Supports index DDL, settings/statistics, and query rewrites.
+pub async fn preview_fix(store: &Store, baseline: &AnalysisResult, fix: &str) -> AppResult<AnalysisResult> {
+    let fix = engines::sanitize_sql(fix)?;
+    let lower = fix.to_ascii_lowercase();
+    let runs = store.get_settings()?.analysis.repeat_runs;
+    let base = RunOptions { read_only: true, runs, ..RunOptions::new(baseline.mode) };
+
+    let (sql, opts) = if lower.starts_with("create index") || lower.starts_with("create unique index") {
+        let target_rows = index_target(&lower)
+            .and_then(|t| baseline.tables.iter().find(|tc| tc.name.rsplit('.').next() == Some(t.as_str())))
+            .and_then(|tc| tc.row_estimate)
+            .unwrap_or(0.0);
+        if baseline.server.hypopg && target_rows > HYPOTHETICAL_ABOVE_ROWS {
+            (baseline.sql.clone(), RunOptions { hypothetical: vec![fix.clone()], ..base })
+        } else {
+            (baseline.sql.clone(), RunOptions { setup: vec![fix.clone()], ..base })
+        }
+    } else if ["select", "with", "values", "table"].iter().any(|k| lower.starts_with(k)) {
+        (fix.clone(), base)
+    } else {
+        // Settings / statistics, possibly several statements ("CREATE STATISTICS …; ANALYZE t").
+        let setup: Vec<String> = fix.split(';').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect();
+        for s in &setup {
+            engines::sanitize_setup_sql(s).map_err(|_| {
+                crate::error::AppError::validation(
+                    "This fix can't be previewed automatically. Only indexes, SET, CREATE STATISTICS / ANALYZE \
+                     and rewritten queries can be.",
+                )
+            })?;
+        }
+        (baseline.sql.clone(), RunOptions { setup, ..base })
+    };
+    let conn = store.get_connection(&baseline.connection_id)?;
+    let limits = Limits::from_settings(&store.get_settings()?.analysis);
+    explain(&conn, &spec_for(&conn)?, &sql, &opts, limits).await
+}
+
+/// Table name in `create [unique] index [concurrently] [name] on [only] <table> …`.
+fn index_target(lower: &str) -> Option<String> {
+    let after_on = lower.split(" on ").nth(1)?;
+    let mut words = after_on.split_whitespace();
+    let mut t = words.next()?;
+    if t == "only" {
+        t = words.next()?;
+    }
+    let t = t.split('(').next()?.trim_matches('"');
+    Some(t.rsplit('.').next()?.to_string())
 }
 
 fn median_index(samples: &[Sample]) -> usize {
@@ -237,6 +292,12 @@ mod tests {
             execution_ms: ms,
             read_blocks: reads,
         }
+    }
+
+    #[test]
+    fn finds_index_target_table() {
+        assert_eq!(index_target("create index concurrently foo on public.orders (user_id)").as_deref(), Some("orders"));
+        assert_eq!(index_target("create unique index on only events(kind)").as_deref(), Some("events"));
     }
 
     #[test]

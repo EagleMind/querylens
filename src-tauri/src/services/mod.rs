@@ -3,3 +3,4 @@
 
 pub mod analysis;
 pub mod suggestions;
+pub mod whatif;

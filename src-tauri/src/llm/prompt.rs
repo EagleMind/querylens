@@ -37,14 +37,16 @@ Never invent problems.
         s.push_str(
             "
 You have tools connected to the user's database:
+- test_index(sql, indexes[]) checks candidate indexes. Prefer it for index ideas: with \
+HypoPG it is instant and lock-free. Its output starts with an EVIDENCE line \
+(estimated or measured).
 - explain_query(sql, analyze?, setup_sql?) runs EXPLAIN on a query inside a transaction \
-that is always rolled back. setup_sql (Postgres only) runs first in the same transaction, \
-for example a CREATE INDEX (without CONCURRENTLY) or SET work_mem, so you can measure a \
-fix before recommending it.
+that is always rolled back. Use it to measure rewrites, or settings via setup_sql \
+(e.g. SET work_mem, CREATE STATISTICS + ANALYZE).
 - table_info(table) returns columns, indexes, size and statistics.
-Test your top suggestions (at most 4 tool calls in total) and quote the measured \
-before/after time in the explanation. Set \"verified\": true only for suggestions you \
-actually measured.
+Test your top suggestions (at most 4 tool calls in total) and quote the before/after numbers \
+in the explanation. Set \"evidence\" to \"measured\" (real timings), \"estimated\" (planner \
+cost, e.g. a hypothetical index), or null if you did not test it.
 ",
         );
     }
@@ -53,7 +55,8 @@ actually measured.
 Your final answer must be ONLY a JSON object, with no prose and no code fences:
 {"summary": "<one sentence naming the main bottleneck>",
  "suggestions": [{"severity": "high" | "medium" | "low", "title": "<= 70 chars",
-   "explanation": "...", "sqlFix": "..." | null, "nodeId": "0.1" | null, "verified": false}]}"#,
+   "explanation": "...", "sqlFix": "..." | null, "nodeId": "0.1" | null,
+   "evidence": "measured" | "estimated" | null}]}"#,
     );
     s
 }
@@ -96,6 +99,13 @@ pub fn user(a: &AnalysisResult) -> String {
         let _ = writeln!(s, "Total estimated cost: {c:.0}");
     }
     let _ = writeln!(s, "\n## Query\n{}\n", a.sql);
+    if let Some(w) = &a.whatif {
+        s.push_str("## What-if experiments already run (rolled back)\n");
+        for r in &w.results {
+            let _ = writeln!(s, "- {} [{}]: {:?}. {}", r.scenario.label, r.scenario.setup.join("; "), r.outcome, r.verdict);
+        }
+        let _ = writeln!(s, "Diagnosis: {}\n", w.summary);
+    }
     s.push_str("## Plan (id operator · self time (share) · rows actual/estimated · detail)\n");
     s.push_str(&compact_plan(&a.root));
     if !a.tables.is_empty() {
@@ -203,7 +213,7 @@ pub fn table_summary(t: &TableContext, mentioned: Option<&str>) -> String {
         let _ = writeln!(s, "  columns: {}", cols.join(", "));
         for c in &t.columns {
             let Some(st) = &c.stats else { continue };
-            if mentioned.is_some_and(|m| !mentions(m, &c.name.to_ascii_lowercase())) {
+            if mentioned.is_some_and(|m| !crate::plan::mentions(m, &c.name.to_ascii_lowercase())) {
                 continue;
             }
             let distinct = if st.n_distinct < 0.0 {
@@ -235,16 +245,6 @@ pub fn table_summary(t: &TableContext, mentioned: Option<&str>) -> String {
         }
     }
     s
-}
-
-/// Whole-word containment (identifiers: letters, digits, underscore).
-fn mentions(haystack: &str, word: &str) -> bool {
-    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    haystack.match_indices(word).any(|(i, _)| {
-        let before = haystack[..i].chars().next_back();
-        let after = haystack[i + word.len()..].chars().next();
-        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
-    })
 }
 
 pub fn fmt_ms(ms: f64) -> String {

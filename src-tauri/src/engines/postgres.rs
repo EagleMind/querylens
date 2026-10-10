@@ -69,7 +69,9 @@ async fn detect_server_info(client: &Client) -> AppResult<ServerInfo> {
                     EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'hypopg'),
                     EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements'),
                     current_setting('track_io_timing')::bool,
-                    current_setting('is_superuser')::bool",
+                    current_setting('is_superuser')::bool,
+                    pg_size_bytes(current_setting('work_mem'))::float8 / 1024,
+                    current_setting('random_page_cost')::float8",
             &[],
         )
         .await?;
@@ -80,6 +82,8 @@ async fn detect_server_info(client: &Client) -> AppResult<ServerInfo> {
         pg_stat_statements: row.get(2),
         io_timing: row.get(3),
         superuser: row.get(4),
+        work_mem_kb: row.get(5),
+        random_page_cost: row.get(6),
     })
 }
 

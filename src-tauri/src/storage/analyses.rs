@@ -2,7 +2,7 @@ use rusqlite::{OptionalExtension, params};
 
 use super::Store;
 use crate::error::{AppError, AppResult};
-use crate::model::{AnalysisResult, Engine, ExplainMode, HistoryEntry, SuggestionSet};
+use crate::model::{AnalysisResult, Engine, ExplainMode, HistoryEntry, SuggestionSet, WhatIfReport};
 
 pub struct PreviousRun {
     pub id: String,
@@ -75,18 +75,28 @@ impl Store {
     }
 
     pub fn get_analysis(&self, id: &str) -> AppResult<AnalysisResult> {
-        let (result, suggestions): (String, Option<String>) = self.with(|db| {
+        let (result, suggestions, whatif): (String, Option<String>, Option<String>) = self.with(|db| {
             db.query_row(
-                "SELECT result_json, suggestions_json FROM analyses WHERE id = ?1",
+                "SELECT result_json, suggestions_json, whatif_json FROM analyses WHERE id = ?1",
                 [id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?
             .ok_or_else(|| AppError::not_found("Analysis not found in history"))
         })?;
         let mut analysis: AnalysisResult = serde_json::from_str(&result)?;
         analysis.suggestions = suggestions.map(|s| serde_json::from_str(&s)).transpose()?;
+        // A report from an incompatible older build is simply dropped.
+        analysis.whatif = whatif.and_then(|w| serde_json::from_str(&w).ok());
         Ok(analysis)
+    }
+
+    pub fn set_whatif(&self, id: &str, report: &WhatIfReport) -> AppResult<()> {
+        let json = serde_json::to_string(report)?;
+        self.with(|db| {
+            db.execute("UPDATE analyses SET whatif_json = ?2 WHERE id = ?1", params![id, json])?;
+            Ok(())
+        })
     }
 
     pub fn set_suggestions(&self, id: &str, set: &SuggestionSet) -> AppResult<()> {

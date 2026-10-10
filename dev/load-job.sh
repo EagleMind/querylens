@@ -9,6 +9,8 @@ export MSYS_NO_PATHCONV=1   # Git Bash on Windows: don't mangle container paths
 
 CONTAINER=${CONTAINER:-querylens-pg}
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# Git Bash: hand Windows tools (git, curl, docker) real Windows paths.
+command -v cygpath >/dev/null && HERE="$(cygpath -m "$HERE")"
 CACHE="$HERE/.cache/job"
 DATA="${JOB_DATA_DIR:-$CACHE/data}"
 REPO="$CACHE/repo"

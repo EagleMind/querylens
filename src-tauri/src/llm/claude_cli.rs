@@ -18,7 +18,7 @@ use crate::model::{LlmSettings, SuggestionEvent};
 use crate::paths;
 
 pub const MCP_SERVER_NAME: &str = "querylens";
-const ALLOWED_TOOLS: &str = "mcp__querylens__explain_query,mcp__querylens__table_info";
+const ALLOWED_TOOLS: &str = "mcp__querylens__explain_query,mcp__querylens__table_info,mcp__querylens__test_index";
 
 pub struct ClaudeCli {
     binary: PathBuf,
@@ -171,6 +171,14 @@ fn tool_activity(name: &str, input: &Value) -> (String, Option<String>) {
                 detail.push_str(sql.trim());
             }
             (label.into(), (!detail.is_empty()).then_some(detail))
+        }
+        "test_index" => {
+            let ddl: Vec<&str> = input
+                .get("indexes")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            ("Testing candidate index".into(), (!ddl.is_empty()).then(|| ddl.join("\n")))
         }
         "table_info" => {
             let table = input.get("table").and_then(Value::as_str).unwrap_or("table");

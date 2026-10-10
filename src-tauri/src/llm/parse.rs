@@ -3,7 +3,7 @@
 use serde_json::Value;
 
 use crate::error::{AppError, AppResult};
-use crate::model::{Suggestion, SuggestionSeverity};
+use crate::model::{Evidence, Suggestion, SuggestionSeverity};
 
 const MAX_SUGGESTIONS: usize = 6;
 
@@ -90,14 +90,24 @@ pub fn parse_suggestions(text: &str, tool_calls: u32) -> AppResult<(String, Vec<
                 "low" | "info" => SuggestionSeverity::Low,
                 _ => SuggestionSeverity::Medium,
             };
+            // Only trust evidence claims if the model actually called a tool. Accept the
+            // older boolean `verified` as "measured".
+            let evidence = (tool_calls > 0)
+                .then(|| match str_field(s, &["evidence"]).map(|e| e.to_lowercase()).as_deref() {
+                    Some("measured") => Some(Evidence::Measured),
+                    Some("estimated") => Some(Evidence::Estimated),
+                    _ if s.get("verified").and_then(Value::as_bool) == Some(true) => Some(Evidence::Measured),
+                    _ => None,
+                })
+                .flatten();
             Some(Suggestion {
                 severity,
                 title,
                 explanation: str_field(s, &["explanation", "description", "details"]).unwrap_or_default(),
                 sql_fix: str_field(s, &["sqlFix", "sql_fix", "fix", "sql"]),
                 node_id: str_field(s, &["nodeId", "node_id", "node"]),
-                // Only trust "verified" if the model actually called a tool.
-                verified: tool_calls > 0 && s.get("verified").and_then(Value::as_bool).unwrap_or(false),
+                verified: evidence.is_some(),
+                evidence,
             })
         })
         .take(MAX_SUGGESTIONS)
@@ -124,6 +134,9 @@ mod tests {
         assert_eq!(s[0].sql_fix.as_deref(), Some("CREATE INDEX ON orders (user_id)"));
         assert!(!s[0].verified, "verified requires tool calls");
         assert!(parse_suggestions(text, 2).unwrap().1[0].verified);
+        let est = r#"{"summary": "x", "suggestions": [{"title": "t", "evidence": "estimated"}]}"#;
+        assert_eq!(parse_suggestions(est, 1).unwrap().1[0].evidence, Some(Evidence::Estimated));
+        assert_eq!(parse_suggestions(est, 0).unwrap().1[0].evidence, None);
     }
 
     #[test]

@@ -215,3 +215,72 @@ async fn lock_timeout_fails_fast_with_a_clear_message() {
     assert!(err.message.contains("lock"), "{}", err.message);
     assert!(started.elapsed() < std::time::Duration::from_secs(10), "should give up after lock_timeout");
 }
+
+fn temp_store(port: u16) -> (querylens_lib::storage::Store, std::path::PathBuf) {
+    use querylens_lib::model::ConnectionInput;
+    let dir = std::env::temp_dir().join(format!("ql-live-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let store = querylens_lib::storage::Store::open(&dir.join("querylens.db")).unwrap();
+    let input = ConnectionInput {
+        id: None,
+        name: "shop".into(),
+        engine: Engine::Postgres,
+        color: String::new(),
+        host: Some("localhost".into()),
+        port: Some(port),
+        database: Some("shop".into()),
+        username: Some("querylens".into()),
+        ssl_mode: SslMode::Disable,
+        file_path: None,
+        password: None,
+    };
+    store.upsert_connection("shop", &input, false).unwrap();
+    (store, dir)
+}
+
+#[tokio::test]
+async fn preview_fix_measures_an_index_and_compares() {
+    let Some((_, spec)) = setup() else { return };
+    let (store, _dir) = temp_store(spec.port.unwrap());
+    let sql = "SELECT * FROM orders WHERE user_id = 4242";
+    let baseline = querylens_lib::services::analysis::run(&store, "shop", sql, RunOptions { persist: true, ..opts(ExplainMode::Analyze) })
+        .await
+        .unwrap();
+    let fixed = querylens_lib::services::analysis::preview_fix(&store, &baseline, "CREATE INDEX CONCURRENTLY ON orders (user_id);")
+        .await
+        .unwrap();
+    assert!(shape(&fixed.root).contains("Index"), "{}", shape(&fixed.root));
+    let d = querylens_lib::plan::diff::diff(&baseline, &fixed);
+    assert!(d.plan_changed && d.timed);
+    assert!(d.after_ms.unwrap() < d.before_ms.unwrap(), "{:?} → {:?}", d.before_ms, d.after_ms);
+    // A rewrite preview runs the new SQL instead.
+    let rewrite = querylens_lib::services::analysis::preview_fix(&store, &baseline, "SELECT id FROM orders WHERE user_id = 4242 LIMIT 1")
+        .await
+        .unwrap();
+    assert!(rewrite.sql.to_lowercase().contains("limit 1"));
+    // Unsupported fixes are refused, not run.
+    assert!(querylens_lib::services::analysis::preview_fix(&store, &baseline, "DROP TABLE orders").await.is_err());
+}
+
+#[tokio::test]
+async fn mcp_test_index_uses_hypopg() {
+    use std::io::Write;
+    let Some((_, spec)) = setup() else { return };
+    let (_store, dir) = temp_store(spec.port.unwrap());
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_querylens"))
+        .args(["--mcp", "--connection", "shop"])
+        .env("QUERYLENS_DATA_DIR", &dir)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let call = serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "test_index",
+        "arguments": {"sql": "SELECT * FROM orders WHERE user_id = 4242", "indexes": ["CREATE INDEX ON orders (user_id)"]}}});
+    writeln!(child.stdin.as_mut().unwrap(), "{call}").unwrap();
+    drop(child.stdin.take());
+    let out = child.wait_with_output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    println!("{text}");
+    assert!(text.contains("EVIDENCE: estimated"), "{text}");
+    assert!(text.contains("The planner uses"), "{text}");
+}

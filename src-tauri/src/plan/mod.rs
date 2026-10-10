@@ -64,6 +64,16 @@ fn plan_level_warnings(plan: &mut ParsedPlan) {
     }
 }
 
+/// Whole-word containment (identifiers: letters, digits, underscore).
+pub fn mentions(haystack: &str, word: &str) -> bool {
+    let is_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    haystack.match_indices(word).any(|(i, _)| {
+        let before = haystack[..i].chars().next_back();
+        let after = haystack[i + word.len()..].chars().next();
+        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
+    })
+}
+
 /// Distinct relation names referenced anywhere in the plan, in first-seen order.
 pub fn relations(root: &PlanNode) -> Vec<String> {
     let mut out = Vec::new();

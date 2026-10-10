@@ -47,6 +47,8 @@ pub fn run() {
             commands::llm::get_suggestions,
             commands::llm::cancel_task,
             commands::compare::compare_analyses,
+            commands::whatif::run_whatif,
+            commands::whatif::preview_fix,
         ])
         .run(tauri::generate_context!())
         .expect("error while running QueryLens");

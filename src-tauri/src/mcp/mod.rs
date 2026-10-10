@@ -101,6 +101,7 @@ impl Server {
         let outcome = match name {
             "explain_query" => self.explain_query(&args).await,
             "table_info" => self.table_info(&args).await,
+            "test_index" => self.test_index(&args).await,
             other => Err(AppError::validation(format!("Unknown tool: {other}"))),
         };
         match outcome {
@@ -154,6 +155,68 @@ impl Server {
         Ok(out)
     }
 
+    /// Compare the plan with and without candidate indexes. Uses HypoPG hypothetical
+    /// indexes when installed (instant, no locks: an *estimate*); otherwise builds them
+    /// inside the rolled-back transaction and profiles (*measured*).
+    async fn test_index(&self, args: &Value) -> AppResult<String> {
+        let sql = args.get("sql").and_then(Value::as_str).ok_or_else(|| AppError::validation("`sql` is required"))?;
+        let indexes: Vec<String> = match args.get("indexes") {
+            Some(Value::String(s)) => vec![s.clone()],
+            Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).map(String::from).collect(),
+            _ => Vec::new(),
+        };
+        if indexes.is_empty() {
+            return Err(AppError::validation("`indexes` must list at least one CREATE INDEX statement"));
+        }
+        for ddl in &indexes {
+            let lower = ddl.trim().to_ascii_lowercase();
+            if !(lower.starts_with("create index") || lower.starts_with("create unique index")) {
+                return Err(AppError::validation("`indexes` may only contain CREATE [UNIQUE] INDEX statements"));
+            }
+        }
+        let conn = self.store.get_connection(&self.connection_id)?;
+        let spec = analysis::spec_for(&conn)?;
+        let limits = analysis::Limits::from_settings(&self.store.get_settings()?.analysis);
+        let runs = self.store.get_settings()?.analysis.repeat_runs;
+
+        // Detect HypoPG with a cheap estimate (also the "before" for the estimate path).
+        let before_est = analysis::explain(&conn, &spec, sql, &RunOptions { read_only: true, ..RunOptions::new(ExplainMode::Estimate) }, limits).await?;
+        let mut out = String::new();
+        if before_est.server.hypopg {
+            let opts = RunOptions { hypothetical: indexes.clone(), read_only: true, ..RunOptions::new(ExplainMode::Estimate) };
+            let after = analysis::explain(&conn, &spec, sql, &opts, limits).await?;
+            let mut used = Vec::new();
+            crate::plan::walk(&after.root, &mut |n| {
+                if let Some(i) = n.index_name.as_deref().filter(|i| i.contains('<')) {
+                    used.push(format!("{} on {}", i, n.relation.as_deref().unwrap_or("?")));
+                }
+            });
+            out.push_str("EVIDENCE: estimated (HypoPG hypothetical index; planner cost only, nothing was executed)\n");
+            out.push_str(&format!(
+                "Total estimated cost: {:.0} → {:.0}\n",
+                before_est.total_cost.unwrap_or(0.0),
+                after.total_cost.unwrap_or(0.0)
+            ));
+            if used.is_empty() {
+                out.push_str("The planner does NOT use the hypothetical index(es) for this query.\n");
+            } else {
+                out.push_str(&format!("The planner uses: {}\n", used.join(", ")));
+            }
+            out.push_str("Plan with the index:\n");
+            out.push_str(&prompt::compact_plan(&after.root));
+        } else {
+            let profile = |setup: Vec<String>| RunOptions { setup, read_only: true, runs, ..RunOptions::new(ExplainMode::Analyze) };
+            let before = analysis::explain(&conn, &spec, sql, &profile(vec![]), limits).await?;
+            let after = analysis::explain(&conn, &spec, sql, &profile(indexes.clone()), limits).await?;
+            let ms = |a: &crate::model::AnalysisResult| a.timing.as_ref().map(|t| t.median_ms).or(a.execution_time_ms).unwrap_or(0.0);
+            out.push_str("EVIDENCE: measured (index built inside a rolled-back transaction, query executed)\n");
+            out.push_str(&format!("Execution time (median): {} → {}\n", prompt::fmt_ms(ms(&before)), prompt::fmt_ms(ms(&after))));
+            out.push_str("Plan with the index:\n");
+            out.push_str(&prompt::compact_plan(&after.root));
+        }
+        Ok(out)
+    }
+
     async fn table_info(&self, args: &Value) -> AppResult<String> {
         let table = args
             .get("table")
@@ -185,6 +248,20 @@ fn tool_definitions() -> Value {
                     "setup_sql": { "description": "Optional statement(s) run first in the same rolled-back transaction (PostgreSQL only): CREATE [UNIQUE] INDEX, CREATE STATISTICS, SET or ANALYZE. A string or an array of strings.", "anyOf": [ { "type": "string" }, { "type": "array", "items": { "type": "string" } } ] }
                 },
                 "required": ["sql"]
+            }
+        },
+        {
+            "name": "test_index",
+            "description": "Test candidate indexes for a query. With HypoPG installed it plans with hypothetical \
+                indexes: instant and lock-free, but an estimate. Otherwise it builds them inside a rolled-back \
+                transaction and measures. The output starts with an EVIDENCE line saying which.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "sql": { "type": "string", "description": "The query to plan." },
+                    "indexes": { "type": "array", "items": { "type": "string" }, "description": "CREATE [UNIQUE] INDEX statements to test together." }
+                },
+                "required": ["sql", "indexes"]
             }
         },
         {

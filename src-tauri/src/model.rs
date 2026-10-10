@@ -275,6 +275,11 @@ pub struct ServerInfo {
     pub pg_stat_statements: bool,
     pub io_timing: bool,
     pub superuser: bool,
+    /// Current `work_mem` in kB (what-if scenarios scale it).
+    #[serde(default)]
+    pub work_mem_kb: f64,
+    #[serde(default)]
+    pub random_page_cost: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -345,6 +350,86 @@ pub struct AnalysisResult {
     /// The previous analysis of this statement on this connection, if any.
     #[serde(default)]
     pub baseline: Option<Baseline>,
+    /// Planner what-if sweep, when one has been run.
+    #[serde(default)]
+    pub whatif: Option<WhatIfReport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WhatIfScenario {
+    /// Stable kind, e.g. "nestloop_off", "work_mem", "ext_stats".
+    pub kind: String,
+    pub label: String,
+    /// Statements run inside the rolled-back transaction for this scenario.
+    pub setup: Vec<String>,
+    /// Why the scenario was chosen for this plan.
+    pub rationale: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum WhatIfOutcome {
+    /// The planner picked the same plan: this lever doesn't matter here.
+    NoChange,
+    Faster,
+    Slower,
+    /// Different plan, within ±15%.
+    Similar,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WhatIfResult {
+    pub scenario: WhatIfScenario,
+    pub outcome: WhatIfOutcome,
+    pub plan_changed: bool,
+    /// Baseline vs scenario: median ms when profiled, else estimated cost.
+    pub before: Option<f64>,
+    pub after: Option<f64>,
+    /// before ÷ after (> 1 = faster).
+    pub speedup: Option<f64>,
+    pub timed: bool,
+    /// The scenario's own analysis (in the scratch store) for Compare.
+    pub analysis_id: Option<String>,
+    pub verdict: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WhatIfReport {
+    pub results: Vec<WhatIfResult>,
+    /// One-paragraph diagnosis drawn from the best result.
+    pub summary: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(export)]
+pub enum WhatIfEvent {
+    Started { scenarios: Vec<WhatIfScenario> },
+    /// A scenario is being explained / profiled.
+    Running { kind: String, phase: String },
+    Result { result: WhatIfResult },
+    Done { report: WhatIfReport },
+    Error { message: String },
+}
+
+/// How a suggestion was backed up by the model.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Evidence {
+    /// Executed with EXPLAIN ANALYZE (real timings).
+    Measured,
+    /// Planner estimate only, e.g. a HypoPG hypothetical index.
+    Estimated,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -597,6 +682,9 @@ pub struct Suggestion {
     pub node_id: Option<String>,
     /// The model test-EXPLAINed this fix before recommending it.
     pub verified: bool,
+    /// What kind of test backs it (null = not tested).
+    #[serde(default)]
+    pub evidence: Option<Evidence>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

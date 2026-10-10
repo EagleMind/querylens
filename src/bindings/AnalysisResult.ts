@@ -8,6 +8,7 @@ import type { RunStats } from "./RunStats";
 import type { ServerInfo } from "./ServerInfo";
 import type { SuggestionSet } from "./SuggestionSet";
 import type { TableContext } from "./TableContext";
+import type { WhatIfReport } from "./WhatIfReport";
 
 export type AnalysisResult = { id: string, connectionId: string, connectionName: string, engine: Engine, mode: ExplainMode, sql: string, root: PlanNode, planningTimeMs: number | null, executionTimeMs: number | null, totalCost: number | null, nodeCount: number, warningsCount: number, tables: Array<TableContext>, 
 /**
@@ -41,4 +42,8 @@ planFp: string,
 /**
  * The previous analysis of this statement on this connection, if any.
  */
-baseline: Baseline | null, };
+baseline: Baseline | null, 
+/**
+ * Planner what-if sweep, when one has been run.
+ */
+whatif: WhatIfReport | null, };
