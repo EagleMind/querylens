@@ -51,7 +51,7 @@ export const PROVIDERS: Record<
     needsKey: true,
     local: false,
     hint: 'Hundreds of hosted models behind one key.',
-    modelPlaceholder: 'e.g. anthropic/claude-sonnet-4.5',
+    modelPlaceholder: 'e.g. nvidia/nemotron-3-ultra-550b-a55b:free',
   },
   open_ai: {
     label: 'OpenAI-compatible',

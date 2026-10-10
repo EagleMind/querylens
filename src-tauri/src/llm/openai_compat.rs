@@ -106,7 +106,7 @@ impl LlmProvider for OpenAiCompat {
 
     async fn stream(&self, req: &LlmRequest, sink: &dyn EventSink) -> AppResult<LlmOutput> {
         let model = self.resolve_model().await?;
-        let body = json!({
+        let mut body = json!({
             "model": model,
             "messages": [
                 { "role": "system", "content": req.system },
@@ -115,6 +115,11 @@ impl LlmProvider for OpenAiCompat {
             "temperature": req.temperature,
             "stream": true,
         });
+        if self.kind == LlmProviderKind::OpenRouter {
+            // OpenRouter's unified switch for thinking models; ignored by models without it.
+            // The thinking streams in `delta.reasoning`, kept out of the parsed answer.
+            body["reasoning"] = json!({ "enabled": true });
+        }
         let resp = self.request(reqwest::Method::POST, "/chat/completions").json(&body).send().await?;
         if !resp.status().is_success() {
             return Err(self.error_from(resp).await);
