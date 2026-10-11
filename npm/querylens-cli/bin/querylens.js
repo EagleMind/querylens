@@ -72,13 +72,28 @@ async function download(dir) {
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, archive);
   fs.writeFileSync(file, data);
-  // tar ships with Windows 10+ (and reads .zip there), macOS and Linux.
-  const tar = spawnSync('tar', ['-xf', file, '-C', dir], { stdio: 'inherit' });
+  const extracted = extract(dir, archive);
   fs.rmSync(file, { force: true });
-  if (tar.status !== 0) throw new Error(`couldn't extract ${archive}`);
+  if (!extracted) throw new Error(`couldn't extract ${archive}`);
   const binary = path.join(dir, exe);
   if (!windows) fs.chmodSync(binary, 0o755);
   return binary;
+}
+
+/** Unpack `archive` inside `dir`. Run from `dir` with a relative name, so no tar reads
+ * a drive letter as a remote host. */
+function extract(dir, archive) {
+  const ok = (cmd, args) => spawnSync(cmd, args, { cwd: dir, stdio: 'ignore' }).status === 0;
+  if (!windows) return ok('tar', ['-xzf', archive]);
+  // Windows 10+ ships bsdtar, which reads .zip; Git's GNU tar (often first on PATH) can't.
+  const systemTar = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe');
+  if (fs.existsSync(systemTar) && ok(systemTar, ['-xf', archive])) return true;
+  return ok('powershell.exe', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    `Expand-Archive -LiteralPath '${archive}' -DestinationPath . -Force`,
+  ]);
 }
 
 async function resolveBinary() {
