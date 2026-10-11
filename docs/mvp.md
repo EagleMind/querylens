@@ -79,6 +79,7 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 | Cross-engine comparison | Needs operator-class bucketing across engines | v1.2 |
 | SSH tunnels | Significant complexity. Most dev DBs are local or on a VPN. | v1.2 |
 | Auto-updater, code signing | Manual GitHub releases are fine for early users | v1.1 |
+| TLS between the app and the capture proxy | The proxy listens on localhost; apps that force TLS must disable it for the proxy URL | later |
 
 ---
 
@@ -118,6 +119,33 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 - [x] New warnings `blocking_sort`, `unselective_index`; engine-specific advisor prompt and MCP tools; engine-aware Preview fix
 - [x] Editor: MySQL dialect / JavaScript highlighting, per-language drafts; connection form for both
 - [x] Dev containers (MySQL 8.4, MongoDB 8.0) and live tests
+
+### v1.3 capture (done)
+- [x] PostgreSQL wire proxy: startup/SSL negotiation, upstream TLS, cancel forwarding, byte-exact relay
+- [x] Protocol tracker: simple and extended protocol, pipelining, error batches, binary parameters
+- [x] Comment tags (sqlcommenter, Rails/Marginalia), Node.js `pg` hook (file:line, per-request id)
+- [x] Fingerprints ignore comments, list lengths and inlined booleans
+- [x] Detection: N+1 (with parent), duplicate queries, looped writes, slow, large results, errors, chatty requests
+- [x] Plan checks with captured values; missing-index heuristic (incl. never-analyzed tables); HypoPG / rolled-back index test
+- [x] ORM recognition (7 ORMs); Sequelize advisor with code; generic advisor for the rest
+- [x] CLI: `capture`, `check` (baseline gate, GitHub job summary), `report`, `captures`, `mcp`; headless build without the GUI
+- [x] MCP: `capture_start/stop/report/statement`, `compare_captures`, `list_captures`; advisor mode unchanged
+- [x] App: Capture page (live view, report, Open in Workbench, Measure plans)
+- [x] `dev/sequelize-demo`, `live_capture` test, CI jobs (headless CLI, live capture)
+
+### v1.4 SDK-first setup (done)
+- [x] `querylens-node` SDK: records `pg` queries in-process (timing, values, rows, errors, call site, request), local only, idle unless capturing, off in production
+- [x] Ingest layer: one `Observed` type; SDK via HTTP collector (127.0.0.1:7343) or spool files; proxy as fallback; proxy copies of SDK statements dropped
+- [x] `querylens init`: installs the SDK, adds one line (Express, Nest, plain Node, Next.js instrumentation)
+- [x] Database discovery (env, `.env*`, sequelize-cli config), free-port fallback, `.querylens/report.md`
+- [x] Distribution: release builds for 5 platforms, npm (`querylens-cli` + platform packages, `querylens-node`), install scripts, GitHub Action
+
+### Next for capture
+- [ ] Dedicated advisors for Prisma, TypeORM, Django, Active Record (code templates like Sequelize)
+- [ ] MySQL proxy (handshake without TLS termination needs `caching_sha2_password` RSA exchange)
+- [ ] Python/Ruby call-site hooks (sqlcommenter covers Django/Rails today)
+- [ ] Capture comparison in the app (before/after view; MCP and the library have it)
+- [ ] CLI release binaries per platform
 
 ### Ship
 - [x] Windows release build (`.msi` + NSIS `.exe`)

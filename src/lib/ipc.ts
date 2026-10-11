@@ -8,6 +8,10 @@ import { Channel, invoke, isTauri } from '@tauri-apps/api/core'
 
 import type { AnalysisResult } from '@/bindings/AnalysisResult'
 import type { AppError } from '@/bindings/AppError'
+import type { CaptureLive } from '@/bindings/CaptureLive'
+import type { CaptureReport } from '@/bindings/CaptureReport'
+import type { CaptureSummary } from '@/bindings/CaptureSummary'
+import type { CapturedStatement } from '@/bindings/CapturedStatement'
 import type { Connection } from '@/bindings/Connection'
 import type { ConnectionInput } from '@/bindings/ConnectionInput'
 import type { ConnectionTestResult } from '@/bindings/ConnectionTestResult'
@@ -93,6 +97,19 @@ export const api = {
 
   /** Re-run an analysis with a fix applied (rolled back); returns the new analysis. */
   previewFix: (analysisId: string, fix: string) => call<AnalysisResult>('preview_fix', { analysisId, fix }),
+
+  startCapture: (connectionId: string, port: number | null, name?: string) =>
+    call<CaptureLive>('start_capture', { connectionId, port, name: name || null }),
+  /** Stops the proxy and returns the analyzed report. */
+  stopCapture: (id: string) => call<CaptureReport>('stop_capture', { id }),
+  runningCaptures: () => call<CaptureLive[]>('running_captures'),
+  captureLive: (id: string) => call<CaptureLive | null>('capture_live', { id }),
+  listCaptures: () => call<CaptureSummary[]>('list_captures'),
+  /** `profile`: rebuild with measured plans (SELECTs executed again, rolled back). */
+  captureReport: (id: string, profile = false) => call<CaptureReport>('capture_report', { id, profile }),
+  captureExecutions: (id: string, fingerprint: string, limit = 100) =>
+    call<CapturedStatement[]>('capture_executions', { id, fingerprint, limit }),
+  deleteCapture: (id: string) => call<void>('delete_capture', { id }),
 }
 
 /** Native file picker for DuckDB databases; null when cancelled or unavailable. */

@@ -5,6 +5,7 @@ import {
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
+  RadioIcon,
   ScanSearchIcon,
   SettingsIcon,
   LightbulbIcon,
@@ -56,6 +57,7 @@ import { useWorkspace } from '@/store/workspace'
 
 const NAV = [
   { to: '/', label: 'Workbench', icon: ScanSearchIcon },
+  { to: '/capture', label: 'Capture', icon: RadioIcon },
   { to: '/top-queries', label: 'Top queries', icon: FlameIcon },
   { to: '/history', label: 'History', icon: HistoryIcon },
   { to: '/settings', label: 'Settings', icon: SettingsIcon },

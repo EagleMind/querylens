@@ -280,23 +280,5 @@ pub fn table_summary(t: &TableContext, mentioned: Option<&str>) -> String {
     s
 }
 
-pub fn fmt_ms(ms: f64) -> String {
-    if ms >= 1000.0 {
-        format!("{:.2} s", ms / 1000.0)
-    } else if ms >= 10.0 {
-        format!("{ms:.0} ms")
-    } else {
-        format!("{ms:.2} ms")
-    }
-}
-
-fn fmt_bytes(b: f64) -> String {
-    const UNITS: [&str; 5] = ["B", "kB", "MB", "GB", "TB"];
-    let mut v = b;
-    let mut i = 0;
-    while v >= 1024.0 && i < UNITS.len() - 1 {
-        v /= 1024.0;
-        i += 1;
-    }
-    format!("{v:.0} {}", UNITS[i])
-}
+pub use crate::format::fmt_ms;
+use crate::format::fmt_bytes;

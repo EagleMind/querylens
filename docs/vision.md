@@ -1,6 +1,6 @@
 # QueryLens — Product Vision
 
-> Explain every query, on every engine, in plain English.
+> Find what your app does to the database, and fix it in your own code.
 
 QueryLens is a **local-first desktop app** that runs `EXPLAIN` on your SQL, turns the
 plan into a readable tree that shows where the time goes, and asks an LLM for specific,
@@ -13,6 +13,10 @@ Think of it as DevTools for SQL. You paste a query, pick a connection, press
 
 ## The problem
 
+- Most application code doesn't write SQL; an ORM does. The expensive patterns (an N+1
+  that runs one query per row, inserts in a loop, an unpaginated list) are invisible in
+  the code and only show up across many statements. Nobody pastes those into a plan viewer.
+
 - Raw `EXPLAIN` output is hard to read. The numbers that matter (self time, row
   misestimates, sorts spilling to disk) are hidden in nested JSON or text.
 - Good plan visualizers exist, but each covers one engine and is paste-only
@@ -24,6 +28,8 @@ Think of it as DevTools for SQL. You paste a query, pick a connection, press
 
 | Pillar | What it means |
 |---|---|
+| **Capture** | A local proxy records what the application actually sends (while you use it, or run its tests), finds ORM patterns across statements (N+1, duplicate queries, row-by-row writes, unbounded results), re-plans the statements with their real values, and writes the fix in the ORM's terms with the file and line that issued it. |
+| **Gate and agents** | The same capture runs as a CI check (`querylens check`: new problems fail the pull request) and as MCP tools for coding agents, which can capture, fix, and compare before/after. |
 | **Readable plans** | A tree of operators colored by *self time* (exclusive time), not cumulative cost, so the hot node is obvious at a glance. |
 | **Heuristics first** | Deterministic checks (large seq scan, row-estimate error, sort/hash spill, nested-loop blowup) run locally and instantly, with no LLM required. |
 | **AI suggestions** | A model receives a compact, normalized plan plus schema context (existing indexes, table sizes) and returns 3–5 ranked fixes with copyable SQL. |
@@ -54,7 +60,8 @@ answers: *"Is my query slow, or is this the wrong engine for this workload?"*
 
 ## What QueryLens is not
 
-- **Not monitoring.** No continuous capture, alerting or dashboards (that's pganalyze or Datadog).
+- **Not monitoring.** Capture is something you start for a dev session, a test run or a CI job,
+  then stop. No always-on agent in production, alerting or dashboards (that's pganalyze or Datadog).
 - **Not an IDE or schema browser.** No table explorer, ER diagrams or result grids.
 - **Not a query runner.** It never returns result rows. `EXPLAIN ANALYZE` does execute
   the statement, so QueryLens always runs it inside a transaction that is rolled back,
@@ -65,6 +72,8 @@ answers: *"Is my query slow, or is this the wrong engine for this workload?"*
 
 | | explain.dalibo / pev2 | pgMustard | pganalyze | **QueryLens** |
 |---|---|---|---|---|
+| Finds ORM patterns (N+1, loops) from real traffic | ✗ | ✗ | ✗ | ✓ (any ORM on Postgres; fixes written for Sequelize first) |
+| CI gate | ✗ | ✗ | ✗ | ✓ |
 | Engines | Postgres | Postgres | Postgres | Postgres, MySQL, MongoDB, DuckDB |
 | Runs EXPLAIN for you | ✗ (paste) | ✗ (paste) | ✓ (agent) | ✓ (direct connection) |
 | Fix suggestions | ✗ | ✓ (rules) | ✓ (rules) | ✓ (rules + LLM, verified) |

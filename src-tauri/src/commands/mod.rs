@@ -1,6 +1,7 @@
 //! Thin `#[tauri::command]` adapters: deserialize, call a service, map errors.
 
 pub mod analysis;
+pub mod capture;
 pub mod compare;
 pub mod connections;
 pub mod history;

@@ -1,9 +1,13 @@
-//! QueryLens core. `run()` starts the desktop app; `mcp::run_from_args` starts the
-//! stdio MCP server used by the Claude Code provider (same binary, `--mcp`).
+//! QueryLens core. `run()` starts the desktop app (feature `gui`); `cli::main` runs
+//! the command line (capture, check, report, mcp), which builds without the GUI.
 
+pub mod capture;
+pub mod cli;
+#[cfg(feature = "gui")]
 pub mod commands;
 pub mod engines;
 pub mod error;
+pub mod format;
 pub mod llm;
 pub mod mcp;
 pub mod model;
@@ -14,10 +18,11 @@ pub mod services;
 pub mod state;
 pub mod storage;
 
-use tauri::Manager;
-
+#[cfg(feature = "gui")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    use tauri::Manager;
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
@@ -27,6 +32,8 @@ pub fn run() {
                 )?;
             }
             let store = storage::Store::open(&paths::db_path()?)?;
+            // Captures left "running" by a process that ended (app closed, CLI killed).
+            store.close_abandoned_captures(&[])?;
             app.manage(state::AppState::new(store));
             Ok(())
         })
@@ -50,6 +57,14 @@ pub fn run() {
             commands::compare::preview_fix,
             commands::workload::top_queries,
             commands::workload::parameter_sensitivity,
+            commands::capture::start_capture,
+            commands::capture::stop_capture,
+            commands::capture::running_captures,
+            commands::capture::capture_live,
+            commands::capture::list_captures,
+            commands::capture::capture_report,
+            commands::capture::capture_executions,
+            commands::capture::delete_capture,
         ])
         .run(tauri::generate_context!())
         .expect("error while running QueryLens");
