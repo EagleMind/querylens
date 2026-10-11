@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use tokio::task::AbortHandle;
 
+use crate::capture::CaptureRegistry;
 use crate::error::AppResult;
 use crate::model::AnalysisResult;
 use crate::storage::Store;
@@ -32,11 +33,18 @@ pub struct AppState {
     pub scratch: Arc<Scratch>,
     /// In-flight background jobs (AI suggestions), so they can be cancelled.
     pub tasks: Mutex<HashMap<String, AbortHandle>>,
+    /// Capture proxies started from the app.
+    pub captures: CaptureRegistry,
 }
 
 impl AppState {
     pub fn new(store: Store) -> Self {
-        Self { store: Arc::new(store), scratch: Arc::default(), tasks: Mutex::new(HashMap::new()) }
+        Self {
+            store: Arc::new(store),
+            scratch: Arc::default(),
+            tasks: Mutex::new(HashMap::new()),
+            captures: CaptureRegistry::default(),
+        }
     }
 
     /// An analysis from the unsaved scratch area, or else from history.

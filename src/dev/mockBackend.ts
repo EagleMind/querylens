@@ -20,6 +20,7 @@ import type { SuggestionEvent } from '@/bindings/SuggestionEvent'
 import type { SuggestionSet } from '@/bindings/SuggestionSet'
 
 import fixture from './fixtures/postgres-analysis.json'
+import { UNHANDLED, mockCapture } from './mockCapture'
 
 const now = () => new Date().toISOString()
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -309,8 +310,10 @@ export async function mockInvoke<T>(command: string, args: Record<string, unknow
         return ['sonnet', 'opus', 'haiku']
       case 'test_llm':
         return { latencyMs: 812, reply: 'QueryLens OK' }
-      default:
-        return fail('internal', `mock: unknown command ${command}`)
+      default: {
+        const captured = mockCapture(command, args)
+        return captured === UNHANDLED ? fail('internal', `mock: unknown command ${command}`) : captured
+      }
     }
   })()
   return structuredClone(result) as T

@@ -1,6 +1,7 @@
 //! Local persistence: a single SQLite file shared by the GUI and the MCP server.
 
 mod analyses;
+mod captures;
 mod connections;
 mod settings;
 
@@ -58,6 +59,37 @@ const MIGRATIONS: &[&str] = &[r#"
     CREATE INDEX analyses_query ON analyses (connection_id, query_fp, created_at DESC);
 "#, r#"
     ALTER TABLE analyses DROP COLUMN whatif_json;
+"#, r#"
+    CREATE TABLE captures (
+        id             TEXT PRIMARY KEY,
+        name           TEXT NOT NULL,
+        connection_id  TEXT,
+        upstream       TEXT NOT NULL,
+        listen         TEXT NOT NULL,
+        source         TEXT NOT NULL,
+        started_at     TEXT NOT NULL,
+        stopped_at     TEXT,
+        report_json    TEXT
+    );
+    CREATE INDEX captures_started ON captures (started_at DESC);
+
+    CREATE TABLE capture_statements (
+        capture_id   TEXT NOT NULL REFERENCES captures(id) ON DELETE CASCADE,
+        seq          INTEGER NOT NULL,
+        conn         INTEGER NOT NULL,
+        at_ms        REAL NOT NULL,
+        duration_ms  REAL NOT NULL,
+        fingerprint  TEXT NOT NULL,
+        sql          TEXT NOT NULL,
+        params_json  TEXT NOT NULL,
+        rows         REAL NOT NULL,
+        bytes        REAL NOT NULL,
+        error        TEXT,
+        unit         TEXT,
+        origin       TEXT,
+        route        TEXT,
+        PRIMARY KEY (capture_id, seq)
+    );
 "#];
 
 pub struct Store {
@@ -104,6 +136,7 @@ impl Store {
         // WAL lets the `--mcp` subprocess read while the GUI writes.
         db.pragma_update(None, "journal_mode", "WAL")?;
         db.busy_timeout(std::time::Duration::from_secs(5))?;
+        db.pragma_update(None, "foreign_keys", "ON")?;
         let store = Self { db: Mutex::new(db) };
         store.migrate()?;
         Ok(store)
@@ -111,7 +144,9 @@ impl Store {
 
     #[cfg(test)]
     pub fn open_in_memory() -> AppResult<Self> {
-        let store = Self { db: Mutex::new(Db::open_in_memory()?) };
+        let db = Db::open_in_memory()?;
+        db.pragma_update(None, "foreign_keys", "ON")?;
+        let store = Self { db: Mutex::new(db) };
         store.migrate()?;
         Ok(store)
     }

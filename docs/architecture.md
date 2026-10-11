@@ -17,7 +17,7 @@ made to the original May 2026 spec.
 | SQL editor | **CodeMirror 6** | Much smaller than Monaco, and works well in every Tauri webview. |
 | Server state | **TanStack Query** | Connections, history and settings come from Rust and are cached and invalidated here. |
 | UI state | **Zustand** | Editor text, selected connection, current analysis, AI stream state. |
-| Routing | **React Router** (hash router) | Three routes: `/`, `/history`, `/settings`. |
+| Routing | **React Router** (hash router) | `/` (Workbench), `/capture`, `/top-queries`, `/history`, `/settings`. |
 | IPC types | **ts-rs** | Rust structs are the single source of truth, and TS types are generated into `src/bindings/`. |
 | Streaming | **Tauri `Channel<T>`** | One ordered, typed channel per request. Replaces global `emit` events. |
 | App storage | **SQLite via `rusqlite` (bundled)** | Connections, history and settings. Versioned migrations. |
@@ -53,7 +53,9 @@ and more direct for this.
 │  llm/        LlmProvider trait ─ openai_compat.rs ─ claude_cli.rs         │
 │  storage/    SQLite store (connections, analyses, settings) + migrations │
 │  secrets.rs  keychain                                                     │
-│  mcp/        stdio MCP server (same binary, `--mcp` flag)                 │
+│  capture/    proxy → tracker → recorder; detect, orm advice, plans, report│
+│  mcp/        stdio MCP server (`querylens mcp`, advisor: `--mcp`)          │
+│  cli/        capture / check / report / mcp (builds without the GUI)      │
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -64,6 +66,10 @@ and more direct for this.
   Neither knows about the UI or storage.
 - Every type that crosses IPC derives `Serialize + Deserialize + TS`. Never hand-write
   TS mirrors.
+- Capture keeps protocol, SQL-text and detection code free of I/O; only `proxy`,
+  `recorder`, `session`, `plans` and `report` touch the network or storage (§5c).
+- The CLI, the MCP server and the Tauri commands are three adapters over the same
+  services; none of them holds analysis logic.
 
 ---
 
@@ -81,30 +87,35 @@ and more direct for this.
 │   │   ├── editor/            # SqlEditor, AnalyzeToolbar
 │   │   ├── plan/              # PlanView, PlanTree, PlanNodeRow, PlanSummary, NodeDetails
 │   │   ├── ai/                # SuggestionPanel, SuggestionCard, ActivityLog
+│   │   ├── capture/           # LiveCapture, CaptureReportView, FindingItem, StatementsTable, CaptureList
 │   │   └── shared/            # CopyButton, EmptyState, bits (EngineBadge, ColorDot, Kbd)
 │   ├── hooks/                 # useAnalyze, useSuggestionStream, useHotkey
-│   ├── lib/                   # ipc.ts, queries.ts, format.ts, suggestions.ts, utils.ts
-│   ├── routes/                # analyze.tsx, history.tsx, settings.tsx
+│   ├── lib/                   # ipc.ts, queries.ts, format.ts, capture.ts, suggestions.ts, utils.ts
+│   ├── routes/                # analyze, capture, top-queries, history, settings
 │   ├── store/                 # workspace.ts
-│   └── dev/                   # browser-only mock backend + real captured plan fixture
-├── dev/                       # docker-compose Postgres with seeded demo data
+│   └── dev/                   # browser-only mock backend + real plan and capture fixtures
+├── integrations/node/         # query-tagging hook for Node.js apps on `pg` (embedded in the binary)
+├── dev/                       # docker-compose databases with seeded demo data, sequelize-demo app
 └── src-tauri/
     └── src/
-        ├── main.rs            # `--mcp` → MCP server, otherwise GUI
+        ├── main.rs            # a CLI subcommand (or `--mcp`) → cli::main, otherwise GUI
         ├── lib.rs             # builder, state, command registration
         ├── error.rs           # AppError { kind, message } (serialized to UI)
         ├── paths.rs           # data dir shared by GUI and MCP mode
         ├── model.rs           # all IPC types (ts-rs)
-        ├── commands/          # connections, analysis, history, settings, llm
-        ├── services/          # analysis, suggestions
+        ├── commands/          # connections, analysis, history, settings, llm, compare, workload, capture (gui feature)
+        ├── services/          # analysis, suggestions, sensitivity, index_test, target
+        ├── capture/           # pgwire, sql, proxy, recorder, session, detect, orm, plans, report, render, baseline (§5c)
+        ├── cli/               # clap commands; child process environment; Windows console attach
+        ├── format.rs          # number formatting for text output
         ├── engines/           # mod (Engine trait + factory), postgres, mysql, mongo, mongo_query, duckdb
         ├── plan/              # postgres, mysql, mongo, duckdb (parsers), analyze (scoring)
         ├── llm/               # mod (trait), prompt, parse, openai_compat, claude_cli
-        ├── mcp/               # JSON-RPC 2.0 stdio server
-        ├── storage/           # mod (Store + migrations), connections, analyses, settings
-        ├── state.rs           # AppState (store + in-flight LLM task handles)
+        ├── mcp/               # JSON-RPC 2.0 stdio server: tools, query_tools, capture_tools
+        ├── storage/           # mod (Store + migrations), connections, analyses, settings, captures
+        ├── state.rs           # AppState (store, in-flight LLM tasks, running captures)
         └── secrets.rs
-    └── tests/                 # live_postgres, live_workload, live_job, live_mysql, live_mongo, live_claude (opt-in, env-gated)
+    └── tests/                 # live_postgres, live_workload, live_job, live_mysql, live_mongo, live_claude, live_capture (opt-in, env-gated)
 ```
 
 ---
@@ -269,6 +280,142 @@ issues.
 | **Sensitivity** | Maps each `$n` to its column, then plans with most-common, less-common, rare (histogram) and absent values, plus the generic plan. Reports plan flips. Estimates only. Opened from **Try other values** in the Parameters bar. | `services/sensitivity.rs` |
 | **Top queries** | `pg_stat_statements` for the current database (version-aware columns), with QueryLens's own and catalog traffic filtered out. Clicking a row opens the normalized statement, with its `$n` parameters, in the Workbench. | `top_queries` |
 
+## 5c. Capture (v1.3)
+
+Profiling one query assumes you know which query to look at. ORM users usually don't:
+the SQL is generated, and the expensive pattern (an N+1, a loop of single-row writes) is
+only visible across many statements. Capture records what the application really sends and
+analyzes it as a whole.
+
+Statements come from two sources, like an error tracker's SDK versus a network tap:
+
+- **The SDK** (default for Node.js): `querylens-node` (`integrations/node`), one line in the
+  app (`querylens init` adds it). It times each `pg` query inside the process and reports it
+  with its exact call site and HTTP request. No URL rewriting, no TLS concerns, works in Docker.
+- **The proxy** (any language, or an app you can't change): a PostgreSQL wire proxy the app
+  is pointed at.
+
+```
+ app + SDK ──HTTP /v1/events──▶ collector ─┐          (long-running app; QUERYLENS_URL)
+ app + SDK ──<pid>.ndjson────▶ spool ──────┤          (a command QueryLens runs; QUERYLENS_SPOOL)
+ app ──TCP──▶ proxy ──TCP/TLS──▶ PostgreSQL│          (bytes forwarded unchanged)
+                │ framer → messages → tracker
+                ▼                          ▼
+             Observed ────────────────▶ recorder ──▶ SQLite (capture_statements)
+                                                                    │
+                       detect (stats, loops, rules) ◀───────────────┘
+                              │
+                       plans (re-plan with captured values, test an index)
+                              │
+                       orm advisor (Sequelize, generic) → CaptureReport → render / baseline
+```
+
+**Layers** (`src-tauri/src/capture/`), each only depending on the ones above it:
+
+| Layer | Modules | I/O |
+|---|---|---|
+| Wire protocol | `pgwire/framer.rs` (incremental framing, bodies only for the messages read), `pgwire/messages.rs` (decoders, binary parameter rendering), `pgwire/tracker.rs` (request/response pairing) | none |
+| SQL text | `sql/comments.rs` (sqlcommenter and Rails/Marginalia tags), `sql/shape.rs` (tokenizer: statement kind, tables and aliases, value filters, LIMIT) | none |
+| Ingest | `ingest/mod.rs` (`Observed`, `Clock`), `ingest/sdk.rs` (SDK event schema → `Observed`, pure), `ingest/collector.rs` (HTTP on 127.0.0.1:7343), `ingest/spool.rs` (tails `<pid>.ndjson` files), `ingest/proxy.rs` (listener, startup handshake, upstream TLS, relay) | network, files |
+| Runtime | `recorder.rs` (fingerprint + tags → `CapturedStatement`, proxy copies of SDK statements dropped, batched writes, live counters), `session.rs` (`RunningCapture` with any mix of sources, `CaptureRegistry`) | storage |
+| Analysis | `detect/` (`stats`, `loops`, `rules`), `orm/` (`recognize`, `facts`, `OrmAdvisor` + `sequelize`, `generic`) | none |
+| Database checks | `plans.rs` (re-plan, missing-index heuristic, candidate index via `services/index_test.rs`) | database |
+| Assembly / output | `report.rs`, `render.rs` (Markdown, terminal, verdict, comparison), `baseline.rs` (CI gate), `compare.rs` | storage |
+
+**Pairing.** The server answers in request order. Each `Query` and each `Execute` becomes a
+pending execution; CommandComplete / EmptyQuery / PortalSuspended / ErrorResponse finish
+the oldest one (a `Query` finishes at ReadyForQuery, since it may hold several statements).
+Every pending item records the Sync/Query *batch* it belongs to: after an error the server
+skips the rest of that batch, so leftovers are dropped when the batch's ReadyForQuery
+arrives, and later batches (pipelining) are unaffected. The ReadyForQuery that ends startup
+answers no request and is ignored. A pipelined request is timed from when the previous one
+finished. Parameters come from Bind: text as is, binary decoded by type (from Parse, or from
+ParameterDescription after a Describe). The tracker is fed *before* the bytes are forwarded,
+so a request is always registered before its response can arrive.
+
+**Never alter traffic.** The proxy writes exactly the bytes it read. A framing error
+stops recording for that connection, not relaying. The app is told `N` to SSLRequest and
+GSSENCRequest (it talks plain TCP to the proxy on localhost); TLS, when the connection asks
+for it, is between the proxy and the server (`prefer`/`require` semantics, like the engines).
+CancelRequest is forwarded to the server.
+
+**Fingerprints.** `plan/fingerprint.rs::normalize_sql` also strips comments, collapses
+`IN (…)` and multi-row `VALUES` lists, and treats inlined booleans as literals, so
+Sequelize's inline-literal SQL, tagged SQL and variable-length lists group correctly.
+
+**Loops.** Statements are grouped into streams: one per request/trace when the SQL is
+tagged (`traceparent`, or the SDK's `ql_unit`), otherwise one global stream in time
+order (a pool hands a loop's queries to different connections, so per-connection streams
+would hide it). A run is a sequence of one fingerprint where each execution follows the
+previous within 8 other statements and 500 ms. Runs of 5+ become N+1 (SELECT with varying
+values), duplicate query (identical values) or looped writes. The statement just before the
+run is the parent; its row count is reported against the loop length.
+
+**Plans.** Up to 12 statements (flagged first, then by total time) are re-planned with the
+values of their slowest execution: Explain by default, Profile (SELECTs executed again,
+read-only, rolled back) on request. A Seq Scan with a filter that keeps ≤1% of a table of
+≥10k rows (or ≥8 MB when the table has never been analyzed) is a missing index; the
+candidate index (equality columns, then one range column, unless an existing index leads
+with the same column) is tested with HypoPG, or built and rolled back under Profile.
+
+**ORM advice.** `recognize` votes per statement on SQL signatures (Sequelize: trailing `;`,
+`"table" AS "Model"`, dotted include aliases; Prisma: schema-qualified columns; TypeORM:
+`"A"."b" AS "A_b"`; …). `OrmAdvisor::fix(finding, ctx)` writes the fix; Sequelize's advisor
+produces code (`include` / `separate`, `bulkCreate`, `findAndCountAll`, migrations), the
+generic one names the right API per ORM. Shared facts (table, alias, lookup key, parent)
+come from `orm/facts.rs`.
+
+**The SDK.** `integrations/node/index.cjs` patches `pg.Client.prototype.query` (through a
+`Module._load` hook, and the app's already-loaded copy for ESM). While a capture runs, each
+query is timed (promise and callback forms) and recorded with its values, rows, error, the
+first stack frame outside `node_modules` (async stack traces reach the user's `await`) and an
+`AsyncLocalStorage` context per HTTP request (route with ids as `:id`, a unit id). Events are
+one JSON object per line. Two transports: a **spool** file per process, appended
+synchronously (`QUERYLENS_SPOOL`, set by `capture -- <command>`; survives `process.exit()` in
+test runners), or **HTTP** to the collector (`QUERYLENS_URL`, default
+`http://127.0.0.1:7343`), polled with `GET /v1/status` every few seconds so nothing is recorded
+or sent while no capture listens. It also appends
+`/*file='…',route='…',ql_unit='…',ql_sdk='1'*/` to the SQL it sends; when the same statement
+also crosses the proxy, the recorder drops that copy (`ql_sdk`). Off with
+`NODE_ENV=production` unless `QUERYLENS_ENABLED=1`; a process-wide symbol makes the first copy
+loaded win (the CLI preloads one, the app may require another). Named prepared statements
+keep their text. The CLI embeds the same files (`capture/node_hook.rs`).
+
+**Call sites without the SDK.** `sql/comments.rs` reads `file`, `source_location`,
+`code.filepath`/`lineno`, `controller`/`action`, `route`, `traceparent` from proxied SQL.
+
+**Entry points.** All three call the same services:
+
+| Surface | Code |
+|---|---|
+| CLI `init` | `cli/init.rs`: package manager from the lockfile; entry file from the dev/start script (`dist/main.js` → `src/main.ts`), `main`, then usual names; `import` vs `require` and semicolons from the file; Next.js gets an `instrumentation` hook. Pure plan, then install + edit. |
+| CLI `capture -- <cmd>` / `check` | `cli/commands.rs`: spool + proxy (when the database is known); `cli/child.rs` preloads the SDK (`NODE_OPTIONS`, `QUERYLENS_SPOOL`) and points `DATABASE_URL` (and `--env` / `--set`) at the proxy. Ctrl+C stops the command, not QueryLens. |
+| CLI `capture` (no command) | collector on 7343 (any free port if taken, printed as `QUERYLENS_URL`) + proxy, until Ctrl+C |
+| MCP `capture_*`, `compare_captures` | `mcp/capture_tools.rs`: collector + proxy, only in `querylens mcp` mode |
+| App Capture page | `commands/capture.rs`: collector + proxy, `CaptureRegistry` in `AppState` |
+
+**Zero configuration.** Without `--db`, `cli/discover.rs` finds the database: the
+environment, then `.env.development.local` … `.env` (`.env.test` … for `check`), then
+sequelize-cli's `config/config.json`, accepting a URL variable (`DATABASE_URL`,
+`POSTGRES_URL`…) or separate ones (`DB_HOST`, `PGPORT`…). It also returns which variables the
+app reads, and the child process gets exactly those pointed at the proxy. (Node apps don't
+need it: the SDK records in-process whatever their configuration. Without a database, capture
+still runs on the SDK alone, without plan checks.) `capture` prefers port 6543 and falls back to a free port; the report is
+written to `.querylens/report.md` (with a `.gitignore` keeping reports out of git).
+
+**Distribution.** `.github/workflows/release.yml` builds the headless CLI for linux-x64,
+linux-arm64, darwin-x64, darwin-arm64 and win32-x64 on each `v*` tag, attaches archives and
+`SHA256SUMS` to the GitHub release, and publishes npm packages assembled by
+`npm/build-packages.mjs`: `querylens-cli` (a launcher) with one optional dependency per
+platform holding the binary (the esbuild pattern: no postinstall download), and the SDK,
+`querylens-node` (no dependencies; the CLI's 30 MB binary never lands in app dependencies). `install.sh` /
+`install.ps1` fetch release archives; `action.yml` is a composite GitHub Action that installs
+the CLI and runs `querylens check`.
+
+`services/target.rs::Target` is the database for all of them: a saved connection, or a URL
+(CLI/CI, password in the URL). The CLI builds without the `gui` feature (no Tauri, no
+WebView libraries).
+
 ## 6. LLM layer
 
 ```rust
@@ -361,6 +508,10 @@ connections(id TEXT PK, name, engine, color, host, port, database, username,
 analyses(id TEXT PK, connection_id, connection_name, engine, mode, sql,
          result_json, suggestions_json, created_at)          -- index on created_at
 settings(key TEXT PK, value_json)
+captures(id TEXT PK, name, connection_id, upstream, listen, source, started_at,
+         stopped_at, report_json)                            -- last 30 kept
+capture_statements(capture_id FK ON DELETE CASCADE, seq, conn, at_ms, duration_ms,
+                   fingerprint, sql, params_json, rows, bytes, error, unit, origin, route)
 schema_version(version INTEGER)
 ```
 
@@ -389,6 +540,14 @@ Keychain entries use service `querylens`, with accounts `conn:<id>` and `llm:api
 | `preview_fix` | `analysisId, fix` | `AnalysisResult` (scratch) |
 | `parameter_sensitivity` | `analysisId` | `SensitivityReport[]` |
 | `top_queries` | `connectionId, orderBy, limit` | `TopQuery[]` |
+| `start_capture` | `connectionId, port?, name?` | `CaptureLive` |
+| `stop_capture` | `id` | `CaptureReport` |
+| `running_captures` / `capture_live` | – / `id` | `CaptureLive[]` / `CaptureLive` or null |
+| `list_captures` | – | `CaptureSummary[]` |
+| `capture_report` | `id, profile?` | `CaptureReport` (stored, or rebuilt with measured plans) |
+| `capture_executions` | `id, fingerprint, limit?` | `CapturedStatement[]` |
+| `delete_capture` | `id` | – |
+| `node_hook_options` | – | `string` (the `NODE_OPTIONS` value) |
 
 Errors are `AppError { kind: "validation" | "not_found" | "connection" | "database" | "llm" | "internal", message }`.
 
@@ -397,7 +556,14 @@ Errors are `AppError { kind: "validation" | "not_found" | "connection" | "databa
 ## 9. UI
 
 - **Shell.** A collapsible 240 px sidebar (brand, connections with color dots + engine
-  badge, "New connection", nav: Workbench / History / Settings) and a main area.
+  badge, "New connection", nav: Workbench / Capture / Top queries / History / Settings)
+  and a main area.
+- **Capture.** Header: PostgreSQL connection, proxy port, **Start capture**. Left: running
+  captures, then recent ones. Right: while recording, the URL to give the app (copy), the
+  `NODE_OPTIONS` line, live counters and the latest statements; after **Stop and analyze**,
+  the report: findings (severity, kind, time, call sites, statement and parent SQL, the fix
+  for the ORM with copyable code and DDL) and the statements table. **Open in Workbench**
+  loads a statement with its captured values. **Measure plans** rebuilds with Profile.
 - **Workbench.** The toolbar has a connection select and **two explicit actions named
   for what they do**, not a mode toggle:
   - **Profile** (`EXPLAIN ANALYZE`): runs the query in a rolled-back transaction.
@@ -459,8 +625,15 @@ Environment hooks: `QUERYLENS_DATA_DIR` overrides the data directory (portable i
 and tests) and is forwarded to the MCP subprocess. `QUERYLENS_MCP_EXE` points the
 Claude provider at a specific `querylens` binary (used by tests).
 
-CI (planned): a GitHub Actions matrix on ubuntu/windows/macos running
-`cargo test` + typecheck + `tauri build`, with releases published on tags.
+```bash
+QUERYLENS_PG_PORT=54329 cargo test --test live_capture -- --nocapture   # proxy, pairing, report, index test
+cd dev/sequelize-demo && npm install && querylens capture --db postgres://querylens@localhost:54329/shop -- npm test
+```
+
+CI (`.github/workflows/ci.yml`): frontend typecheck/lint/format/build; Rust unit tests
+with the GUI; the headless CLI (unit tests and a release build without WebView libraries,
+uploaded as an artifact); and `live_capture` against the demo PostgreSQL from Docker
+Compose. Planned: a ubuntu/windows/macos matrix with `tauri build` and releases on tags.
 
 ---
 
@@ -514,6 +687,7 @@ Corrections to the original spec (`techspect.md`, `mvpScope.md`, `ProjectSpec.md
 12. **Stack bumped** to React 19, Tauri 2.12 and Tailwind v4, and `sqlx` was replaced by
     `tokio-postgres` + `rusqlite` (see §1).
 13. **Original "CLI/TUI in Rust or Go" framing dropped.** The product is the desktop app.
+    (Superseded by 16: the same binary now also has a CLI, for capture and CI.)
 14. **Planner what-if sweep removed (v1.1).** It toggled `enable_nestloop`, `work_mem`,
     `random_page_cost` and the like and re-ran the query per scenario. Its findings were not
     shippable fixes (nobody deploys `enable_nestloop = off`), they repeated what the
@@ -527,3 +701,8 @@ Corrections to the original spec (`techspect.md`, `mvpScope.md`, `ProjectSpec.md
     Index changes can't be tested safely on either engine (MySQL commits DDL; a MongoDB
     index build is real), so the advisor gets only `explain_query` and `table_info`
     there, and Preview fix covers query rewrites (plus `SET SESSION` on MySQL).
+16. **Capture and CLI (v1.3).** A Workbench needs someone to bring it a query; ORM users
+    don't write theirs. The product now starts from traffic: a protocol-level proxy records
+    what the application sends, finds ORM patterns across statements, and writes the fix in
+    the ORM's terms. It runs from the CLI (local and CI gate), the MCP server (coding
+    agents) and the app. See §5c.

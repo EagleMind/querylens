@@ -1,0 +1,143 @@
+name: Release
+
+# Builds the headless CLI for macOS (Apple Silicon + Intel), Linux (x64 + arm64) and Windows.
+#
+#   - Pull requests touching the CLI: build all five and assemble the npm packages, to catch
+#     platform breakage before a release. Nothing is published.
+#   - A tag like v0.2.0: also attach archives + checksums to the GitHub release (used by
+#     install.sh, install.ps1 and the GitHub Action) and publish the npm packages
+#     (querylens-cli + one per platform, and the SDK querylens-node) when NPM_TOKEN is set.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+      - 'integrations/**'
+      - 'npm/**'
+      - '.github/workflows/release.yml'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to stamp on the packages (build only, nothing is published), e.g. 0.2.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: CLI ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: linux-x64, os: ubuntu-22.04, rust: x86_64-unknown-linux-gnu }
+          - { target: linux-arm64, os: ubuntu-22.04-arm, rust: aarch64-unknown-linux-gnu }
+          # Both macOS builds run on Apple Silicon; the Intel one is cross-compiled.
+          - { target: darwin-arm64, os: macos-14, rust: aarch64-apple-darwin }
+          - { target: darwin-x64, os: macos-14, rust: x86_64-apple-darwin, cross: true }
+          - { target: win32-x64, os: windows-latest, rust: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '11.0'
+    steps:
+      - uses: actions/checkout@v4
+      - name: System libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y pkg-config libdbus-1-dev libssl-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: release-${{ matrix.target }}
+      - name: Build
+        working-directory: src-tauri
+        run: cargo build --release --locked --no-default-features --bin querylens --target ${{ matrix.rust }}
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p out
+          bin=src-tauri/target/${{ matrix.rust }}/release/querylens
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "$bin.exe" "out/querylens-${{ matrix.target }}.exe"
+            (cd src-tauri/target/${{ matrix.rust }}/release && 7z a "$GITHUB_WORKSPACE/out/querylens-${{ matrix.target }}.zip" querylens.exe)
+          else
+            cp "$bin" "out/querylens-${{ matrix.target }}"
+            tar -czf "out/querylens-${{ matrix.target }}.tar.gz" -C "$(dirname "$bin")" querylens
+          fi
+      - name: Smoke test
+        if: ${{ !matrix.cross }}
+        shell: bash
+        run: src-tauri/target/${{ matrix.rust }}/release/querylens --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.target }}
+          path: out/*
+
+  release:
+    name: GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          path: out
+          merge-multiple: true
+      - name: Checksums
+        run: cd out && sha256sum *.tar.gz *.zip > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            out/*.tar.gz
+            out/*.zip
+            out/SHA256SUMS
+
+  npm:
+    name: npm packages
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          path: out
+          merge-multiple: true
+      - name: Assemble
+        run: |
+          case "${{ github.event_name }}" in
+            workflow_dispatch) version="${{ inputs.version }}" ;;
+            pull_request) version="0.0.0-pr.${{ github.event.number }}" ;;
+            *) version="${GITHUB_REF_NAME#v}" ;;
+          esac
+          node npm/build-packages.mjs "$version" out --require-all
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-packages
+          path: npm/dist/
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then
+            echo "::warning::NPM_TOKEN isn't set: skipping npm publish."
+            exit 0
+          fi
+          # Platform packages first: the main package depends on them.
+          for dir in npm/dist/querylens-cli-*/ npm/dist/querylens-cli/ npm/dist/querylens-node/; do
+            npm publish "$dir" --access public --provenance
+          done

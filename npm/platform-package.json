@@ -1,0 +1,10 @@
+{
+  "name": "querylens-cli-PLATFORM-ARCH",
+  "version": "0.0.0",
+  "description": "The QueryLens binary for PLATFORM-ARCH. Install `querylens-cli` instead.",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/EagleMind/querylens.git" },
+  "os": ["PLATFORM"],
+  "cpu": ["ARCH"],
+  "files": ["bin"]
+}

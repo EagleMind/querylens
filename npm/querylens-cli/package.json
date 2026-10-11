@@ -1,0 +1,19 @@
+{
+  "name": "querylens-cli",
+  "version": "0.0.0",
+  "description": "Find the N+1 queries, missing indexes and other database problems in what your app actually sends to PostgreSQL. Fixes written for your ORM.",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/EagleMind/querylens.git" },
+  "homepage": "https://github.com/EagleMind/querylens#readme",
+  "keywords": ["postgres", "postgresql", "orm", "sequelize", "n+1", "query", "performance", "profiler", "index", "ci"],
+  "bin": { "querylens": "bin/querylens.js" },
+  "files": ["bin"],
+  "engines": { "node": ">=18" },
+  "optionalDependencies": {
+    "querylens-cli-darwin-arm64": "0.0.0",
+    "querylens-cli-darwin-x64": "0.0.0",
+    "querylens-cli-linux-arm64": "0.0.0",
+    "querylens-cli-linux-x64": "0.0.0",
+    "querylens-cli-win32-x64": "0.0.0"
+  }
+}

@@ -1,0 +1,67 @@
+name: QueryLens check
+description: Run your tests through QueryLens and fail the job when they introduce an N+1, a missing index or another database problem.
+author: EagleMind
+branding:
+  icon: database
+  color: yellow
+
+inputs:
+  command:
+    description: The command that runs your tests, e.g. `npm test`.
+    required: true
+  database-url:
+    description: The test database (postgres://…). Default — found in DATABASE_URL, .env files or config/config.json.
+    required: false
+    default: ''
+  baseline:
+    description: Accepted findings, committed to the repository.
+    required: false
+    default: .querylens/baseline.json
+  fail-on:
+    description: Lowest severity of a new finding that fails the job (high, medium, low).
+    required: false
+    default: medium
+  working-directory:
+    description: Directory to run the command in.
+    required: false
+    default: .
+  version:
+    description: QueryLens version (default — latest release).
+    required: false
+    default: ''
+  args:
+    description: Extra arguments for `querylens check`.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Install QueryLens
+      if: runner.os != 'Windows'
+      shell: bash
+      env:
+        QUERYLENS_VERSION: ${{ inputs.version }}
+        QUERYLENS_INSTALL_DIR: ${{ runner.temp }}/querylens
+      run: |
+        sh "${{ github.action_path }}/install.sh"
+        echo "${{ runner.temp }}/querylens" >> "$GITHUB_PATH"
+    - name: Install QueryLens (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      env:
+        QUERYLENS_VERSION: ${{ inputs.version }}
+        QUERYLENS_INSTALL_DIR: ${{ runner.temp }}\querylens
+      run: |
+        & "${{ github.action_path }}\install.ps1"
+        "${{ runner.temp }}\querylens" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+    - name: QueryLens check
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        QL_COMMAND: ${{ inputs.command }}
+        QL_DB: ${{ inputs.database-url }}
+      run: |
+        db=()
+        [ -n "$QL_DB" ] && db=(--db "$QL_DB")
+        querylens check "${db[@]}" --baseline "${{ inputs.baseline }}" --fail-on "${{ inputs.fail-on }}" ${{ inputs.args }} -- bash -c "$QL_COMMAND"

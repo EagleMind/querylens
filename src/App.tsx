@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { queryClient } from '@/lib/queries'
 import { AnalyzeRoute } from '@/routes/analyze'
+import { CaptureRoute } from '@/routes/capture'
 import { HistoryRoute } from '@/routes/history'
 import { SettingsRoute } from '@/routes/settings'
 import { TopQueriesRoute } from '@/routes/top-queries'
@@ -18,6 +19,7 @@ export function App() {
           <Routes>
             <Route element={<AppShell />}>
               <Route index element={<AnalyzeRoute />} />
+              <Route path="capture" element={<CaptureRoute />} />
               <Route path="history" element={<HistoryRoute />} />
               <Route path="top-queries" element={<TopQueriesRoute />} />
               <Route path="settings" element={<SettingsRoute />} />

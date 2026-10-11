@@ -1,0 +1,17 @@
+{
+  "name": "querylens-sequelize-demo",
+  "private": true,
+  "description": "A small Express + Sequelize app with the usual ORM performance mistakes, for trying QueryLens capture.",
+  "license": "MIT",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "4.22.3",
+    "pg": "8.23.1",
+    "querylens-node": "file:../../integrations/node",
+    "sequelize": "6.37.8"
+  }
+}

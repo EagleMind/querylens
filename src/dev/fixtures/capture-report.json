@@ -1,0 +1,759 @@
+{
+ "capture": {
+  "id": "8e91313c-73db-497b-b86f-24d5c540f952",
+  "name": "dev-shop · npm test",
+  "connectionId": "demo-pg",
+  "upstream": "localhost:54329",
+  "listen": "127.0.0.1:53110",
+  "source": "app",
+  "startedAt": "2026-10-10T18:00:41.775Z",
+  "stoppedAt": "2026-10-10T18:00:46.356Z",
+  "statements": 68,
+  "totalMs": 1321.2393
+ },
+ "orm": "sequelize",
+ "statements": 68,
+ "totalMs": 1321.2392999999995,
+ "units": 5,
+ "fingerprints": [
+  {
+   "fingerprint": "d03fb4e2d1bbc4b3",
+   "normalized": "select \"order_id\" as \"orderid\", \"product_id\" as \"productid\", \"quantity\", \"order_id\", \"product_id\" from \"order_items\" as \"orderitem\" where \"orderitem\".\"order_id\" = ?",
+   "sampleSql": "SELECT \"order_id\" AS \"orderId\", \"product_id\" AS \"productId\", \"quantity\", \"order_id\", \"product_id\" FROM \"order_items\" AS \"OrderItem\" WHERE \"OrderItem\".\"order_id\" = '424839';",
+   "sampleParams": [],
+   "kind": "select",
+   "tables": [
+    "order_items"
+   ],
+   "calls": 10,
+   "totalMs": 659.7666,
+   "meanMs": 65.97666000000001,
+   "p50Ms": 61.4603,
+   "p95Ms": 87.5701,
+   "maxMs": 87.5701,
+   "rows": 20.0,
+   "maxRows": 2.0,
+   "bytes": 856.0,
+   "errors": 0,
+   "share": 0.49935435617151275,
+   "origins": [
+    {
+     "origin": "app.js:13",
+     "count": 10
+    }
+   ]
+  },
+  {
+   "fingerprint": "aa84963391d2b274",
+   "normalized": "insert into \"events\" (\"id\",\"user_id\",\"kind\",\"created_at\") values (?) returning \"id\",\"user_id\",\"kind\",\"created_at\"",
+   "sampleSql": "INSERT INTO \"events\" (\"id\",\"user_id\",\"kind\",\"created_at\") VALUES ($1,$2,$3,$4) RETURNING \"id\",\"user_id\",\"kind\",\"created_at\";",
+   "sampleParams": [
+    "1791655245840000",
+    "1",
+    "demo",
+    "2026-10-10 18:00:45.840 +00:00"
+   ],
+   "kind": "insert",
+   "tables": [
+    "events"
+   ],
+   "calls": 20,
+   "totalMs": 303.11060000000003,
+   "meanMs": 15.155530000000002,
+   "p50Ms": 3.1895,
+   "p95Ms": 45.3659,
+   "maxMs": 46.0201,
+   "rows": 20.0,
+   "maxRows": 1.0,
+   "bytes": 1298.0,
+   "errors": 0,
+   "share": 0.22941385409895096,
+   "origins": [
+    {
+     "origin": "app.js:53",
+     "count": 20
+    }
+   ]
+  },
+  {
+   "fingerprint": "ae107c4892df1e36",
+   "normalized": "select \"orderitem\".\"order_id\" as \"orderid\", \"orderitem\".\"product_id\" as \"productid\", \"orderitem\".\"quantity\", \"orderitem\".\"order_id\", \"orderitem\".\"product_id\", \"product\".\"id\" as \"product.id\", \"product\".\"name\" as \"product.name\", \"product\".\"category\" as \"product.category\", \"product\".\"price\" as \"product.price\" from \"order_items\" as \"orderitem\" left outer join \"products\" as \"product\" on \"orderitem\".\"product_id\" = \"product\".\"id\" where \"orderitem\".\"order_id\" in (?)",
+   "sampleSql": "SELECT \"OrderItem\".\"order_id\" AS \"orderId\", \"OrderItem\".\"product_id\" AS \"productId\", \"OrderItem\".\"quantity\", \"OrderItem\".\"order_id\", \"OrderItem\".\"product_id\", \"Product\".\"id\" AS \"Product.id\", \"Product\".\"name\" AS \"Product.name\", \"Product\".\"category\" AS \"Product.category\", \"Product\".\"price\" AS \"Product.price\" FROM \"order_items\" AS \"OrderItem\" LEFT OUTER JOIN \"products\" AS \"Product\" ON \"OrderItem\".\"product_id\" = \"Product\".\"id\" WHERE \"OrderItem\".\"order_id\" IN ('24839', '724839', '124839', '324839', '424839', '524839', '824839', '924839', '224839', '624839');",
+   "sampleParams": [],
+   "kind": "select",
+   "tables": [
+    "order_items",
+    "products"
+   ],
+   "calls": 1,
+   "totalMs": 102.0822,
+   "meanMs": 102.0822,
+   "p50Ms": 102.0822,
+   "p95Ms": 102.0822,
+   "maxMs": 102.0822,
+   "rows": 20.0,
+   "maxRows": 20.0,
+   "bytes": 1696.0,
+   "errors": 0,
+   "share": 0.07726246108483151,
+   "origins": [
+    {
+     "origin": "app.js:24",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "fingerprint": "67bde6c4727863cc",
+   "normalized": "select \"id\", \"status\", \"total\", \"user_id\" from \"orders\" as \"order\" where \"order\".\"user_id\" = ?",
+   "sampleSql": "SELECT \"id\", \"status\", \"total\", \"user_id\" FROM \"orders\" AS \"Order\" WHERE \"Order\".\"user_id\" = '42';",
+   "sampleParams": [],
+   "kind": "select",
+   "tables": [
+    "orders"
+   ],
+   "calls": 1,
+   "totalMs": 72.13709999999999,
+   "meanMs": 72.13709999999999,
+   "p50Ms": 72.13709999999999,
+   "p95Ms": 72.13709999999999,
+   "maxMs": 72.13709999999999,
+   "rows": 10.0,
+   "maxRows": 10.0,
+   "bytes": 409.0,
+   "errors": 0,
+   "share": 0.0545980580504985,
+   "origins": [
+    {
+     "origin": "app.js:10",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "fingerprint": "b8a11e77e147e724",
+   "normalized": "select \"order\".\"id\", \"order\".\"status\", \"order\".\"total\", \"order\".\"user_id\" from \"orders\" as \"order\" where \"order\".\"user_id\" = ?",
+   "sampleSql": "SELECT \"Order\".\"id\", \"Order\".\"status\", \"Order\".\"total\", \"Order\".\"user_id\" FROM \"orders\" AS \"Order\" WHERE \"Order\".\"user_id\" = '42';",
+   "sampleParams": [],
+   "kind": "select",
+   "tables": [
+    "orders"
+   ],
+   "calls": 1,
+   "totalMs": 71.0638,
+   "meanMs": 71.0638,
+   "p50Ms": 71.0638,
+   "p95Ms": 71.0638,
+   "maxMs": 71.0638,
+   "rows": 10.0,
+   "maxRows": 10.0,
+   "bytes": 409.0,
+   "errors": 0,
+   "share": 0.05378571466955306,
+   "origins": [
+    {
+     "origin": "app.js:24",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "fingerprint": "8d281aaa6f460ec5",
+   "normalized": "select count(*) as \"count\" from \"users\" as \"user\"",
+   "sampleSql": "SELECT count(*) AS \"count\" FROM \"users\" AS \"User\";",
+   "sampleParams": [],
+   "kind": "select",
+   "tables": [
+    "users"
+   ],
+   "calls": 8,
+   "totalMs": 48.9084,
+   "meanMs": 6.11355,
+   "p50Ms": 6.1654,
+   "p95Ms": 8.3069,
+   "maxMs": 8.3069,
+   "rows": 8.0,
+   "maxRows": 1.0,
+   "bytes": 96.0,
+   "errors": 0,
+   "share": 0.03701706420630995,
+   "origins": [
+    {
+     "origin": "app.js:41",
+     "count": 8
+    }
+   ]
+  },
+  {
+   "fingerprint": "e6ad31f5770237a2",
+   "normalized": "select \"id\", \"name\", \"category\", \"price\" from \"products\" as \"product\" where \"product\".\"id\" = ?",
+   "sampleSql": "SELECT \"id\", \"name\", \"category\", \"price\" FROM \"products\" AS \"Product\" WHERE \"Product\".\"id\" = '2895';",
+   "sampleParams": [],
+   "kind": "select",
+   "tables": [
+    "products"
+   ],
+   "calls": 20,
+   "totalMs": 22.5316,
+   "meanMs": 1.12658,
+   "p50Ms": 1.1262,
+   "p95Ms": 1.3397,
+   "maxMs": 1.4327,
+   "rows": 20.0,
+   "maxRows": 1.0,
+   "bytes": 880.0,
+   "errors": 0,
+   "share": 0.017053383138088615,
+   "origins": [
+    {
+     "origin": "app.js:15",
+     "count": 20
+    }
+   ]
+  },
+  {
+   "fingerprint": "6148e0d8d36e239c",
+   "normalized": "set client_min_messages to warning;set time zone interval ? hour to minute",
+   "sampleSql": "SET client_min_messages TO warning;SET TIME ZONE INTERVAL '+00:00' HOUR TO MINUTE;",
+   "sampleParams": [],
+   "kind": "other",
+   "tables": [],
+   "calls": 2,
+   "totalMs": 18.8487,
+   "meanMs": 9.42435,
+   "p50Ms": 16.802,
+   "p95Ms": 16.802,
+   "maxMs": 16.802,
+   "rows": 0.0,
+   "maxRows": 0.0,
+   "bytes": 0.0,
+   "errors": 0,
+   "share": 0.01426592442413725,
+   "origins": [
+    {
+     "origin": "GET /users/:id/orders",
+     "count": 1
+    },
+    {
+     "origin": "app.js:10",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "fingerprint": "e0e2f53dd62fe598",
+   "normalized": "with ranges as ( select pg_range.rngtypid, pg_type.typname as rngtypname, pg_type.typarray as rngtyparray, pg_range.rngsubtype from pg_range left outer join pg_type on pg_type.oid = pg_range.rngtypid)select pg_type.typname, pg_type.typtype, pg_type.oid, pg_type.typarray, ranges.rngtypname, ranges.rngtypid, ranges.rngtyparray from pg_type left outer join ranges on pg_type.oid = ranges.rngsubtype where (pg_type.typtype in(?))",
+   "sampleSql": "WITH ranges AS (  SELECT pg_range.rngtypid, pg_type.typname AS rngtypname,         pg_type.typarray AS rngtyparray, pg_range.rngsubtype    FROM pg_range LEFT OUTER JOIN pg_type ON pg_type.oid = pg_range.rngtypid)SELECT pg_type.typname, pg_type.typtype, pg_type.oid, pg_type.typarray,       ranges.rngtypname, ranges.rngtypid, ranges.rngtyparray  FROM pg_type LEFT OUTER JOIN ranges ON pg_type.oid = ranges.rngsubtype WHERE (pg_type.typtype IN('b', 'e'));",
+   "sampleParams": [],
+   "kind": "select",
+   "tables": [
+    "pg_range",
+    "pg_type",
+    "ranges"
+   ],
+   "calls": 1,
+   "totalMs": 13.654,
+   "meanMs": 13.654,
+   "p50Ms": 13.654,
+   "p95Ms": 13.654,
+   "maxMs": 13.654,
+   "rows": 372.0,
+   "maxRows": 372.0,
+   "bytes": 18779.0,
+   "errors": 0,
+   "share": 0.010334236954653108,
+   "origins": [
+    {
+     "origin": "app.js:10",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "fingerprint": "15b1c83bf76dedbd",
+   "normalized": "select \"id\", \"name\", \"category\", \"price\" from \"products\" as \"product\"",
+   "sampleSql": "SELECT \"id\", \"name\", \"category\", \"price\" FROM \"products\" AS \"Product\";",
+   "sampleParams": [],
+   "kind": "select",
+   "tables": [
+    "products"
+   ],
+   "calls": 1,
+   "totalMs": 4.0038,
+   "meanMs": 4.0038,
+   "p50Ms": 4.0038,
+   "p95Ms": 4.0038,
+   "maxMs": 4.0038,
+   "rows": 5000.0,
+   "maxRows": 5000.0,
+   "bytes": 220436.0,
+   "errors": 0,
+   "share": 0.0030303367452058087,
+   "origins": [
+    {
+     "origin": "app.js:33",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "fingerprint": "164cacbef85eb87d",
+   "normalized": "rollback",
+   "sampleSql": "ROLLBACK;",
+   "sampleParams": [],
+   "kind": "other",
+   "tables": [],
+   "calls": 1,
+   "totalMs": 2.5879000000000003,
+   "meanMs": 2.5879000000000003,
+   "p50Ms": 2.5879000000000003,
+   "p95Ms": 2.5879000000000003,
+   "maxMs": 2.5879000000000003,
+   "rows": 0.0,
+   "maxRows": 0.0,
+   "bytes": 0.0,
+   "errors": 0,
+   "share": 0.0019586913589385367,
+   "origins": [
+    {
+     "origin": "app.js:56",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "fingerprint": "989d2351037b83a5",
+   "normalized": "select \"id\", \"email\", \"country\" from \"users\" as \"user\" order by \"user\".\"id\" asc limit ?",
+   "sampleSql": "SELECT \"id\", \"email\", \"country\" FROM \"users\" AS \"User\" ORDER BY \"User\".\"id\" ASC LIMIT 8;",
+   "sampleParams": [],
+   "kind": "select",
+   "tables": [
+    "users"
+   ],
+   "calls": 1,
+   "totalMs": 1.511,
+   "meanMs": 1.511,
+   "p50Ms": 1.511,
+   "p95Ms": 1.511,
+   "maxMs": 1.511,
+   "rows": 8.0,
+   "maxRows": 8.0,
+   "bytes": 272.0,
+   "errors": 0,
+   "share": 0.001143623263401263,
+   "origins": [
+    {
+     "origin": "app.js:38",
+     "count": 1
+    }
+   ]
+  },
+  {
+   "fingerprint": "3b4e8d3b4fe59d1b",
+   "normalized": "start transaction",
+   "sampleSql": "START TRANSACTION;",
+   "sampleParams": [],
+   "kind": "other",
+   "tables": [],
+   "calls": 1,
+   "totalMs": 1.0336,
+   "meanMs": 1.0336,
+   "p50Ms": 1.0336,
+   "p95Ms": 1.0336,
+   "maxMs": 1.0336,
+   "rows": 0.0,
+   "maxRows": 0.0,
+   "bytes": 0.0,
+   "errors": 0,
+   "share": 0.000782295833918958,
+   "origins": [
+    {
+     "origin": "app.js:49",
+     "count": 1
+    }
+   ]
+  }
+ ],
+ "findings": [
+  {
+   "id": "plan_issue:d03fb4e2d1bbc4b3",
+   "kind": "plan_issue",
+   "severity": "high",
+   "title": "SELECT on order_items: full table scan, an index would help",
+   "detail": "Seq Scan on order_items reads the whole table (100 MB, never analyzed) to keep ~4.5k. An index on the filtered column(s) would find them directly. Tested `CREATE INDEX ON \"order_items\" (\"order_id\")`: estimated cost 26k → 13k (hypothetical index).",
+   "fingerprint": "d03fb4e2d1bbc4b3",
+   "parentFingerprint": null,
+   "impactMs": 659.7666,
+   "occurrences": 10,
+   "origins": [
+    {
+     "origin": "app.js:13",
+     "count": 10
+    }
+   ],
+   "fix": {
+    "orm": "sequelize",
+    "text": "An index lets the database find these rows without scanning the table. Add it with a migration and declare it on the model so `sync()` and new environments get it too.",
+    "code": "// migrations/XXXXXXXX-add-order_items-index.js\nmodule.exports = {\n  up: (queryInterface) => queryInterface.addIndex('order_items', ['order_id']),\n  down: (queryInterface) => queryInterface.removeIndex('order_items', ['order_id']),\n};\n\n// and on the model:\n// OrderItem.init({ … }, { indexes: [{ fields: ['order_id'] }] });",
+    "ddl": "CREATE INDEX ON \"order_items\" (\"order_id\")"
+   }
+  },
+  {
+   "id": "n_plus_one:d03fb4e2d1bbc4b3",
+   "kind": "n_plus_one",
+   "severity": "high",
+   "title": "N+1: SELECT on order_items, once per row (up to 10× in a row)",
+   "detail": "Runs right after SELECT on orders (which returned up to 10 rows), once for each row. 1 loop in this capture, 10 executions, 660 ms in total.",
+   "fingerprint": "d03fb4e2d1bbc4b3",
+   "parentFingerprint": "67bde6c4727863cc",
+   "impactMs": 659.7665999999999,
+   "occurrences": 1,
+   "origins": [
+    {
+     "origin": "app.js:13",
+     "count": 10
+    }
+   ],
+   "fix": {
+    "orm": "sequelize",
+    "text": "For each Order row, its OrderItem rows are fetched with their own query (`order.getOrderItems()` in a loop, or a lazy association). Load them together with the Order rows. `separate: true` fetches all children in one extra query (`WHERE \"order_id\" IN (…)`) instead of a JOIN that repeats every Order column per child.",
+    "code": "const orders = await Order.findAll({\n  where: …,\n  include: [{ model: OrderItem, separate: true }],\n});\n\n// If the association isn't declared yet:\n// Order.hasMany(OrderItem, { foreignKey: 'order_id' });",
+    "ddl": "CREATE INDEX ON \"order_items\" (\"order_id\")"
+   }
+  },
+  {
+   "id": "plan_issue:67bde6c4727863cc",
+   "kind": "plan_issue",
+   "severity": "high",
+   "title": "SELECT on orders: full table scan, an index would help",
+   "detail": "Seq Scan on orders reads all ~1.0M rows to keep ~4. An index on the filtered column(s) would find them directly. Tested `CREATE INDEX ON \"orders\" (\"user_id\")`: estimated cost 15k → 43 (hypothetical index).",
+   "fingerprint": "67bde6c4727863cc",
+   "parentFingerprint": null,
+   "impactMs": 72.13709999999999,
+   "occurrences": 1,
+   "origins": [
+    {
+     "origin": "app.js:10",
+     "count": 1
+    }
+   ],
+   "fix": {
+    "orm": "sequelize",
+    "text": "An index lets the database find these rows without scanning the table. Add it with a migration and declare it on the model so `sync()` and new environments get it too.",
+    "code": "// migrations/XXXXXXXX-add-orders-index.js\nmodule.exports = {\n  up: (queryInterface) => queryInterface.addIndex('orders', ['user_id']),\n  down: (queryInterface) => queryInterface.removeIndex('orders', ['user_id']),\n};\n\n// and on the model:\n// Order.init({ … }, { indexes: [{ fields: ['user_id'] }] });",
+    "ddl": "CREATE INDEX ON \"orders\" (\"user_id\")"
+   }
+  },
+  {
+   "id": "plan_issue:b8a11e77e147e724",
+   "kind": "plan_issue",
+   "severity": "high",
+   "title": "SELECT on orders: full table scan, an index would help",
+   "detail": "Seq Scan on orders reads all ~1.0M rows to keep ~4. An index on the filtered column(s) would find them directly. Tested `CREATE INDEX ON \"orders\" (\"user_id\")`: estimated cost 15k → 43 (hypothetical index).",
+   "fingerprint": "b8a11e77e147e724",
+   "parentFingerprint": null,
+   "impactMs": 71.0638,
+   "occurrences": 1,
+   "origins": [
+    {
+     "origin": "app.js:24",
+     "count": 1
+    }
+   ],
+   "fix": {
+    "orm": "sequelize",
+    "text": "An index lets the database find these rows without scanning the table. Add it with a migration and declare it on the model so `sync()` and new environments get it too.",
+    "code": "// migrations/XXXXXXXX-add-orders-index.js\nmodule.exports = {\n  up: (queryInterface) => queryInterface.addIndex('orders', ['user_id']),\n  down: (queryInterface) => queryInterface.removeIndex('orders', ['user_id']),\n};\n\n// and on the model:\n// Order.init({ … }, { indexes: [{ fields: ['user_id'] }] });",
+    "ddl": "CREATE INDEX ON \"orders\" (\"user_id\")"
+   }
+  },
+  {
+   "id": "looped_writes:aa84963391d2b274",
+   "kind": "looped_writes",
+   "severity": "medium",
+   "title": "INSERT into events one row at a time (up to 20× in a row)",
+   "detail": "1 loop in this capture, 20 executions, 303 ms in total.",
+   "fingerprint": "aa84963391d2b274",
+   "parentFingerprint": "3b4e8d3b4fe59d1b",
+   "impactMs": 303.1105999999999,
+   "occurrences": 1,
+   "origins": [
+    {
+     "origin": "app.js:53",
+     "count": 20
+    }
+   ],
+   "fix": {
+    "orm": "sequelize",
+    "text": "Rows are inserted one `Event.create()` at a time. `bulkCreate` sends them in one INSERT.",
+    "code": "await Event.bulkCreate(rows); // rows: array of plain objects\n\n// Upsert instead of insert:\n// await Event.bulkCreate(rows, { updateOnDuplicate: ['…'] });",
+    "ddl": null
+   }
+  },
+  {
+   "id": "plan_issue:8d281aaa6f460ec5",
+   "kind": "plan_issue",
+   "severity": "medium",
+   "title": "SELECT on users: large full table scan",
+   "detail": "Planner expects a full scan of users returning ~100k rows.",
+   "fingerprint": "8d281aaa6f460ec5",
+   "parentFingerprint": null,
+   "impactMs": 48.9084,
+   "occurrences": 8,
+   "origins": [
+    {
+     "origin": "app.js:41",
+     "count": 8
+    }
+   ],
+   "fix": null
+  },
+  {
+   "id": "duplicate_query:e6ad31f5770237a2",
+   "kind": "duplicate_query",
+   "severity": "medium",
+   "title": "The same SELECT on products repeated 20× in a row",
+   "detail": "1 loop in this capture, 20 executions, 23 ms in total.",
+   "fingerprint": "e6ad31f5770237a2",
+   "parentFingerprint": "d03fb4e2d1bbc4b3",
+   "impactMs": 22.5316,
+   "occurrences": 1,
+   "origins": [
+    {
+     "origin": "app.js:15",
+     "count": 20
+    }
+   ],
+   "fix": {
+    "orm": "sequelize",
+    "text": "The identical query runs again and again with the same values, typically inside a loop or once per item in a request. Load it once, before the loop, and reuse the result.",
+    "code": "// Before: inside the loop\n// const x = await Product.findOne({ where: … });\nconst x = await Product.findOne({ where: … }); // once\nfor (const item of items) {\n  use(item, x);\n}",
+    "ddl": null
+   }
+  },
+  {
+   "id": "large_result:15b1c83bf76dedbd",
+   "kind": "large_result",
+   "severity": "medium",
+   "title": "Large result from SELECT on products",
+   "detail": "Returns up to 5.0k rows with no LIMIT (215 kB per call on average). The application receives and builds an object for every row.",
+   "fingerprint": "15b1c83bf76dedbd",
+   "parentFingerprint": null,
+   "impactMs": 4.0038,
+   "occurrences": 1,
+   "origins": [
+    {
+     "origin": "app.js:33",
+     "count": 1
+    }
+   ],
+   "fix": {
+    "orm": "sequelize",
+    "text": "The query loads every matching row and Sequelize builds a model instance for each. Paginate, select only the columns you use, and skip instances when you only read the data.",
+    "code": "const { rows, count } = await Product.findAndCountAll({\n  where: …,\n  attributes: ['id', /* only what you use */],\n  limit: 50,\n  offset: page * 50,\n  raw: true, // plain objects instead of model instances\n});",
+    "ddl": null
+   }
+  },
+  {
+   "id": "slow_query:ae107c4892df1e36",
+   "kind": "slow_query",
+   "severity": "low",
+   "title": "Slow SELECT on order_items",
+   "detail": "1 calls, slowest call took 102 ms (median 102 ms). 7.7% of all captured statement time.",
+   "fingerprint": "ae107c4892df1e36",
+   "parentFingerprint": null,
+   "impactMs": 102.0822,
+   "occurrences": 1,
+   "origins": [
+    {
+     "origin": "app.js:24",
+     "count": 1
+    }
+   ],
+   "fix": null
+  },
+  {
+   "id": "duplicate_query:8d281aaa6f460ec5",
+   "kind": "duplicate_query",
+   "severity": "low",
+   "title": "The same SELECT on users repeated 8× in a row",
+   "detail": "1 loop in this capture, 8 executions, 49 ms in total.",
+   "fingerprint": "8d281aaa6f460ec5",
+   "parentFingerprint": "989d2351037b83a5",
+   "impactMs": 48.9084,
+   "occurrences": 1,
+   "origins": [
+    {
+     "origin": "app.js:41",
+     "count": 8
+    }
+   ],
+   "fix": {
+    "orm": "sequelize",
+    "text": "The identical query runs again and again with the same values, typically inside a loop or once per item in a request. Load it once, before the loop, and reuse the result.",
+    "code": "// Before: inside the loop\n// const x = await User.findOne({ where: … });\nconst x = await User.findOne({ where: … }); // once\nfor (const item of items) {\n  use(item, x);\n}",
+    "ddl": null
+   }
+  }
+ ],
+ "planChecks": [
+  {
+   "fingerprint": "d03fb4e2d1bbc4b3",
+   "mode": "estimate",
+   "shape": "Parallel Seq Scan on order_items",
+   "planFp": "e8a7d38d5eae572e",
+   "totalCost": 26101.12,
+   "executionMs": null,
+   "warnings": [
+    {
+     "kind": "missing_index",
+     "severity": "error",
+     "message": "Seq Scan on order_items reads the whole table (100 MB, never analyzed) to keep ~4.5k. An index on the filtered column(s) would find them directly."
+    },
+    {
+     "kind": "row_estimate_error",
+     "severity": "warning",
+     "message": "order_items has no planner statistics, so every row estimate on it is a guess. Run ANALYZE order_items."
+    }
+   ],
+   "index": {
+    "ddl": "CREATE INDEX ON \"order_items\" (\"order_id\")",
+    "evidence": "estimated",
+    "before": 26101.12,
+    "after": 13104.2,
+    "used": true
+   },
+   "error": null
+  },
+  {
+   "fingerprint": "aa84963391d2b274",
+   "mode": "estimate",
+   "shape": "Insert on events",
+   "planFp": "1f47a65ad0eb8066",
+   "totalCost": 0.01,
+   "executionMs": null,
+   "warnings": [],
+   "index": null,
+   "error": null
+  },
+  {
+   "fingerprint": "ae107c4892df1e36",
+   "mode": "estimate",
+   "shape": "Parallel Seq Scan on order_items · Seq Scan on products",
+   "planFp": "30eedbea041a13a6",
+   "totalCost": 38375.34,
+   "executionMs": null,
+   "warnings": [],
+   "index": null,
+   "error": null
+  },
+  {
+   "fingerprint": "8d281aaa6f460ec5",
+   "mode": "estimate",
+   "shape": "Seq Scan on users",
+   "planFp": "ee0920797a916600",
+   "totalCost": 2175.01,
+   "executionMs": null,
+   "warnings": [
+    {
+     "kind": "seq_scan_large",
+     "severity": "warning",
+     "message": "Planner expects a full scan of users returning ~100k rows."
+    }
+   ],
+   "index": null,
+   "error": null
+  },
+  {
+   "fingerprint": "e6ad31f5770237a2",
+   "mode": "estimate",
+   "shape": "Index Scan on products (products_pkey)",
+   "planFp": "f0a807d83bad786b",
+   "totalCost": 8.3,
+   "executionMs": null,
+   "warnings": [],
+   "index": null,
+   "error": null
+  },
+  {
+   "fingerprint": "15b1c83bf76dedbd",
+   "mode": "estimate",
+   "shape": "Seq Scan on products",
+   "planFp": "102de1d638e4c2d2",
+   "totalCost": 92.0,
+   "executionMs": null,
+   "warnings": [],
+   "index": null,
+   "error": null
+  },
+  {
+   "fingerprint": "67bde6c4727863cc",
+   "mode": "estimate",
+   "shape": "Parallel Seq Scan on orders",
+   "planFp": "38442cbc359209bc",
+   "totalCost": 14981.33,
+   "executionMs": null,
+   "warnings": [
+    {
+     "kind": "missing_index",
+     "severity": "error",
+     "message": "Seq Scan on orders reads all ~1.0M rows to keep ~4. An index on the filtered column(s) would find them directly."
+    }
+   ],
+   "index": {
+    "ddl": "CREATE INDEX ON \"orders\" (\"user_id\")",
+    "evidence": "estimated",
+    "before": 14981.33,
+    "after": 43.24,
+    "used": true
+   },
+   "error": null
+  },
+  {
+   "fingerprint": "b8a11e77e147e724",
+   "mode": "estimate",
+   "shape": "Parallel Seq Scan on orders",
+   "planFp": "38442cbc359209bc",
+   "totalCost": 14981.33,
+   "executionMs": null,
+   "warnings": [
+    {
+     "kind": "missing_index",
+     "severity": "error",
+     "message": "Seq Scan on orders reads all ~1.0M rows to keep ~4. An index on the filtered column(s) would find them directly."
+    }
+   ],
+   "index": {
+    "ddl": "CREATE INDEX ON \"orders\" (\"user_id\")",
+    "evidence": "estimated",
+    "before": 14981.33,
+    "after": 43.24,
+    "used": true
+   },
+   "error": null
+  },
+  {
+   "fingerprint": "e0e2f53dd62fe598",
+   "mode": "estimate",
+   "shape": "Seq Scan on pg_type · Index Scan on pg_type (pg_type_oid_index) · Seq Scan on pg_range",
+   "planFp": "d0452ff16592ef23",
+   "totalCost": 37.81,
+   "executionMs": null,
+   "warnings": [],
+   "index": null,
+   "error": null
+  },
+  {
+   "fingerprint": "989d2351037b83a5",
+   "mode": "estimate",
+   "shape": "Index Scan on users (users_pkey)",
+   "planFp": "61367534ecd448fb",
+   "totalCost": 0.58,
+   "executionMs": null,
+   "warnings": [],
+   "index": null,
+   "error": null
+  }
+ ],
+ "generatedAt": "2026-10-10T18:00:47.615Z"
+}

@@ -160,18 +160,4 @@ pub(crate) fn fmt_value(v: &Value) -> String {
     }
 }
 
-/// 1234 → "1.2k", 2_500_000 → "2.5M".
-pub(crate) fn fmt_count(n: f64) -> String {
-    let abs = n.abs();
-    if abs >= 1e9 {
-        format!("{:.1}B", n / 1e9)
-    } else if abs >= 1e6 {
-        format!("{:.1}M", n / 1e6)
-    } else if abs >= 1e4 {
-        format!("{:.0}k", n / 1e3)
-    } else if abs >= 1e3 {
-        format!("{:.1}k", n / 1e3)
-    } else {
-        format!("{n:.0}")
-    }
-}
+pub(crate) use crate::format::fmt_count;
