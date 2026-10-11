@@ -16,6 +16,8 @@ if (!version || !binaries) {
   console.error('usage: node npm/build-packages.mjs <version> <binaries-dir> [--require-all]')
   process.exit(2)
 }
+// A launcher-only release reuses already published binaries: QUERYLENS_BINARY_VERSION=0.1.0.
+const binaryVersion = process.env.QUERYLENS_BINARY_VERSION || version
 const here = dirname(fileURLToPath(import.meta.url))
 const dist = join(here, 'dist')
 rmSync(dist, { recursive: true, force: true })
@@ -33,7 +35,7 @@ for (const target of PLATFORMS) {
   const dir = join(dist, `querylens-cli-${target}`)
   mkdirSync(join(dir, 'bin'), { recursive: true })
   const manifest = JSON.parse(template.replaceAll('PLATFORM', platform).replaceAll('ARCH', arch))
-  manifest.version = version
+  manifest.version = binaryVersion
   writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
   copyFileSync(source, join(dir, 'bin', exe))
   chmodSync(join(dir, 'bin', exe), 0o755)
@@ -44,7 +46,8 @@ const main = join(dist, 'querylens-cli')
 mkdirSync(join(main, 'bin'), { recursive: true })
 const manifest = JSON.parse(readFileSync(join(here, 'querylens-cli', 'package.json'), 'utf8'))
 manifest.version = version
-for (const dep of Object.keys(manifest.optionalDependencies)) manifest.optionalDependencies[dep] = version
+manifest.querylens = { binaryVersion }
+for (const dep of Object.keys(manifest.optionalDependencies)) manifest.optionalDependencies[dep] = binaryVersion
 writeFileSync(join(main, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
 copyFileSync(join(here, 'querylens-cli', 'bin', 'querylens.js'), join(main, 'bin', 'querylens.js'))
 chmodSync(join(main, 'bin', 'querylens.js'), 0o755)
