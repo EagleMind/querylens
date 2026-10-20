@@ -1,4 +1,4 @@
-// A small path router: the dashboard has two screens, not worth a dependency.
+// A small path router: the dashboard has three screens, not worth a dependency.
 // The Worker's assets fall back to index.html for unknown paths, so deep links work.
 import { useEffect, useState } from 'react'
 
@@ -9,7 +9,7 @@ export interface QueryRef {
   seq: number
 }
 
-export type Route = { page: 'live' } | ({ page: 'query' } & QueryRef)
+export type Route = { page: 'live' } | ({ page: 'query' } & QueryRef) | { page: 'settings' }
 
 const POSITIVE = /^[1-9]\d*$/
 
@@ -18,11 +18,13 @@ export function parse(pathname: string): Route {
   if (first === 'queries' && project && POSITIVE.test(request ?? '') && POSITIVE.test(seq ?? '')) {
     return { page: 'query', project, request: Number(request), seq: Number(seq) }
   }
+  if (first === 'settings' && !project) return { page: 'settings' }
   return { page: 'live' }
 }
 
 export function href(route: Route): string {
-  return route.page === 'query' ? `/queries/${encodeURIComponent(route.project)}/${route.request}/${route.seq}` : '/'
+  if (route.page === 'query') return `/queries/${encodeURIComponent(route.project)}/${route.request}/${route.seq}`
+  return route.page === 'settings' ? '/settings' : '/'
 }
 
 export function navigate(to: Route | string) {

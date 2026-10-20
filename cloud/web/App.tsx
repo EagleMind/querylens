@@ -1,4 +1,3 @@
-import { LogOutIcon } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 
 import type { Project } from '../bindings/Project'
@@ -11,9 +10,11 @@ import { Label } from '@/components/ui/label'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiError, api, getToken, setToken } from '@/lib/api'
 import { useLiveFeed } from '@/lib/live'
-import { href, onLinkClick, useRoute } from '@/lib/router'
+import { type Route, href, onLinkClick, useRoute } from '@/lib/router'
+import { cn } from '@/lib/utils'
 import { LivePage } from '@/pages/Live'
 import { QueryPage } from '@/pages/Query'
+import { SettingsPage } from '@/pages/Settings'
 import { SignIn } from '@/pages/SignIn'
 
 function FirstProject({ onCreated }: { onCreated: (p: Project) => void }) {
@@ -51,6 +52,11 @@ function FirstProject({ onCreated }: { onCreated: (p: Project) => void }) {
   )
 }
 
+const NAV: { label: string; route: Route; pages: Route['page'][] }[] = [
+  { label: 'Live', route: { page: 'live' }, pages: ['live', 'query'] },
+  { label: 'Settings', route: { page: 'settings' }, pages: ['settings'] },
+]
+
 function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const route = useRoute()
   const [projects, setProjects] = useState<Project[] | null>(null)
@@ -66,6 +72,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   else if (!projects) body = <p className="text-sm text-muted-foreground">Loading…</p>
   else if (projects.length === 0) body = <FirstProject onCreated={(p) => setProjects([p])} />
   else if (route.page === 'query') body = <QueryPage at={route} projects={projects} requests={feed.requests} />
+  else if (route.page === 'settings') body = <SettingsPage projects={projects} connection={feed.connection} onSignOut={onSignOut} />
   else body = <LivePage projects={projects} feed={feed} />
 
   return (
@@ -75,9 +82,25 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
           <a href={href({ page: 'live' })} onClick={onLinkClick} aria-label="QueryLens, live queries">
             <Logo />
           </a>
-          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onSignOut}>
-            <LogOutIcon /> Sign out
-          </Button>
+          <nav aria-label="Main" className="flex items-center gap-1">
+            {NAV.map((n) => {
+              const active = n.pages.includes(route.page)
+              return (
+                <a
+                  key={n.label}
+                  href={href(n.route)}
+                  onClick={onLinkClick}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                    active ? 'bg-primary/10 text-primary dark:bg-primary/15' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  {n.label}
+                </a>
+              )
+            })}
+          </nav>
         </div>
       </header>
       <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">{body}</main>

@@ -13,7 +13,9 @@ evaluates them with QueryLens's Rust analysis and shows the results in a web das
   large statements, chatty requests) with the fix for your ORM (full code for Sequelize), the
   rest of its request, and its totals over the last 24 hours.
 
-Projects, thresholds and sampling are managed through the API (`/api/0/projects`).
+- **Settings**: each project's DSN, the connected host, setup, and sign-out.
+
+Creating projects, thresholds and sampling are managed through the API (`/api/0/projects`) for now.
 
 Everything runs on Cloudflare's Workers Free plan.
 

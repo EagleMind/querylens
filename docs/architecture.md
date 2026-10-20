@@ -103,6 +103,8 @@ Worker with a single-page-app fallback. Its own small router, with types from `c
   (`GET …/requests/<n>`, or the loaded copy). Adds the issue detail and fix
   (`GET …/issues/<n>`, matched through `LiveFinding.fingerprint`) and the shape's last 24
   hours (`GET …/queries?fingerprint=`).
+- **Settings** (`/settings`): the connected host and backend version, each project's DSN,
+  the SDK setup, sign-out.
 
 ## 5. Next
 
