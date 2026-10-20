@@ -7,7 +7,7 @@ use ts_rs::TS;
 
 use super::envelope::{self, Stats};
 use super::evaluate::{Found, evaluate};
-use super::model::ProjectSettings;
+use super::model::{ProjectSettings, SourceSnippet};
 use crate::capture::detect::Thresholds;
 use crate::capture::sql::{comments, shape};
 use crate::fingerprint;
@@ -35,6 +35,8 @@ pub struct Digest {
     pub release: Option<String>,
     pub transactions: Vec<DigestedTransaction>,
     pub stats: Vec<StatRow>,
+    /// Application code around origins, from SDKs with source context on.
+    pub sources: Vec<SourceSnippet>,
     /// Recognised in this envelope, when it differs from the request's.
     pub orm: Option<Orm>,
     /// Lines that weren't valid items.
@@ -118,6 +120,7 @@ pub fn digest(req: &DigestRequest) -> Digest {
         release: env.release,
         transactions,
         stats: stat_rows(&env.stats),
+        sources: env.sources.iter().filter_map(|s| s.snippet()).collect(),
         orm: learned,
         skipped: env.skipped as u32,
     }

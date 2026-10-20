@@ -94,6 +94,14 @@ The `BEGIN` and `COMMIT` of interactive transactions have no line of code.
 Each statement carries its timing, rows, error, the first line of your code in the call stack
 (outside `node_modules`), and the route (ids replaced by `:id`).
 
+- **The code around those lines, if you turn it on** (`sourceContext: true` or
+  `QUERYLENS_SOURCE_CONTEXT=1`): the 10 lines before and after each line of your code that ran
+  a reported query, read in the background and sent once per line per process. The dashboard
+  shows them, and the backend writes fixes against them. Only files inside the project
+  directory are read. Assignments to keys, secrets, tokens and passwords, credentials in URLs
+  and long key-like strings are masked before anything is sent. Off by default. With
+  TypeScript, run Node with `--enable-source-maps` so lines point at your sources.
+
 ## Guarantees
 
 - **No values leave the process.** Literals in the SQL become `?`, bound parameters are
@@ -122,7 +130,7 @@ await flush() // before a serverless handler returns, or on shutdown
 ## Options
 
 ```js
-require('querylens-node').init({ dsn, environment, release, sampleRate, sendValues })
+require('querylens-node').init({ dsn, environment, release, sampleRate, sendValues, sourceContext })
 ```
 
 (as the first line, instead of `register`)
@@ -134,4 +142,5 @@ require('querylens-node').init({ dsn, environment, release, sampleRate, sendValu
 | `QUERYLENS_RELEASE` | Release (default: the commit from Vercel, Render, Railway, Heroku, Cloudflare Pages, GitHub Actions…) |
 | `QUERYLENS_SAMPLE_RATE` | Share of problem-free requests sent to the live feed |
 | `QUERYLENS_SEND_VALUES=1` | Send SQL literals and parameters too |
+| `QUERYLENS_SOURCE_CONTEXT=1` | Send the code around the lines that ran reported queries, secrets masked |
 | `QUERYLENS_DISABLED=1` | Turn it off |

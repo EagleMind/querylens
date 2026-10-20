@@ -6,6 +6,9 @@
 // Evaluation (what's wrong in a request) is querylens-core's job (`digest`); this class
 // decides what to remember: issues are keyed by the finding's stable id per environment,
 // a resolved issue seen again comes back flagged as regressed, an ignored one stays ignored.
+// It also keeps what fixing an issue takes (`issueContext`: the code around it when the SDK
+// sends source context, the request it was last seen in), the releases each environment
+// reported (for `regressions`), and the latest AI suggestion per issue.
 import { DurableObject } from 'cloudflare:workers'
 
 import type { CaptureFinding } from '../bindings/CaptureFinding'
@@ -24,8 +27,12 @@ import type { Orm } from '../bindings/Orm'
 import type { Project as ProjectInfo } from '../bindings/Project'
 import type { ProjectSettings } from '../bindings/ProjectSettings'
 import type { QueryShape } from '../bindings/QueryShape'
+import type { SourceSnippet } from '../bindings/SourceSnippet'
 import type { StoredRequest } from '../bindings/StoredRequest'
+import type { IssueContext, Regression, RegressionReport, Suggestion } from '../shared/api'
+import { type ReleaseSeen, type ShapeTotals, comparison, judge } from './analysis/regressions'
 import { digest } from './core'
+import { sameSecret } from './http'
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   slowMs: 100,
@@ -51,6 +58,13 @@ const HISTORY_TRIM_EVERY = 500
 const ORIGINS = 5
 const STATS_RETENTION_HOURS = 24 * 30
 const HOUR_MS = 3_600_000
+/** Source snippets kept (one per line of code), and given with an issue. */
+const SOURCES_KEPT = 5000
+const SOURCES_PER_ISSUE = 3
+/** Regressions reported, and how many recent requests are searched for a run to link to. */
+const REGRESSIONS = 20
+const REGRESSION_LINKS = 10
+const LINK_SEARCH_REQUESTS = 2000
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -111,6 +125,23 @@ const SCHEMA = `
     tables_json TEXT NOT NULL,
     last_seen TEXT NOT NULL,
     PRIMARY KEY (environment, fingerprint)
+  );
+  CREATE TABLE IF NOT EXISTS sources (
+    origin TEXT PRIMARY KEY,
+    first_line INTEGER NOT NULL,
+    lines_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS releases (
+    environment TEXT NOT NULL,
+    release TEXT NOT NULL,
+    first_seen INTEGER NOT NULL,
+    PRIMARY KEY (environment, release)
+  );
+  CREATE TABLE IF NOT EXISTS suggestions (
+    issue_id INTEGER PRIMARY KEY,
+    input_hash TEXT NOT NULL,
+    suggestion_json TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS query_stats (
     environment TEXT NOT NULL,
@@ -200,16 +231,10 @@ function issueFromRow(r: Row): Issue {
   }
 }
 
-/** Compare secrets without leaking how much of them matched through timing. */
-export function sameSecret(a: string, b: string): boolean {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  return diff === 0
-}
-
 export class Project extends DurableObject<Env> {
   private readonly sql: SqlStorage
+  /** Environment and release pairs already recorded, so most envelopes skip the write. */
+  private readonly knownReleases = new Set<string>()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -316,6 +341,8 @@ export class Project extends DurableObject<Env> {
         live.push({ type: 'transaction', ...this.recordRequest(d, txn, at, findings) })
       }
       this.recordStats(d)
+      this.recordRelease(d)
+      this.recordSources(d.sources)
     })
     // One throughput event per reported period (an envelope may carry several).
     const periods = new Map<number, typeof d.stats>()
@@ -499,9 +526,36 @@ export class Project extends DurableObject<Env> {
     }
   }
 
+  /** When each environment first reported each release: the baselines of `regressions`. */
+  private recordRelease(d: Digest) {
+    if (!d.release) return
+    const key = JSON.stringify([d.environment, d.release])
+    if (this.knownReleases.has(key)) return
+    this.sql.exec('INSERT OR IGNORE INTO releases (environment, release, first_seen) VALUES (?, ?, ?)', d.environment, d.release, Date.now())
+    this.knownReleases.add(key)
+  }
+
+  /** The latest code around each origin; unchanged code writes nothing. */
+  private recordSources(sources: SourceSnippet[]) {
+    const now = new Date().toISOString()
+    for (const s of sources) {
+      this.sql.exec(
+        `INSERT INTO sources (origin, first_line, lines_json, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (origin) DO UPDATE SET first_line = excluded.first_line, lines_json = excluded.lines_json,
+           updated_at = excluded.updated_at
+         WHERE sources.lines_json != excluded.lines_json OR sources.first_line != excluded.first_line`,
+        s.origin,
+        s.firstLine,
+        JSON.stringify(s.lines),
+        now,
+      )
+    }
+  }
+
   async alarm(): Promise<void> {
     const cutoff = Math.floor(Date.now() / HOUR_MS) - STATS_RETENTION_HOURS
     this.sql.exec('DELETE FROM query_stats WHERE hour < ?', cutoff)
+    this.sql.exec('DELETE FROM sources WHERE origin NOT IN (SELECT origin FROM sources ORDER BY updated_at DESC LIMIT ?)', SOURCES_KEPT)
     this.sql.exec('DELETE FROM requests WHERE at < ?', new Date(Date.now() - HISTORY_DAYS * 24 * HOUR_MS).toISOString())
     await this.ctx.storage.setAlarm(Date.now() + 24 * HOUR_MS)
   }
@@ -619,6 +673,114 @@ export class Project extends DurableObject<Env> {
           lastSeen: String(r.last_seen),
         }
       })
+  }
+
+  // ───────────────────────────── fixing ─────────────────────────────
+
+  /** What a coding agent or a model needs to fix an issue. */
+  async issueContext(id: number): Promise<IssueContext | null> {
+    const detail = await this.issue(id)
+    const projectId = this.meta('id')
+    if (!detail || !projectId) return null
+    const [latest] = await this.events(id, 1)
+    return {
+      project: { id: projectId, name: this.meta('name') ?? projectId, orm: (this.meta('orm') as Orm | null) ?? null },
+      detail,
+      latest: latest ?? null,
+      sources: this.sourcesFor(detail.origins.slice(0, SOURCES_PER_ISSUE).map((o) => o.origin)),
+    }
+  }
+
+  /** The code around one line, when the SDK sent it. */
+  async source(origin: string): Promise<SourceSnippet | null> {
+    return this.sourcesFor([origin])[0] ?? null
+  }
+
+  private sourcesFor(origins: string[]): SourceSnippet[] {
+    if (origins.length === 0) return []
+    return this.sql
+      .exec(`SELECT * FROM sources WHERE origin IN (${origins.map(() => '?').join(', ')})`, ...origins)
+      .toArray()
+      .map((r) => ({ origin: String(r.origin), firstLine: Number(r.first_line), lines: JSON.parse(String(r.lines_json)) as string[] }))
+      .sort((a, b) => origins.indexOf(a.origin) - origins.indexOf(b.origin))
+  }
+
+  /** The stored suggestion for an issue, and the hash of the context it was written from. */
+  async storedSuggestion(issueId: number): Promise<{ inputHash: string; suggestion: Suggestion } | null> {
+    const r = this.sql.exec('SELECT input_hash, suggestion_json FROM suggestions WHERE issue_id = ?', issueId).toArray()[0]
+    return r ? { inputHash: String(r.input_hash), suggestion: JSON.parse(String(r.suggestion_json)) as Suggestion } : null
+  }
+
+  async saveSuggestion(suggestion: Suggestion, inputHash: string): Promise<void> {
+    this.sql.exec(
+      'INSERT OR REPLACE INTO suggestions (issue_id, input_hash, suggestion_json) VALUES (?, ?, ?)',
+      suggestion.issueId,
+      inputHash,
+      JSON.stringify(suggestion),
+    )
+  }
+
+  // ───────────────────────────── regressions ─────────────────────────────
+
+  /** Statement shapes that got slower or started failing in `environment` (see analysis/regressions.ts). */
+  async regressions(environment: string, nowMs = Date.now()): Promise<RegressionReport> {
+    const releases = this.sql
+      .exec('SELECT release, first_seen FROM releases WHERE environment = ? ORDER BY first_seen DESC LIMIT 2', environment)
+      .toArray()
+      .map((r): ReleaseSeen => ({ release: String(r.release), firstSeenMs: Number(r.first_seen) }))
+    const c = comparison(releases, nowMs)
+    const shapes = this.sql
+      .exec(
+        `SELECT s.fingerprint, MIN(q.sample_sql) AS sample_sql, MIN(q.kind) AS kind, MIN(q.tables_json) AS tables_json,
+           SUM(CASE WHEN s.hour < ?3 THEN s.calls ELSE 0 END) AS b_calls,
+           SUM(CASE WHEN s.hour < ?3 THEN s.total_ms ELSE 0 END) AS b_ms,
+           SUM(CASE WHEN s.hour < ?3 THEN s.errors ELSE 0 END) AS b_errors,
+           SUM(CASE WHEN s.hour < ?3 THEN 1 ELSE 0 END) AS b_hours,
+           SUM(CASE WHEN s.hour >= ?4 THEN s.calls ELSE 0 END) AS a_calls,
+           SUM(CASE WHEN s.hour >= ?4 THEN s.total_ms ELSE 0 END) AS a_ms,
+           SUM(CASE WHEN s.hour >= ?4 THEN s.errors ELSE 0 END) AS a_errors,
+           SUM(CASE WHEN s.hour >= ?4 THEN 1 ELSE 0 END) AS a_hours
+         FROM query_stats s JOIN query_shapes q USING (environment, fingerprint)
+         WHERE s.environment = ?1 AND s.hour >= ?2 AND (s.hour < ?3 OR s.hour >= ?4)
+         GROUP BY s.fingerprint`,
+        environment,
+        c.beforeFrom,
+        c.beforeTo,
+        c.afterFrom,
+      )
+      .toArray()
+      .map(
+        (r): ShapeTotals => ({
+          fingerprint: String(r.fingerprint),
+          sampleSql: String(r.sample_sql),
+          kind: r.kind as ShapeTotals['kind'],
+          tables: JSON.parse(String(r.tables_json)) as string[],
+          before: { calls: Number(r.b_calls), totalMs: Number(r.b_ms), errors: Number(r.b_errors), hours: Number(r.b_hours) },
+          after: { calls: Number(r.a_calls), totalMs: Number(r.a_ms), errors: Number(r.a_errors), hours: Number(r.a_hours) },
+        }),
+      )
+    const regressions: Regression[] = judge(shapes)
+      .slice(0, REGRESSIONS)
+      .map((r, i) => ({ ...r, latest: i < REGRESSION_LINKS ? this.latestRun(environment, r.fingerprint) : null }))
+    return { environment, baseline: c.baseline, regressions }
+  }
+
+  /** The newest stored run of a statement shape among the latest requests, to link to. */
+  private latestRun(environment: string, fingerprint: string): { request: number; seq: number } | null {
+    const r = this.sql
+      .exec(
+        `SELECT id, statements_json FROM requests
+         WHERE environment = ? AND id > (SELECT COALESCE(MAX(id), 0) - ? FROM requests) AND instr(statements_json, ?) > 0
+         ORDER BY id DESC LIMIT 1`,
+        environment,
+        LINK_SEARCH_REQUESTS,
+        `"fingerprint":${JSON.stringify(fingerprint)}`,
+      )
+      .toArray()[0]
+    if (!r) return null
+    const statements = JSON.parse(String(r.statements_json)) as CapturedStatement[]
+    const run = statements.findLast((s) => s.fingerprint === fingerprint)
+    return run ? { request: Number(r.id), seq: run.seq } : null
   }
 
   async environments(): Promise<string[]> {

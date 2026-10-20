@@ -4,7 +4,9 @@ import type { IssueDetail } from '../../bindings/IssueDetail'
 import type { IssueStatus } from '../../bindings/IssueStatus'
 import type { Project } from '../../bindings/Project'
 import type { QueryShape } from '../../bindings/QueryShape'
+import type { SourceSnippet } from '../../bindings/SourceSnippet'
 import type { StoredRequest } from '../../bindings/StoredRequest'
+import type { DraftFilterReply, DraftFilterRequest, FixPrompt, RegressionReport, SuggestionState } from '../../shared/api'
 
 const TOKEN_KEY = 'querylens.token'
 
@@ -81,6 +83,19 @@ export const api = {
   requests: (id: string, p: { before?: number; limit: number }) => call<StoredRequest[]>('GET', `projects/${id}/requests${query(p)}`),
   request: (id: string, request: number) => call<StoredRequest>('GET', `projects/${id}/requests/${request}`),
   issue: (id: string, issue: number) => call<IssueDetail>('GET', `projects/${id}/issues/${issue}`),
+  /** The issue as a Markdown brief for a coding agent. */
+  fixPrompt: (id: string, issue: number) => call<FixPrompt>('GET', `projects/${id}/issues/${issue}/prompt`),
+  /** The stored AI rewrite for an issue, and whether one can be written. */
+  suggestion: (id: string, issue: number) => call<SuggestionState>('GET', `projects/${id}/issues/${issue}/suggestion`),
+  /** Write the AI rewrite (reused while the issue and its code are unchanged, unless `refresh`). */
+  suggest: (id: string, issue: number, refresh = false) =>
+    call<SuggestionState>('POST', `projects/${id}/issues/${issue}/suggestion${query({ refresh: refresh ? 1 : undefined })}`),
+  /** Statements that got slower or started failing, per environment (or in one). */
+  regressions: (id: string, environment?: string) => call<RegressionReport[]>('GET', `projects/${id}/regressions${query({ environment })}`),
+  /** The code around `origin` (`file:line`) when the SDK sends source context; `null` otherwise. */
+  source: (id: string, origin: string) => call<SourceSnippet | null>('GET', `projects/${id}/source${query({ origin })}`),
+  /** A Live filter drafted from a description. */
+  draftFilter: (req: DraftFilterRequest) => call<DraftFilterReply>('POST', 'filters/draft', req),
   /** One statement shape's totals over the last `hours`; `null` when it has none. */
   shape: (id: string, p: { fingerprint: string; environment: string; hours: number }) =>
     call<QueryShape[]>('GET', `projects/${id}/queries${query({ ...p, limit: 1 })}`).then((rows) => rows[0] ?? null),

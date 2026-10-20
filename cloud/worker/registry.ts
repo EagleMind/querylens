@@ -1,5 +1,6 @@
-// The list of projects and the backend-wide settings: one small Durable Object, touched only
-// by the dashboard (never on the ingest path, which goes straight to each project's own object).
+// The list of projects, the backend-wide settings and the daily allowance of AI calls: one
+// small Durable Object, touched only by the dashboard and MCP clients (never on the ingest
+// path, which goes straight to each project's own object).
 import { DurableObject } from 'cloudflare:workers'
 
 export interface ProjectEntry {
@@ -16,6 +17,7 @@ export class Registry extends DurableObject<Env> {
         'CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL)',
       )
       ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+      ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS ai_calls (day TEXT PRIMARY KEY, calls INTEGER NOT NULL)')
     })
   }
 
@@ -43,5 +45,19 @@ export class Registry extends DurableObject<Env> {
       .exec<{ id: string; name: string; created_at: string }>('SELECT id, name, created_at FROM projects ORDER BY created_at')
       .toArray()
       .map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at }))
+  }
+
+  /**
+   * Count one AI call against today's allowance (UTC); `false`, and nothing counted, once
+   * `limit` calls were made today. Keeps the backend inside Workers AI's free daily allowance.
+   */
+  async takeAiCall(limit: number): Promise<boolean> {
+    const day = new Date().toISOString().slice(0, 10)
+    const sql = this.ctx.storage.sql
+    const used = sql.exec<{ calls: number }>('SELECT calls FROM ai_calls WHERE day = ?', day).toArray()[0]?.calls ?? 0
+    if (used >= limit) return false
+    sql.exec('INSERT OR REPLACE INTO ai_calls (day, calls) VALUES (?, ?)', day, used + 1)
+    sql.exec('DELETE FROM ai_calls WHERE day < ?', day)
+    return true
   }
 }

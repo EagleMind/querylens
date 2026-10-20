@@ -1,8 +1,20 @@
 // Filters for the Live page: built-in views, and custom filters the user saves.
-// Each field of a custom filter is a small strategy: how it's edited and how it tests a query.
-import type { FindingKind } from '../../bindings/FindingKind'
-import { FINDING_KINDS } from './format'
-import { type LiveQuery, STATEMENT_TYPES, type StatementType } from './queries'
+// A custom filter's fields are described in shared/filters.ts; here each gets its test.
+import {
+  type Condition,
+  type CustomFilter,
+  FIELD_KEYS,
+  FIELD_SPECS,
+  type FieldKey,
+  type FieldSpec,
+  OPERATORS,
+  type Operator,
+  isComplete,
+} from '../../shared/filters'
+import type { LiveQuery } from './queries'
+
+export { FIELD_KEYS, OPERATORS, isComplete }
+export type { Condition, CustomFilter, FieldKey, Operator }
 
 // ───────────────────────────── built-in views ─────────────────────────────
 
@@ -42,118 +54,46 @@ export function matchesSearch(q: LiveQuery, search: string): boolean {
 
 // ───────────────────────────── custom filters ─────────────────────────────
 
-export type Operator = 'contains' | 'not_contains' | 'is' | 'is_not' | 'gte' | 'lte'
-
-export const OPERATORS: Record<Operator, string> = {
-  contains: 'contains',
-  not_contains: 'does not contain',
-  is: 'is',
-  is_not: 'is not',
-  gte: 'is at least',
-  lte: 'is at most',
-}
-
-export type FieldKey = 'sql' | 'origin' | 'request' | 'type' | 'duration' | 'rows' | 'outcome' | 'issue' | 'release'
-
-export interface Condition {
-  field: FieldKey
-  op: Operator
-  value: string
-}
-
-export interface CustomFilter {
-  id: string
-  name: string
-  match: 'all' | 'any'
-  conditions: Condition[]
-}
-
-export interface Field {
-  label: string
-  ops: Operator[]
-  /** Free text, a number (with its unit), or one of a fixed set of values. */
-  input: { kind: 'text'; placeholder: string } | { kind: 'number'; unit: string } | { kind: 'choice'; options: { value: string; label: string }[] }
+/** A field of the shared schema (shared/filters.ts), and how it tests a query. */
+export interface Field extends FieldSpec {
   test: (q: LiveQuery, op: Operator, value: string) => boolean
 }
 
-function text(read: (q: LiveQuery) => string | null, placeholder: string): Pick<Field, 'ops' | 'input' | 'test'> {
-  return {
-    ops: ['contains', 'not_contains', 'is', 'is_not'],
-    input: { kind: 'text', placeholder },
-    test: (q, op, value) => {
-      const actual = (read(q) ?? '').toLowerCase()
-      const v = value.trim().toLowerCase()
-      if (op === 'contains') return actual.includes(v)
-      if (op === 'not_contains') return !actual.includes(v)
-      return op === 'is' ? actual === v : actual !== v
-    },
+function text(read: (q: LiveQuery) => string | null): Field['test'] {
+  return (q, op, value) => {
+    const actual = (read(q) ?? '').toLowerCase()
+    const v = value.trim().toLowerCase()
+    if (op === 'contains') return actual.includes(v)
+    if (op === 'not_contains') return !actual.includes(v)
+    return op === 'is' ? actual === v : actual !== v
   }
 }
 
-function number(read: (q: LiveQuery) => number, unit: string): Pick<Field, 'ops' | 'input' | 'test'> {
-  return {
-    ops: ['gte', 'lte'],
-    input: { kind: 'number', unit },
-    test: (q, op, value) => (op === 'gte' ? read(q) >= Number(value) : read(q) <= Number(value)),
-  }
+function number(read: (q: LiveQuery) => number): Field['test'] {
+  return (q, op, value) => (op === 'gte' ? read(q) >= Number(value) : read(q) <= Number(value))
 }
 
-function choice(read: (q: LiveQuery) => string[], options: { value: string; label: string }[]): Pick<Field, 'ops' | 'input' | 'test'> {
-  return {
-    ops: ['is', 'is_not'],
-    input: { kind: 'choice', options },
-    test: (q, op, value) => read(q).includes(value) === (op === 'is'),
-  }
+function choice(read: (q: LiveQuery) => string[]): Field['test'] {
+  return (q, op, value) => read(q).includes(value) === (op === 'is')
 }
 
-export const FIELDS: Record<FieldKey, Field> = {
-  sql: { label: 'SQL', ...text((q) => q.statement.sql, 'e.g. FROM "orders"') },
-  origin: { label: 'Code location', ...text((q) => q.statement.origin, 'e.g. src/routes/orders.js') },
-  request: { label: 'Request', ...text((q) => q.request.name, 'e.g. GET /orders') },
-  type: {
-    label: 'Statement type',
-    ...choice(
-      (q) => [q.type],
-      (Object.keys(STATEMENT_TYPES) as StatementType[]).map((t) => ({ value: t, label: STATEMENT_TYPES[t] })),
-    ),
-  },
-  duration: { label: 'Duration', ...number((q) => q.statement.durationMs, 'ms') },
-  rows: { label: 'Rows', ...number((q) => q.statement.rows, 'rows') },
-  outcome: {
-    label: 'Outcome',
-    ...choice(
-      (q) => [q.statement.error ? 'failed' : 'succeeded'],
-      [
-        { value: 'succeeded', label: 'Succeeded' },
-        { value: 'failed', label: 'Failed' },
-      ],
-    ),
-  },
-  issue: {
-    label: 'Issue',
-    ...choice(
-      (q) => (q.findings.length ? ['any', ...q.findings.map((f) => f.kind)] : []),
-      [
-        { value: 'any', label: 'Any issue' },
-        ...(Object.keys(FINDING_KINDS) as FindingKind[]).map((k) => ({ value: k, label: FINDING_KINDS[k] })),
-      ],
-    ),
-  },
-  release: { label: 'Release', ...text((q) => q.request.release, 'e.g. 2026.10.1') },
+const TESTS: Record<FieldKey, Field['test']> = {
+  sql: text((q) => q.statement.sql),
+  origin: text((q) => q.statement.origin),
+  request: text((q) => q.request.name),
+  type: choice((q) => [q.type]),
+  duration: number((q) => q.statement.durationMs),
+  rows: number((q) => q.statement.rows),
+  outcome: choice((q) => [q.statement.error ? 'failed' : 'succeeded']),
+  issue: choice((q) => (q.findings.length ? ['any', ...q.findings.map((f) => f.kind)] : [])),
+  release: text((q) => q.request.release),
 }
 
-export const FIELD_KEYS = Object.keys(FIELDS) as FieldKey[]
+export const FIELDS = Object.fromEntries(FIELD_KEYS.map((k) => [k, { ...FIELD_SPECS[k], test: TESTS[k] }])) as Record<FieldKey, Field>
 
 export function newCondition(field: FieldKey = 'sql'): Condition {
   const f = FIELDS[field]
   return { field, op: f.ops[0], value: f.input.kind === 'choice' ? f.input.options[0].value : '' }
-}
-
-export function isComplete(c: Condition): boolean {
-  const f = FIELDS[c.field]
-  if (!f.ops.includes(c.op)) return false
-  if (f.input.kind === 'number') return c.value.trim() !== '' && Number.isFinite(Number(c.value))
-  return c.value.trim() !== ''
 }
 
 export function matchesFilter(q: LiveQuery, filter: CustomFilter): boolean {

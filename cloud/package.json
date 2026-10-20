@@ -11,7 +11,7 @@
     "build": "cf build",
     "deploy": "cf deploy",
     "typecheck": "cf workers types && tsc -p tsconfig.json && tsc -p tsconfig.web.json",
-    "test": "node --test \"test/*.test.mjs\""
+    "test": "node --test \"test/*.test.ts\""
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",

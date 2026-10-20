@@ -29,7 +29,7 @@ const DRIZZLE_FILE = /[\\/]drizzle-orm[\\/]/;
 
 const requestContext = new AsyncLocalStorage();
 const cwd = process.cwd();
-const SDK_FILES = new Set([__filename, ...['monitor.cjs', 'scrub.cjs', 'prisma.cjs'].map((f) => path.join(__dirname, f))]);
+const SDK_FILES = new Set([__filename, ...['monitor.cjs', 'scrub.cjs', 'source.cjs', 'prisma.cjs'].map((f) => path.join(__dirname, f))]);
 
 /** First frame of `stack` outside node_modules, Node internals and the SDK, as `file:line`. */
 function siteOf(stack) {
@@ -566,7 +566,7 @@ function withTransaction(name, fn) {
 
 /**
  * Start monitoring. Safe to call more than once and from several copies of this module:
- * the first call wins. Options: { dsn, environment, release, sendValues, sampleRate }.
+ * the first call wins. Options: { dsn, environment, release, sendValues, sampleRate, sourceContext }.
  */
 function init(options = {}) {
   if (globalThis[GLOBAL]) return globalThis[GLOBAL];

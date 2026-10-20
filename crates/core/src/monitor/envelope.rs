@@ -4,6 +4,7 @@
 //! {"type":"header","sdk":"querylens-node/0.2.0","environment":"production","release":"4f2c1e0"}
 //! {"type":"transaction","name":"GET /orders/:id","start":1760950000000,"durationMs":41.2,"queries":[…]}
 //! {"type":"stats","start":1760950000000,"queries":[{"sql":"SELECT … = ?","calls":120,"totalMs":96.1,…}]}
+//! {"type":"source","origin":"src/orders.js:42","firstLine":35,"lines":["…", …]}
 //! ```
 //!
 //! A *transaction* is one request (or job) the SDK chose to send because it looked
@@ -11,13 +12,16 @@
 //! sent each minute. In production the SDK scrubs values: literals become `?`, bound
 //! parameters are dropped, and each statement carries `vh`, an opaque hash of its values,
 //! so the server can still tell an N+1 (different values) from a repeated query.
+//! *Source* items are opt-in (`sourceContext`): the lines of application code around an
+//! `origin`, sent once per line of code, so fixes can be written against the real code.
 //! Pure: no I/O.
 
 use serde::Deserialize;
 
+use super::model::SourceSnippet;
 use crate::capture::sql::comments;
-use crate::model::CapturedStatement;
 use crate::fingerprint;
+use crate::model::CapturedStatement;
 
 pub const DEFAULT_ENVIRONMENT: &str = "production";
 /// The transaction name for statements run outside any request.
@@ -26,6 +30,11 @@ pub const BACKGROUND: &str = "background";
 pub const MAX_QUERIES: usize = 1000;
 const MAX_SQL: usize = 20_000;
 const MAX_LABEL: usize = 200;
+/// Lines of code kept around an origin, and characters per line.
+const MAX_SOURCE_LINES: usize = 41;
+const MAX_SOURCE_LINE: usize = 300;
+/// Source items kept per envelope.
+const MAX_SOURCES: usize = 200;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -33,6 +42,7 @@ enum Item {
     Header(Header),
     Transaction(Transaction),
     Stats(Stats),
+    Source(Source),
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -111,6 +121,42 @@ pub struct StatQuery {
     pub rows: f64,
 }
 
+/// The application's code around one `origin` (`file:line`), as the SDK read it.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Source {
+    pub origin: String,
+    /// The line number of `lines[0]`.
+    pub first_line: u32,
+    pub lines: Vec<String>,
+}
+
+impl Source {
+    /// The snippet, clipped, when it is what it claims: a relative `file:line` inside the
+    /// project whose line is among the lines sent.
+    pub fn snippet(&self) -> Option<SourceSnippet> {
+        let origin = label(Some(self.origin.clone()))?;
+        let (file, line) = origin.rsplit_once(':')?;
+        let line: u32 = line.parse().ok()?;
+        let inside = !file.is_empty()
+            && !file.starts_with('/')
+            && !file.contains('\\')
+            && !file.contains(':')
+            && file.split('/').all(|part| part != "..");
+        if !inside || self.first_line == 0 || self.lines.is_empty() {
+            return None;
+        }
+        // Keep a window centred on the origin's line when more was sent than is kept.
+        let at = line.checked_sub(self.first_line)? as usize;
+        if at >= self.lines.len() {
+            return None;
+        }
+        let start = at.saturating_sub(MAX_SOURCE_LINES / 2).min(self.lines.len().saturating_sub(MAX_SOURCE_LINES));
+        let lines = self.lines[start..].iter().take(MAX_SOURCE_LINES).map(|l| l.chars().take(MAX_SOURCE_LINE).collect()).collect();
+        Some(SourceSnippet { origin, first_line: self.first_line + start as u32, lines })
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct Envelope {
     pub sdk: Option<String>,
@@ -118,6 +164,7 @@ pub struct Envelope {
     pub release: Option<String>,
     pub transactions: Vec<Transaction>,
     pub stats: Vec<Stats>,
+    pub sources: Vec<Source>,
     /// Lines that weren't valid items.
     pub skipped: usize,
 }
@@ -131,6 +178,8 @@ pub fn parse(body: &str) -> Envelope {
             Ok(Item::Header(h)) => header = h,
             Ok(Item::Transaction(t)) => env.transactions.push(t),
             Ok(Item::Stats(s)) => env.stats.push(s),
+            Ok(Item::Source(s)) if env.sources.len() < MAX_SOURCES => env.sources.push(s),
+            Ok(Item::Source(_)) => env.skipped += 1,
             Err(_) => env.skipped += 1,
         }
     }
@@ -229,6 +278,30 @@ mod tests {
         assert_eq!(s[0].params, vec![Some("#aa".to_string())]);
         assert_eq!(s[0].route.as_deref(), Some("GET /orders"));
         assert_eq!(s[1].seq, 2);
+    }
+
+    #[test]
+    fn keeps_source_inside_the_project() {
+        let item = |origin: &str, first: u32, n: usize| {
+            let lines: Vec<String> = (0..n).map(|i| format!("line {}", first as usize + i)).collect();
+            serde_json::json!({ "type": "source", "origin": origin, "firstLine": first, "lines": lines }).to_string()
+        };
+        let body = [
+            item("src/orders.js:42", 35, 15),
+            item("../secrets.js:3", 1, 5),
+            item("/etc/app.js:3", 1, 5),
+            item("src/a.js:99", 1, 5),
+            item("src/long.js:100", 1, 200),
+        ]
+        .join("\n");
+        let env = parse(&body);
+        let kept: Vec<_> = env.sources.iter().filter_map(Source::snippet).collect();
+        assert_eq!(kept.len(), 2, "outside the project, or the line missing: dropped");
+        assert_eq!((kept[0].origin.as_str(), kept[0].first_line, kept[0].lines.len()), ("src/orders.js:42", 35, 15));
+        let long = &kept[1];
+        assert_eq!(long.lines.len(), MAX_SOURCE_LINES);
+        assert!(long.first_line <= 100 && 100 < long.first_line + MAX_SOURCE_LINES as u32, "window around the line");
+        assert_eq!(long.lines[(100 - long.first_line) as usize], "line 100");
     }
 
     #[test]

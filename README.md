@@ -48,17 +48,25 @@ Problems are grouped into issues across requests, environments and releases, eac
 line of your code responsible. An issue you've fixed that comes back is flagged as
 **regressed**; one you mute keeps being counted but stays out of your way.
 
+QueryLens also flags **regressions**: statements that got slower, or started failing, since
+your latest release. It compares each statement with itself before and after the deploy,
+using the statistics the SDK sends for every statement, so it catches the slowdowns no
+threshold would.
+
 ## The dashboard
 
 - **Live**: every statement of the requests your apps send, newest first, across projects,
   with the history of the last 7 days a click away. Filter by project, environment, search
   (SQL, file or route) and the built-in views (all, slow, failed, with issues), hide or show
   muted issues, and save your own filters, built from conditions on SQL, code location,
-  request, statement type, duration, rows, outcome, issue and release.
+  request, statement type, duration, rows, outcome, issue and release. Or describe one ("slow
+  writes on checkout since the last release") and check the conditions it fills in. Above the
+  list, the statements that got slower or started failing since the latest release.
 - **Query report**: the statement and its parameters (when the SDK sends them), where it
-  came from in your code, the issue it belongs to with the fix and the other lines where it
-  happens, every statement of its request on a timeline, and its totals over 24 hours. Mute
-  an issue from here.
+  came from in your code (and the code itself, with source context on), the issue it belongs
+  to with the fix and the other lines where it happens, every statement of its request on a
+  timeline, and its totals over 24 hours. Mute an issue from here, copy it as a prompt for your
+  coding agent, or have the change written for your code.
 - **Settings**: each project's DSN (its key can be changed or regenerated), the connected
   host that goes into every DSN (editable when the backend runs behind your own domain or a
   proxy), and sign-out.
@@ -168,6 +176,26 @@ it, the issue it belongs to with the fix, the rest of its request and its last 2
 No app handy? [`dev/sequelize-demo`](dev/sequelize-demo) is an Express + Sequelize app with
 the usual ORM mistakes built in, against a demo PostgreSQL or MySQL in Docker.
 
+### 5. Fix issues with your coding agent
+
+Every issue can be copied from its report as a **fix prompt**: what happens, the lines of
+code responsible, the SQL, every statement of the request it was last seen in, and the fix
+for your ORM. Paste it into Claude Code, Cursor or any agent working in your repository.
+
+Or let the agent fetch issues itself. The backend is an MCP server:
+
+```bash
+claude mcp add --transport http querylens https://querylens.<your-subdomain>.workers.dev/mcp --header "Authorization: Bearer <ADMIN_TOKEN>"
+```
+
+Then ask it to "fix the top QueryLens issues". Its tools list issues by time lost, give each
+as a fix brief, list regressions, and mark an issue resolved once the fix is deployed.
+
+With source context on (`QUERYLENS_SOURCE_CONTEXT=1`), the report can also **write the change
+for your code** with Workers AI, in your Cloudflare account. The model applies QueryLens's fix
+to the lines the SDK sent, and its answer is checked against them: a change to code it was
+never shown is refused.
+
 ### Configuration
 
 | Variable | Effect |
@@ -177,6 +205,7 @@ the usual ORM mistakes built in, against a demo PostgreSQL or MySQL in Docker.
 | `QUERYLENS_RELEASE` | Release. Default: the commit from Vercel, Render, Railway, Heroku, Cloudflare Pages, GitHub Actions and others. |
 | `QUERYLENS_SAMPLE_RATE` | Share of problem-free requests sent to the live feed. |
 | `QUERYLENS_SEND_VALUES=1` | Send SQL literals and parameters too, for example in development. |
+| `QUERYLENS_SOURCE_CONTEXT=1` | Send the code around the lines that ran reported queries (secrets masked), for the report and AI-written changes. |
 | `QUERYLENS_DISABLED=1` | Turn the SDK off. |
 
 Detection thresholds (slow, large, loop and chatty limits) and live-feed sampling are set
@@ -194,7 +223,10 @@ their next report. The
   it weren't there. (The one exception is Prisma's opt-in [engine mode](integrations/node#prisma).)
 - **Bounded memory.** When the backend is unreachable the SDK backs off and drops the oldest
   data, never holding more than about 4 MB.
+- **Your code stays in your app unless you ask.** Source context is off by default; when it's
+  on, files outside the project aren't read and secrets are masked first.
 - **Your data stays in your Cloudflare account.** There is no QueryLens service in between.
+  AI features run on Workers AI in the same account, only when you click for them.
 - **No dependencies** in the SDK.
 
 ## What's supported
@@ -208,7 +240,9 @@ their next report. The
 | **Fixes with code** | Sequelize, Prisma, TypeORM, Drizzle, MikroORM, Objection.js, Knex and Kysely ([details](#fixes-by-orm)) |
 | **Fixes naming the right API** | Django, Active Record, SQLAlchemy and Hibernate, which the analysis already recognizes |
 | **Backend** | Cloudflare Workers + Durable Objects (SQLite), free plan |
-| **Dashboard** | Live queries with built-in and custom filters, and a report per query down to the line of code |
+| **Dashboard** | Live queries with built-in and custom filters, regressions since the latest release, and a report per query down to the line of code |
+| **Coding agents** | A fix prompt per issue, and an MCP server (`/mcp`) for Claude Code, Cursor and others |
+| **AI** | Workers AI (`gpt-oss-120b`) writes changes for your code and filters from a description, on demand |
 
 ### Fixes by ORM
 
@@ -239,7 +273,6 @@ identical SQL, so they're recognized together and their fixes show both APIs.
   muting sticks and slow-query alerts fit each statement.
 - **Transactions and pools**: transactions still open when the response is sent, long waits
   inside a transaction, time spent waiting for a pool connection.
-- **Slower since this release**: each statement and route compared with the previous release.
 - **Alerts** on new and regressed issues, by email or webhook.
 
 **Later**
