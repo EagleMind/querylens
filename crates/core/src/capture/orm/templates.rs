@@ -36,6 +36,12 @@ pub trait Templates {
     fn unique_violation(&self, facts: &Facts) -> Advice;
     fn chatty_request(&self) -> Advice;
 
+    /// A slow statement with no tested index to suggest. SQL ORMs say nothing (the
+    /// index comes from a plan check); MongoDB advisors propose one from the filter.
+    fn untested_index(&self, _facts: &Facts) -> Option<Advice> {
+        None
+    }
+
     fn deadlock(&self) -> Advice {
         Advice::text(
             "Transactions deadlock: two of them lock the same rows in a different order. Update rows in a consistent \
@@ -53,7 +59,10 @@ impl<T: Templates> OrmAdvisor for T {
             FindingKind::DuplicateQuery => self.duplicate_query(&facts),
             FindingKind::LoopedWrites => self.looped_writes(ctx.stat.kind, &facts),
             FindingKind::LargeResult => self.large_result(&facts),
-            FindingKind::SlowQuery | FindingKind::PlanIssue => self.index(index.as_deref()?, &facts),
+            FindingKind::SlowQuery | FindingKind::PlanIssue => match index.as_deref() {
+                Some(ddl) => self.index(ddl, &facts),
+                None => self.untested_index(&facts)?,
+            },
             FindingKind::QueryErrors => match DbError::of(&f.detail)? {
                 DbError::UniqueViolation => self.unique_violation(&facts),
                 DbError::Deadlock => self.deadlock(),
@@ -64,8 +73,8 @@ impl<T: Templates> OrmAdvisor for T {
     }
 }
 
-/// Errors with a fix in the application's code, by their PostgreSQL SQLSTATE or MySQL
-/// code (the SDK appends the driver's `err.code` in parentheses).
+/// Errors with a fix in the application's code, by their PostgreSQL SQLSTATE, MySQL or
+/// MongoDB code (the SDK appends the driver's `err.code` in parentheses).
 enum DbError {
     UniqueViolation,
     Deadlock,
@@ -73,9 +82,10 @@ enum DbError {
 
 impl DbError {
     fn of(detail: &str) -> Option<Self> {
-        if detail.contains("(23505)") || detail.contains("(ER_DUP_ENTRY)") {
+        // MongoDB: E11000 duplicate key; 112, a write conflict between transactions.
+        if detail.contains("(23505)") || detail.contains("(ER_DUP_ENTRY)") || detail.contains("(11000)") {
             Some(Self::UniqueViolation)
-        } else if detail.contains("(40P01)") || detail.contains("(ER_LOCK_DEADLOCK)") {
+        } else if detail.contains("(40P01)") || detail.contains("(ER_LOCK_DEADLOCK)") || detail.contains("(112)") {
             Some(Self::Deadlock)
         } else {
             None

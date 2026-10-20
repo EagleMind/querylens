@@ -1,7 +1,9 @@
 //! Lightweight structural reading of a SQL statement: what kind it is, which tables
 //! it touches, which columns it filters on with a value. Not a parser: a tokenizer
-//! plus patterns that hold for the SQL ORMs generate.
+//! plus patterns that hold for the SQL ORMs generate. MongoDB operations (see
+//! [`mongo`]) are answered for by their own parser, so callers needn't tell them apart.
 
+use crate::capture::mongo;
 use crate::model::StatementKind;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -138,6 +140,9 @@ fn tokenize(sql: &str) -> Vec<Tok> {
 }
 
 pub fn kind(sql: &str) -> StatementKind {
+    if let Some(op) = mongo::parse(sql) {
+        return op.kind();
+    }
     let toks = tokenize(sql);
     let mut depth = 0i32;
     for t in &toks {
@@ -182,6 +187,10 @@ impl TableRef {
 
 /// Tables after FROM / JOIN / UPDATE / INTO, in order of appearance, without duplicates.
 pub fn tables(sql: &str) -> Vec<TableRef> {
+    if let Some(op) = mongo::parse(sql) {
+        let lookups = op.lookups().into_iter().map(|name| TableRef { name, alias: None });
+        return std::iter::once(TableRef { name: op.target, alias: None }).chain(lookups).collect();
+    }
     let toks = tokenize(sql);
     let mut out: Vec<TableRef> = Vec::new();
     let mut i = 0;
@@ -243,6 +252,13 @@ pub struct Filter {
 }
 
 pub fn filters(sql: &str) -> Vec<Filter> {
+    if let Some(op) = mongo::parse(sql) {
+        return op
+            .filter_fields()
+            .into_iter()
+            .map(|f| Filter { table: Some(op.target.clone()), column: f.path, equality: f.equality })
+            .collect();
+    }
     let toks = tokenize(sql);
     let refs = tables(sql);
     let mut out: Vec<Filter> = Vec::new();
@@ -308,6 +324,9 @@ fn column_ref(toks: &[Tok], i: usize) -> Option<(Option<String>, String, usize)>
 
 /// Whether the outermost query limits its rows (LIMIT / FETCH FIRST).
 pub fn has_limit(sql: &str) -> bool {
+    if let Some(op) = mongo::parse(sql) {
+        return op.limited();
+    }
     let mut depth = 0i32;
     for t in tokenize(sql) {
         match t {

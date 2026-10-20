@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 pub use rules::subject;
 pub use stats::origins;
 
+use crate::capture::mongo;
 use crate::format::{fmt_count, fmt_ms};
 use crate::model::{CaptureFinding, CapturedStatement, FindingKind, FingerprintStat, StatementKind, SuggestionSeverity};
 
@@ -146,14 +147,16 @@ fn loop_finding(
         _ => (FindingKind::LoopedWrites, if l.longest >= 50 { SuggestionSeverity::High } else { SuggestionSeverity::Medium }),
     };
     let subject = subject(stat);
+    // MongoDB returns documents.
+    let row = if mongo::parse(&stat.sample_sql).is_some() { "document" } else { "row" };
     let title = match kind {
-        FindingKind::NPlusOne => format!("N+1: {subject}, once per row (up to {}× in a row)", l.longest),
+        FindingKind::NPlusOne => format!("N+1: {subject}, once per {row} (up to {}× in a row)", l.longest),
         FindingKind::DuplicateQuery => format!("The same {subject} repeated {}× in a row", l.longest),
-        _ => format!("{} one row at a time (up to {}× in a row)", rules::capitalize(&subject), l.longest),
+        _ => format!("{} one {row} at a time (up to {}× in a row)", rules::capitalize(&subject), l.longest),
     };
     let mut detail = match (kind, parent) {
         (FindingKind::NPlusOne, Some(p)) => format!(
-            "Runs right after {} (which returned up to {} rows), once for each row. ",
+            "Runs right after {} (which returned up to {} {row}s), once for each {row}. ",
             rules::subject(p),
             fmt_count(l.parent_rows)
         ),

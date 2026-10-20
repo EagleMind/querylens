@@ -259,10 +259,13 @@ function createMonitor(options, env = process.env) {
     return { name, start: Date.now(), t0: performance.now(), queries: [], dropped: 0, ended: false };
   }
 
-  /** `q`: { started, durationMs, sql, params, rows, error, origin, conn, dialect } */
+  /**
+   * `q`: { started, durationMs, sql, params, rows, error, origin, conn, dialect }. MongoDB
+   * operations (`dialect: 'mongo'`) come shaped, their values already taken out into `params`.
+   */
   function record(txn, q) {
     try {
-      const shape = sendValues ? null : scrubbed(q.sql, q.dialect);
+      const shape = sendValues ? null : q.dialect === 'mongo' ? { sql: q.sql, values: [] } : scrubbed(q.sql, q.dialect);
       count(q, shape ? shape.sql : q.sql);
       const t = txn || backgroundTxn();
       if (t.queries.length >= MAX_QUERIES) {

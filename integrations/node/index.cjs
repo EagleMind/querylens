@@ -1,6 +1,6 @@
 // QueryLens SDK for Node.js. Monitors the queries your app sends to PostgreSQL (`pg`,
 // `postgres`, Neon), MySQL (`mysql2`, PlanetScale) and SQLite (`better-sqlite3`, `sqlite3`,
-// `node:sqlite`, libSQL / Turso), through
+// `node:sqlite`, libSQL / Turso) and MongoDB (`mongodb`, Mongoose), through
 // Sequelize, Knex, TypeORM, MikroORM, Drizzle, Prisma (with querylens-node/prisma) or the
 // drivers directly (one module each in drivers/), and reports them to your
 // QueryLens backend, which finds N+1s, writes in a loop, slow and failing statements, and
@@ -32,6 +32,8 @@ const neon = require('./drivers/neon.cjs');
 const planetscale = require('./drivers/planetscale.cjs');
 const libsql = require('./drivers/libsql.cjs');
 const sqlite = require('./drivers/sqlite.cjs');
+const { patchMongodb } = require('./drivers/mongodb.cjs');
+const { patchMongoose } = require('./drivers/mongoose.cjs');
 
 /** Shared by every copy of this file loaded in the process. */
 const GLOBAL = Symbol.for('querylens.sdk');
@@ -44,6 +46,8 @@ const PACKAGES = [
   { name: 'mysql2', patch: patchMysql2 },
   { name: 'better-sqlite3', patch: sqlite.patchBetterSqlite3 },
   { name: 'sqlite3', patch: sqlite.patchSqlite3 },
+  { name: 'mongodb', patch: patchMongodb },
+  { name: 'mongoose', patch: patchMongoose },
 ];
 
 /**
@@ -242,4 +246,4 @@ function flush() {
   return sdk ? sdk.flush() : Promise.resolve();
 }
 
-module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchPool, patchMysql2, patchPostgres, patchDrizzle, patchNeon: neon.patchNeon, patchPlanetScale: planetscale.patchPlanetScale, patchLibsql: libsql.patchLibsql, ...sqlite, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };
+module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchPool, patchMysql2, patchPostgres, patchDrizzle, patchNeon: neon.patchNeon, patchPlanetScale: planetscale.patchPlanetScale, patchLibsql: libsql.patchLibsql, ...sqlite, patchMongodb, patchMongoose, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };

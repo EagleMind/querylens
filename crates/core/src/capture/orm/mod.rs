@@ -4,13 +4,16 @@
 //! application's own terms. Each Node.js ORM has its own module implementing
 //! [`templates::Templates`] (one fix per finding kind, with code in that ORM's API);
 //! the rest fall back to [`generic::Generic`], which names the right API but has no
-//! code. Adding an ORM = one module implementing `Templates` + one arm in [`advisor`].
+//! code. MongoDB has two: Mongoose ([`mongoose`]) and the driver itself ([`mongodb`]).
+//! Adding an ORM = one module implementing `Templates` + one arm in [`advisor`].
 
 mod drizzle;
 mod facts;
 mod generic;
 mod knex;
 mod mikro_orm;
+mod mongodb;
+mod mongoose;
 mod naming;
 mod objection;
 mod prisma;
@@ -20,7 +23,7 @@ mod templates;
 mod typeorm;
 
 pub use facts::Facts;
-pub use recognize::recognize;
+pub use recognize::{mongo_api, recognize, recognize_mongo};
 
 use crate::model::{CaptureFinding, FingerprintStat, FixHint, Orm, PlanCheck};
 
@@ -46,6 +49,8 @@ pub fn advisor(orm: Option<Orm>) -> Box<dyn OrmAdvisor> {
         Some(Orm::MikroOrm) => Box::new(mikro_orm::MikroOrm),
         Some(Orm::Objection) => Box::new(objection::Objection),
         Some(Orm::Knex) => Box::new(knex::Knex),
+        Some(Orm::Mongoose) => Box::new(mongoose::Mongoose),
+        Some(Orm::MongoDb) => Box::new(mongodb::MongoDb),
         other => Box::new(generic::Generic(other)),
     }
 }

@@ -38,6 +38,8 @@ export interface LiveQuery {
   /** Start, epoch ms. */
   at: number
   type: StatementType
+  /** What it does, as shown: `SELECT`…, or a MongoDB command (`find`, `aggregate`…). */
+  verb: string
   /** The request's findings about this statement's shape (muted ones left out when hidden). */
   findings: LiveFinding[]
   /** Issue ids among its findings that are muted. */
@@ -54,7 +56,27 @@ export function withProject(projectId: string, r: StoredRequest): LiveRequest {
   return { ...r, projectId, key: `${projectId}:${r.id}` }
 }
 
+/** A MongoDB operation as the SDK writes it (`db.orders.find(…)`, `Order.find(…)`): its command. */
+const MONGO = /^(?:db\.[\w.$-]+|[A-Z][\w$]*)\.(\w+)\(/
+
+const MONGO_TYPES: Record<string, StatementType> = {
+  find: 'select',
+  aggregate: 'select',
+  count: 'select',
+  distinct: 'select',
+  insert: 'insert',
+  update: 'update',
+  findAndModify: 'update',
+  delete: 'delete',
+}
+
+export function mongoCommand(sql: string): string | null {
+  return MONGO.exec(sql)?.[1] ?? null
+}
+
 export function statementType(sql: string): StatementType {
+  const command = mongoCommand(sql)
+  if (command) return MONGO_TYPES[command] ?? 'other'
   const word = /^\s*(\w+)/.exec(sql)?.[1]?.toLowerCase()
   return word === 'select' || word === 'insert' || word === 'update' || word === 'delete' ? word : 'other'
 }
@@ -68,6 +90,7 @@ export function queriesOf(request: LiveRequest): LiveQuery[] {
     statement,
     at: start + statement.atMs,
     type: statementType(statement.sql),
+    verb: mongoCommand(statement.sql) ?? STATEMENT_TYPES[statementType(statement.sql)],
     findings: request.findings.filter((f) => f.fingerprint === statement.fingerprint),
     muted: [],
   }))

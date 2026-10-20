@@ -29,11 +29,14 @@ pub struct Found {
 }
 
 /// `known_orm`: what earlier traffic of the project showed, used when this transaction
-/// alone is too small to recognise the ORM.
+/// alone is too small to recognise the ORM. MongoDB operations are advised for by how
+/// they were issued (Mongoose or the driver), whatever the app's SQL ORM.
 pub fn evaluate(statements: &[CapturedStatement], known_orm: Option<Orm>, t: &Thresholds) -> Evaluated {
     let detection = detect::detect(statements, t);
-    let orm = orm::recognize(&detection.fingerprints);
-    let advisor = orm::advisor(orm.or(known_orm));
+    let sql_orm = orm::recognize(&detection.fingerprints);
+    let orm = sql_orm.or_else(|| orm::recognize_mongo(&detection.fingerprints));
+    let known_sql = known_orm.filter(|o| !matches!(o, Orm::Mongoose | Orm::MongoDb));
+    let sql_advisor = orm::advisor(sql_orm.or(known_sql));
     let stats: HashMap<&str, &FingerprintStat> = detection.fingerprints.iter().map(|f| (f.fingerprint.as_str(), f)).collect();
     let findings = detection
         .findings
@@ -41,7 +44,11 @@ pub fn evaluate(statements: &[CapturedStatement], known_orm: Option<Orm>, t: &Th
         .filter_map(|mut finding| {
             let stat = *stats.get(finding.fingerprint.as_str())?;
             let parent = finding.parent_fingerprint.as_deref().and_then(|p| stats.get(p).copied());
-            finding.fix = advisor.fix(&finding, &HintContext { stat, parent, plan: None });
+            let ctx = HintContext { stat, parent, plan: None };
+            finding.fix = match orm::mongo_api(&stat.sample_sql) {
+                Some(api) => orm::advisor(Some(api)).fix(&finding, &ctx),
+                None => sql_advisor.fix(&finding, &ctx),
+            };
             Some(Found { sample_sql: stat.sample_sql.clone(), parent_sql: parent.map(|p| p.sample_sql.clone()), finding })
         })
         .collect();
@@ -124,6 +131,24 @@ mod tests {
         let code = n1.finding.fix.as_ref().and_then(|f| f.code.clone()).unwrap_or_default();
         assert!(code.contains("db.query.orders.findMany({"), "{code}");
         assert!(code.contains("with: { orderItems: true }"), "{code}");
+    }
+
+    /// A Mongoose N+1 as the SDK writes it: recognised, and fixed with `$in` or a virtual.
+    #[test]
+    fn mongoose_n_plus_one_gets_a_mongoose_fix() {
+        let mut queries = vec![serde_json::json!({ "at": 0, "durationMs": 2, "sql": r#"Order.find({"customer": ?})"#, "vh": "p", "rows": 9 })];
+        for i in 0..9 {
+            queries.push(serde_json::json!({ "at": 3 + i, "durationMs": 1, "sql": r#"OrderItem.find({"order": ?})"#, "vh": format!("v{i}"), "rows": 2, "origin": "src/orders.js:21" }));
+        }
+        let body = serde_json::json!({ "type": "transaction", "name": "GET /orders", "start": 0, "queries": queries }).to_string();
+        let statements = envelope::parse(&body).transactions[0].statements();
+        let out = evaluate(&statements, Some(Orm::Prisma), &Thresholds::default());
+        assert_eq!(out.orm, Some(Orm::Mongoose));
+        let n1 = out.findings.iter().find(|f| f.finding.kind == FindingKind::NPlusOne).expect("an N+1");
+        assert!(n1.finding.title.contains("find on OrderItem"), "{}", n1.finding.title);
+        let fix = n1.finding.fix.as_ref().expect("a fix");
+        assert_eq!(fix.orm, Some(Orm::Mongoose), "MongoDB operations aren't advised as the project's SQL ORM");
+        assert!(fix.code.as_deref().unwrap_or_default().contains("populate('orderItems')"), "{fix:?}");
     }
 
     #[test]

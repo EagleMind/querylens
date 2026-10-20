@@ -8,21 +8,23 @@ const { requestContext, lazySite, paramText, errorText } = require('../context.c
 
 /**
  * Start timing one statement. `dialect`: how its SQL is scrubbed ('postgres', 'mysql',
- * 'sqlite'). Returns `finish(err, rows)`, which records it once; later calls do nothing.
- * Call this where the statement is issued: the request and line are taken now.
+ * 'sqlite'; 'mongo': already shaped, see mongo-shape.cjs). Returns `finish(err, rows,
+ * durationMs)`, which records it once; later calls do nothing. `durationMs` defaults to
+ * the time since this call. Call this where the statement is issued: the request and line
+ * are taken now.
  */
 function startStatement(monitor, { sql, params, dialect, conn = 0, site, ctx }) {
   const origin = site || lazySite();
   const request = ctx === undefined ? requestContext.getStore() : ctx;
   const started = performance.now();
   let done = false;
-  return (err, rows) => {
+  return (err, rows, durationMs) => {
     if (done) return;
     done = true;
     try {
       monitor.record(request ? request.txn : null, {
         started,
-        durationMs: performance.now() - started,
+        durationMs: Number.isFinite(durationMs) ? durationMs : performance.now() - started,
         sql,
         params: (params || []).map(paramText),
         rows: Number.isFinite(rows) ? rows : 0,
