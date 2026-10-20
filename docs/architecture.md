@@ -14,8 +14,10 @@ dashboard ──/api/0, WebSocket────────────▶ ┘    
 
 ## 1. The SDK (`integrations/node`)
 
-`index.cjs` patches `pg.Client.prototype.query`, through a `Module._load` hook and the app's
-already-loaded copy for ESM. It times every query (promise and callback forms) and records
+`index.cjs` patches `pg.Client.prototype.query` and mysql2's base connection `query` /
+`execute` (shared by connections, pools and the promise API; pools hand over ready `Query`
+commands, whose `onResult` is wrapped). It does this through a `Module._load` hook and the
+app's already-loaded copies for ESM. It times every query (promise and callback forms) and records
 its rows, error, and the first stack frame outside `node_modules`. Async stack traces reach
 the user's `await`. Stacks are captured cheaply and only formatted if the request is sent. An
 `AsyncLocalStorage` context per HTTP request holds its *transaction*;
@@ -33,8 +35,9 @@ elsewhere. Batches go out every 5 seconds, gzipped, with exponential backoff (or
 reply carries the project's settings, so thresholds changed in the dashboard apply on the
 next report.
 
-`scrub.cjs` removes values. Literals become `?` by the same rules as the core's
-`normalize_sql`, so scrubbed and full statements share a fingerprint; the cases in
+`scrub.cjs` removes values, per dialect: PostgreSQL quotes identifiers with `"…"`, MySQL with
+backticks, and MySQL strings may use `"…"` and backslash escapes. Literals become `?` by the
+same rules as the core's `normalize_sql`, which reads both quoting styles, so scrubbed and full statements share a fingerprint; the cases in
 `test/scrub-cases.json` are run by both the JS and the Rust tests. The literals and bound
 parameters are reduced to a 32-bit FNV hash (`vh`). Quoted values are removed from error
 messages.

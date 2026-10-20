@@ -23,5 +23,31 @@
     "sql": "select col2 from \"table 3\" where x2y = 4",
     "scrubbed": "select col2 from \"table 3\" where x2y = ?",
     "values": ["4"]
+  },
+  {
+    "dialect": "mysql",
+    "sql": "SELECT `id`, `user_id` FROM `orders` AS `Order` WHERE `Order`.`user_id` = 7 AND `Order`.`status` = 'paid';",
+    "scrubbed": "SELECT `id`, `user_id` FROM `orders` AS `Order` WHERE `Order`.`user_id` = ? AND `Order`.`status` = ?;",
+    "values": ["7", "'paid'"]
+  },
+  {
+    "dialect": "mysql",
+    "sql": "INSERT INTO `events` (`id`,`kind`) VALUES (DEFAULT,?);",
+    "scrubbed": "INSERT INTO `events` (`id`,`kind`) VALUES (DEFAULT,?);",
+    "values": []
+  },
+  {
+    "dialect": "mysql",
+    "sql": "SELECT * FROM `2fa_codes` WHERE `code` = 'o\\'brien' AND `t1` IN (1, 2);",
+    "scrubbed": "SELECT * FROM `2fa_codes` WHERE `code` = ? AND `t1` IN (?, ?);",
+    "values": ["'o\\'brien'", "1", "2"],
+    "sameFingerprint": false
+  },
+  {
+    "dialect": "mysql",
+    "sql": "UPDATE `users` SET `name` = \"Ada \\\"the\\\" first\" WHERE `id` = ?",
+    "scrubbed": "UPDATE `users` SET `name` = ? WHERE `id` = ?",
+    "values": ["\"Ada \\\"the\\\" first\""],
+    "sameFingerprint": false
   }
 ]

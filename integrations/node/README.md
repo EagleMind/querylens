@@ -1,8 +1,8 @@
 # querylens-node
 
-The QueryLens SDK for Node.js. It monitors the queries your app sends to PostgreSQL through
-[`pg`](https://node-postgres.com/) (Sequelize, Knex, TypeORM, MikroORM, Drizzle on
-node-postgres, or plain `pg`), in production too, and reports them to your
+The QueryLens SDK for Node.js. It monitors the queries your app sends to PostgreSQL (through
+[`pg`](https://node-postgres.com/)) and MySQL (through [`mysql2`](https://sidorares.github.io/node-mysql2/)),
+whether via Sequelize, Knex, TypeORM, MikroORM, Drizzle or the drivers directly, in production too, and reports them to your
 [QueryLens backend](../../cloud). The backend finds N+1 queries, writes in a loop, slow,
 failing and large statements and chatty requests, and shows how to fix them in your ORM,
 down to the line.

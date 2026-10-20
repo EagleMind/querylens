@@ -82,6 +82,28 @@ mod tests {
         assert!(fix.code.as_deref().unwrap_or_default().contains("include"), "{fix:?}");
     }
 
+    /// The same N+1 from Sequelize on MySQL: backtick identifiers, `?` placeholders.
+    #[test]
+    fn mysql_n_plus_one_gets_a_sequelize_fix() {
+        let mut queries = vec![
+            r#"{"at":0,"durationMs":2,"sql":"SELECT `id` FROM `orders` AS `Order` WHERE `Order`.`user_id` = ?;","vh":"p","rows":8}"#.to_string(),
+        ];
+        for i in 0..8 {
+            queries.push(format!(
+                r#"{{"at":{},"durationMs":1,"sql":"SELECT `id`, `order_id` FROM `order_items` AS `OrderItem` WHERE `OrderItem`.`order_id` = ?;","vh":"v{i}","rows":2}}"#,
+                1 + i
+            ));
+        }
+        let body = format!(r#"{{"type":"transaction","name":"GET /orders","start":0,"queries":[{}]}}"#, queries.join(","));
+        let statements = envelope::parse(&body).transactions[0].statements();
+        let out = evaluate(&statements, None, &Thresholds::default());
+        assert_eq!(out.orm, Some(Orm::Sequelize));
+        let n1 = out.findings.iter().find(|f| f.finding.kind == FindingKind::NPlusOne).expect("an N+1");
+        assert!(n1.finding.title.contains("SELECT on order_items"), "{}", n1.finding.title);
+        let code = n1.finding.fix.as_ref().and_then(|f| f.code.clone()).unwrap_or_default();
+        assert!(code.contains("include: [{ model: OrderItem"), "{code}");
+    }
+
     #[test]
     fn identical_values_are_a_duplicate_not_an_n_plus_one() {
         let statements: Vec<CapturedStatement> = (0..6)

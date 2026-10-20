@@ -60,3 +60,51 @@ test('without a DSN the SDK stays off', () => {
     if (saved !== undefined) process.env.QUERYLENS_DSN = saved;
   }
 });
+
+test('mysql2: callbacks, pool commands and emitters are recorded, as MySQL', async () => {
+  const { EventEmitter } = require('node:events');
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(q) };
+  class Query extends EventEmitter {
+    constructor(options, cb) {
+      super();
+      this.sql = options.sql;
+      this.values = options.values;
+      this.onResult = cb;
+    }
+  }
+  // Like mysql2: query/execute on a base class, Connection extends it.
+  class BaseConnection {
+    query(sql, values, cb) {
+      const cmd = sql instanceof Query ? sql : new Query({ sql, values: Array.isArray(values) ? values : undefined }, typeof values === 'function' ? values : cb);
+      setImmediate(() => {
+        const rows = cmd.sql.startsWith('INSERT') ? { affectedRows: 3 } : [{ id: 1 }, { id: 2 }];
+        if (cmd.onResult) return cmd.onResult(null, rows, []);
+        for (const r of Array.isArray(rows) ? rows : [rows]) cmd.emit('result', r);
+        cmd.emit('end');
+      });
+      return cmd;
+    }
+    execute(sql, values, cb) {
+      setImmediate(() => cb(Object.assign(new Error("Duplicate entry 'ada@x.io' for key 'users.email'"), { code: 'ER_DUP_ENTRY' })));
+    }
+  }
+  class Connection extends BaseConnection {}
+  sdk._internal.patchMysql2({ Connection }, monitor);
+  const conn = new Connection();
+
+  await new Promise((ok) => conn.query('SELECT * FROM `users` WHERE `id` = ?', [7], ok));
+  await new Promise((ok) => conn.query(new Query({ sql: 'INSERT INTO `events` (`kind`) VALUES (?)', values: ['x'] }, ok)));
+  await new Promise((ok) => conn.query('SELECT 1').once('end', ok));
+  await new Promise((ok) => conn.execute('INSERT INTO `users` (`email`) VALUES (?)', ['ada@x.io'], ok));
+
+  assert.equal(recorded.length, 4);
+  assert.ok(recorded.every((q) => q.dialect === 'mysql'));
+  assert.deepEqual(recorded[0].params, ['7']);
+  assert.equal(recorded[0].rows, 2);
+  assert.equal(recorded[1].rows, 3, 'affected rows of the pool command');
+  assert.equal(recorded[2].rows, 2, 'rows counted from result events');
+  assert.equal(recorded[3].error, "ERROR: Duplicate entry 'ada@x.io' for key 'users.email' (ER_DUP_ENTRY)");
+  assert.match(recorded[0].origin(), /index\.test\.cjs:\d+$/);
+  assert.equal(sdk._internal.mysqlRows([[{}, {}], { affectedRows: 4 }]), 6, 'multiple statements');
+});

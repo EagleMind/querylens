@@ -2,7 +2,10 @@
 //
 // Literals become `?` by the same rules QueryLens fingerprints statements with
 // (querylens-core `normalize_sql`): quoted strings, numbers outside identifiers and
-// booleans; `$1` placeholders, quoted identifiers, keywords and layout stay, comments go.
+// booleans; `$1` / `?` placeholders, quoted identifiers, keywords and layout stay,
+// comments go. Dialects differ in quoting: PostgreSQL quotes identifiers with "…" and
+// doubles quotes inside strings; MySQL quotes identifiers with `…`, may quote strings
+// with "…", and escapes with backslashes. A value is never mistaken for an identifier.
 // So a scrubbed statement groups with the same statement sent in full. The values
 // themselves are reduced to a hash, enough to tell an N+1 (different values each time)
 // from a repeated query. Shared cases: test/scrub-cases.json (also run by the Rust tests).
@@ -13,8 +16,32 @@ const DIGIT = /[0-9]/;
 const BOOLEAN = /^(true|false)$/i;
 const MAX_SQL = 10_000;
 
-/** `{ sql, values }`: the statement with literals replaced by `?`, and the literals. */
-function scrub(sql) {
+/** End of a string literal opened at `i` with `quote`, honoring doubled quotes and (MySQL) backslashes. */
+function stringEnd(sql, i, n, quote, backslashes) {
+  let j = i + 1;
+  while (j < n) {
+    if (backslashes && sql[j] === '\\') {
+      j += 2;
+      continue;
+    }
+    if (sql[j] === quote) {
+      if (sql[j + 1] === quote) {
+        j += 2;
+        continue;
+      }
+      break;
+    }
+    j++;
+  }
+  return j;
+}
+
+/**
+ * `{ sql, values }`: the statement with literals replaced by `?`, and the literals.
+ * `dialect`: 'postgres' (default) or 'mysql'.
+ */
+function scrub(sql, dialect = 'postgres') {
+  const mysql = dialect === 'mysql';
   const values = [];
   let out = '';
   const n = Math.min(sql.length, MAX_SQL);
@@ -22,24 +49,14 @@ function scrub(sql) {
   let i = 0;
   while (i < n) {
     const c = sql[i];
-    if (c === "'") {
-      let j = i + 1;
-      while (j < n) {
-        if (sql[j] === "'") {
-          if (sql[j + 1] === "'") {
-            j += 2;
-            continue;
-          }
-          break;
-        }
-        j++;
-      }
+    if (c === "'" || (c === '"' && mysql)) {
+      const j = stringEnd(sql, i, n, c, mysql);
       values.push(sql.slice(i, j + 1));
       out += '?';
       i = j + 1;
-    } else if (c === '"') {
+    } else if (c === '"' || c === '`') {
       let j = i + 1;
-      while (j < n && sql[j] !== '"') j++;
+      while (j < n && sql[j] !== c) j++;
       out += sql.slice(i, j + 1);
       i = j + 1;
     } else if (c === '/' && sql[i + 1] === '*') {

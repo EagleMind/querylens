@@ -145,12 +145,13 @@ function createMonitor(options, env = process.env) {
 
   const sampleRate = () => (fixedSampleRate === null ? config.liveSampleRate : fixedSampleRate);
 
-  function scrubbed(sql) {
-    let hit = scrubCache.get(sql);
+  function scrubbed(sql, dialect) {
+    const key = dialect === 'mysql' ? `mysql:${sql}` : sql;
+    let hit = scrubCache.get(key);
     if (!hit) {
-      hit = scrub(sql);
+      hit = scrub(sql, dialect);
       if (scrubCache.size >= SCRUB_CACHE) scrubCache.delete(scrubCache.keys().next().value);
-      scrubCache.set(sql, hit);
+      scrubCache.set(key, hit);
     }
     return hit;
   }
@@ -228,10 +229,10 @@ function createMonitor(options, env = process.env) {
     return { name, start: Date.now(), t0: performance.now(), queries: [], dropped: 0, ended: false };
   }
 
-  /** `q`: { started, durationMs, sql, params, rows, error, stack, conn } */
+  /** `q`: { started, durationMs, sql, params, rows, error, origin, conn, dialect } */
   function record(txn, q) {
     try {
-      const shape = sendValues ? null : scrubbed(q.sql);
+      const shape = sendValues ? null : scrubbed(q.sql, q.dialect);
       count(q, shape ? shape.sql : q.sql);
       const t = txn || backgroundTxn();
       if (t.queries.length >= MAX_QUERIES) {

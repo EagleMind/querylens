@@ -75,10 +75,11 @@ fn tokenize(sql: &str) -> Vec<Tok> {
                 i += 1;
                 toks.push(Tok::Value);
             }
-            '"' => {
+            '"' | '`' => {
+                // Quoted identifier: PostgreSQL "…", MySQL `…`.
                 let start = i + 1;
                 i = start;
-                while i < chars.len() && chars[i] != '"' {
+                while i < chars.len() && chars[i] != c {
                     i += 1;
                 }
                 toks.push(Tok::Word { text: chars[start..i.min(chars.len())].iter().collect(), quoted: true });
@@ -366,6 +367,17 @@ mod tests {
         assert_eq!(filters("select * from t where id = any($1::bigint[])")[0].column, "id");
         let update = r#"UPDATE "orders" SET "status"=$1,"total"=$2 WHERE "id" = $3"#;
         assert_eq!(filters(update), vec![Filter { table: Some("orders".into()), column: "id".into(), equality: true }]);
+    }
+
+    #[test]
+    fn mysql_backticks_are_identifiers() {
+        let sql = "SELECT `OrderItem`.`id` FROM `order_items` AS `OrderItem` WHERE `OrderItem`.`order_id` = ? LIMIT 10;";
+        let t = main_table(sql).unwrap();
+        assert_eq!((t.name.as_str(), t.alias.as_deref()), ("order_items", Some("OrderItem")));
+        let f = &filters(sql)[0];
+        assert_eq!((f.table.as_deref(), f.column.as_str(), f.equality), (Some("order_items"), "order_id", true));
+        assert!(has_limit(sql));
+        assert_eq!(kind("INSERT INTO `events` (`kind`) VALUES (?)"), StatementKind::Insert);
     }
 
     #[test]

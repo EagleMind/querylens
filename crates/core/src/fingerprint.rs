@@ -38,11 +38,11 @@ pub fn normalize_sql(sql: &str) -> String {
             }
             out.push('?');
             i += 1;
-        } else if c == '"' {
-            // Quoted identifier: copied as is (it may contain digits).
+        } else if c == '"' || c == '`' {
+            // Quoted identifier (PostgreSQL "…", MySQL `…`): copied as is (it may contain digits).
             let start = i;
             i += 1;
-            while i < chars.len() && chars[i] != '"' {
+            while i < chars.len() && chars[i] != c {
                 i += 1;
             }
             i += 1;
@@ -138,6 +138,12 @@ mod tests {
         // Digits inside identifiers are not literals.
         assert_eq!(normalize_sql("select t1.x from t1"), "select t1.x from t1");
         assert_ne!(query_fp(a), query_fp("SELECT * FROM users WHERE id = 1"));
+    }
+
+    #[test]
+    fn mysql_backticks_and_placeholders() {
+        assert_eq!(normalize_sql("SELECT * FROM `2fa_codes` WHERE `t1`.`id` IN (?, ?) LIMIT 1"), "select * from `2fa_codes` where `t1`.`id` in (?) limit ?");
+        assert_eq!(query_fp("SELECT * FROM `users` WHERE `id` = 7"), query_fp("select * from `users` where `id` = ?"));
     }
 
     #[test]

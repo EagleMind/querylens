@@ -11,11 +11,12 @@ statements, with the fix written for your ORM.**
 [![License: MIT](https://img.shields.io/badge/license-MIT-f2d84a.svg)](LICENSE)
 ![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=white)
 
 </div>
 
 QueryLens works like an error tracker for your database traffic. An SDK in your Node.js
-backend watches every query your ORM sends. It reports the requests that look wrong, with
+backend watches every query your ORM sends to PostgreSQL or MySQL. It reports the requests that look wrong, with
 values removed, to a backend you deploy on Cloudflare's free plan. The web dashboard shows a
 live feed of requests and statements, and the issues it found, grouped across requests and
 releases, each with the line of code responsible and the fix for your ORM.
@@ -80,7 +81,7 @@ integrations/node/   the SDK (querylens-node)
 cloud/               the backend (Worker + Durable Objects) and the dashboard (React)
 crates/core/         the analysis: fingerprints, pattern detection, ORM fixes (Rust)
 crates/wasm/         crates/core as WebAssembly, run by the backend
-dev/                 a demo PostgreSQL and a Sequelize app with the usual ORM mistakes
+dev/                 demo PostgreSQL and MySQL, and a Sequelize app with the usual ORM mistakes
 docs/                architecture
 ```
 
@@ -93,7 +94,7 @@ docs/                architecture
 | `cd cloud && pnpm dev` | Backend and dashboard locally, at http://localhost:5173 |
 | `cd cloud && pnpm build:core` | Rebuild the WebAssembly module after changing `crates/` |
 | `cd cloud && pnpm typecheck` | TypeScript (Worker and dashboard) |
-| `docker compose -f dev/docker-compose.yml up -d` | The demo database for `dev/sequelize-demo` |
+| `docker compose -f dev/docker-compose.yml up -d` | The demo databases (PostgreSQL and MySQL) for `dev/sequelize-demo` |
 
 See [docs/architecture.md](docs/architecture.md) for how the pieces fit.
 

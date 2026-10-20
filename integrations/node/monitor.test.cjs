@@ -15,7 +15,7 @@ const DSN = 'https://k3y@querylens.example.workers.dev/0123456789ab';
 test('scrubbing matches the cases shared with the Rust fingerprint tests', () => {
   const cases = JSON.parse(fs.readFileSync(path.join(__dirname, 'test', 'scrub-cases.json'), 'utf8'));
   for (const c of cases) {
-    const out = scrub(c.sql);
+    const out = scrub(c.sql, c.dialect);
     assert.equal(out.sql, c.scrubbed, c.sql);
     assert.deepEqual(out.values, c.values, c.sql);
   }

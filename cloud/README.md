@@ -1,6 +1,6 @@
 # QueryLens monitoring on Cloudflare
 
-The backend and dashboard for always-on query monitoring. Your app runs the
+The backend and dashboard for always-on query monitoring (PostgreSQL and MySQL apps). Your app runs the
 [`querylens-node`](../integrations/node) SDK with a DSN. The SDK sends requests that look
 problematic, a sample of the others, and per-minute totals for every statement. This Worker
 evaluates them with QueryLens's Rust analysis and shows the results in a web dashboard:

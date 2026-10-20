@@ -1,6 +1,8 @@
-# The demo database for trying QueryLens with dev/sequelize-demo.
-#   docker compose -f dev/docker-compose.yml up -d
-# Connect with (dev only): host=localhost port=54329 db=shop user=querylens (no password)
+# Demo databases for trying QueryLens with dev/sequelize-demo (same data in both).
+#   docker compose -f dev/docker-compose.yml up -d postgres   (or: mysql)
+# Connect with (dev only):
+#   PostgreSQL  postgres://querylens@localhost:54329/shop (no password)
+#   MySQL       mysql://querylens:querylens@localhost:33069/shop
 services:
   postgres:
     image: postgres:17
@@ -17,6 +19,21 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
 
+  mysql:
+    image: mysql:8.4
+    container_name: querylens-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: querylens
+      MYSQL_DATABASE: shop
+      MYSQL_USER: querylens
+      MYSQL_PASSWORD: querylens
+    ports:
+      - "33069:3306"
+    volumes:
+      - mysqldata:/var/lib/mysql
+      - ./mysql-seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
+
 volumes:
-  # Survives `docker compose down` (only `down -v` wipes it).
+  # Survive `docker compose down` (only `down -v` wipes them).
   pgdata:
+  mysqldata:
