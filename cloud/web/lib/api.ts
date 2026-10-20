@@ -1,10 +1,18 @@
 // The dashboard's only way to the backend: typed calls to the Worker's /api/0 routes.
+import type { Issue } from '../../bindings/Issue'
 import type { IssueDetail } from '../../bindings/IssueDetail'
+import type { IssueStatus } from '../../bindings/IssueStatus'
 import type { Project } from '../../bindings/Project'
 import type { QueryShape } from '../../bindings/QueryShape'
 import type { StoredRequest } from '../../bindings/StoredRequest'
 
 const TOKEN_KEY = 'querylens.token'
+
+export interface BackendSettings {
+  publicUrl: string | null
+  /** The address this dashboard was reached at, the default public URL. */
+  dashboardUrl: string
+}
 
 export class ApiError extends Error {
   constructor(
@@ -59,7 +67,15 @@ export const api = {
   /** Checks a token without storing it. */
   verify: (token: string) => call<Project[]>('GET', 'projects', undefined, token),
 
+  /** Backend-wide: the public URL that goes into DSNs (`null`: the dashboard's own address). */
+  settings: () => call<BackendSettings>('GET', 'settings'),
+  savePublicUrl: (publicUrl: string | null) => call<BackendSettings>('PUT', 'settings', { publicUrl }),
+
   projects: () => call<Project[]>('GET', 'projects'),
+  /** A new DSN key: the one given, or a generated one. */
+  setKey: (id: string, key?: string) => call<Project>('PUT', `projects/${id}/key`, key ? { key } : {}),
+  issues: (id: string, p: { status: IssueStatus; limit: number }) => call<Issue[]>('GET', `projects/${id}/issues${query(p)}`),
+  setIssueStatus: (id: string, issue: number, status: IssueStatus) => call<IssueDetail>('PATCH', `projects/${id}/issues/${issue}`, { status }),
   createProject: (name: string) => call<Project>('POST', 'projects', { name }),
   /** The query history, newest first; `before` (a request id) pages back. */
   requests: (id: string, p: { before?: number; limit: number }) => call<StoredRequest[]>('GET', `projects/${id}/requests${query(p)}`),
