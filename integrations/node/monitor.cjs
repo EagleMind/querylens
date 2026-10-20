@@ -25,7 +25,7 @@ const { performance } = require('perf_hooks');
 const { scrub, scrubError, valueHash } = require('./scrub.cjs');
 const { createSourceReader } = require('./source.cjs');
 
-const SDK = 'querylens-node/0.2.0';
+const SDK = 'querylens-node/0.3.0';
 const MAX_QUERIES = 1000;
 const MAX_PARAM = 2000;
 const FLUSH_MS = 5000;

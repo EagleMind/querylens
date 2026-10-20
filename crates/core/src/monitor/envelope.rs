@@ -1,7 +1,7 @@
 //! What SDKs send the server: newline-separated JSON items, a header first.
 //!
 //! ```text
-//! {"type":"header","sdk":"querylens-node/0.2.0","environment":"production","release":"4f2c1e0"}
+//! {"type":"header","sdk":"querylens-node/0.3.0","environment":"production","release":"4f2c1e0"}
 //! {"type":"transaction","name":"GET /orders/:id","start":1760950000000,"durationMs":41.2,"queries":[…]}
 //! {"type":"stats","start":1760950000000,"queries":[{"sql":"SELECT … = ?","calls":120,"totalMs":96.1,…}]}
 //! {"type":"source","origin":"src/orders.js:42","firstLine":35,"lines":["…", …]}
