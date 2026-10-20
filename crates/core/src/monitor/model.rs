@@ -166,6 +166,18 @@ pub struct StoredRequest {
     pub findings: Vec<LiveFinding>,
 }
 
+/// Lines of application code around an `origin` (`file:line`), sent by SDKs with source
+/// context on, so a fix can be written against the code that ran the statement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SourceSnippet {
+    pub origin: String,
+    /// The line number of `lines[0]`.
+    pub first_line: u32,
+    pub lines: Vec<String>,
+}
+
 /// What the dashboard's live view receives over its WebSocket.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(tag = "type", rename_all = "camelCase")]

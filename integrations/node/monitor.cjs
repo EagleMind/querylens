@@ -9,7 +9,9 @@
 // statement is counted into per-shape totals, sent once a minute.
 //
 // Values never leave the process unless `sendValues` is set: SQL is scrubbed (see
-// scrub.cjs), bound parameters are dropped, error messages lose quoted values.
+// scrub.cjs), bound parameters are dropped, error messages lose quoted values. With
+// `sourceContext`, the lines of code around each reported query's origin are sent once
+// (see source.cjs).
 // Sending happens in the background, batched and gzipped; when the backend is
 // unreachable or slow, data is dropped rather than buffered without limit.
 'use strict';
@@ -21,6 +23,7 @@ const zlib = require('zlib');
 const { performance } = require('perf_hooks');
 
 const { scrub, scrubError, valueHash } = require('./scrub.cjs');
+const { createSourceReader } = require('./source.cjs');
 
 const SDK = 'querylens-node/0.2.0';
 const MAX_QUERIES = 1000;
@@ -36,6 +39,9 @@ const MAX_SHAPES = 1000;
 const SCRUB_CACHE = 500;
 /** At most one sent transaction per route and problem in this window. */
 const RATE_WINDOW_MS = 30_000;
+/** Lines of code whose source is sent, per process, and read per flush. */
+const MAX_SOURCE_ORIGINS = 5000;
+const SOURCES_PER_FLUSH = 50;
 
 const DEFAULT_CONFIG = { slowMs: 100, loopMin: 5, chatty: 50, largeRows: 1000, liveSampleRate: 0.05 };
 
@@ -107,8 +113,9 @@ function post(endpoint, key, lines, timeoutMs = 10_000) {
 }
 
 /**
- * Options: { dsn, environment, release, sendValues, sampleRate, send }.
- * `send(lines) → Promise<{ status, body, retryAfter }>` replaces the HTTP transport (tests).
+ * Options: { dsn, environment, release, sendValues, sampleRate, sourceContext, send, sourceReader }.
+ * `send(lines) → Promise<{ status, body, retryAfter }>` replaces the HTTP transport, and
+ * `sourceReader` the file system (tests).
  */
 function createMonitor(options, env = process.env) {
   const target = parseDsn(options.dsn);
@@ -127,6 +134,8 @@ function createMonitor(options, env = process.env) {
         : environment === 'production'
           ? null // the project's setting
           : 1;
+  const sourceContext = options.sourceContext === true || env.QUERYLENS_SOURCE_CONTEXT === '1';
+  const sources = sourceContext ? options.sourceReader || createSourceReader() : null;
   const send = options.send || ((lines) => post(target.endpoint, target.key, lines));
   const header = `${JSON.stringify({ type: 'header', sdk: SDK, environment, release, server: os.hostname() })}\n`;
 
@@ -142,6 +151,9 @@ function createMonitor(options, env = process.env) {
   let stats = new Map();
   let statsStart = Date.now();
   let background = null;
+  /** Origins whose source was read or queued, and those still to read. */
+  const seenOrigins = new Set();
+  let pendingOrigins = [];
 
   const sampleRate = () => (fixedSampleRate === null ? config.liveSampleRate : fixedSampleRate);
 
@@ -164,9 +176,27 @@ function createMonitor(options, env = process.env) {
     while (queue.length > QUEUE_ITEMS || queueBytes > QUEUE_BYTES) queueBytes -= queue.shift().length;
   }
 
+  /** Queue the source of origins seen in sent requests (read in the background, never twice). */
+  function noteOrigin(origin) {
+    if (!sources || !origin || seenOrigins.has(origin) || seenOrigins.size >= MAX_SOURCE_ORIGINS) return;
+    seenOrigins.add(origin);
+    pendingOrigins.push(origin);
+  }
+
+  async function collectSources() {
+    if (!sources || pendingOrigins.length === 0) return;
+    const origins = pendingOrigins.slice(0, SOURCES_PER_FLUSH);
+    pendingOrigins = pendingOrigins.slice(SOURCES_PER_FLUSH);
+    const items = await Promise.all(origins.map((o) => sources.snippet(o)));
+    for (const item of items) if (item) enqueue(item);
+  }
+
   async function flush() {
     if (sending || disabled || queue.length === 0 || Date.now() < backoffUntil) return;
     sending = true;
+    try {
+      await collectSources();
+    } catch {}
     const batch = queue;
     queue = [];
     queueBytes = 0;
@@ -315,6 +345,7 @@ function createMonitor(options, env = process.env) {
       origin: q.origin ? q.origin() : null,
       conn: q.conn,
     };
+    noteOrigin(base.origin);
     if (sendValues) {
       return {
         ...base,
@@ -340,6 +371,7 @@ function createMonitor(options, env = process.env) {
   return {
     environment,
     release,
+    sourceContext,
     startTransaction,
     endTransaction,
     record,
