@@ -15,7 +15,6 @@ slow statements, and get the fix for your ORM, down to the line of code.**
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-free_plan-F38020?logo=cloudflare&logoColor=white)](cloud)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=white)
-![Sequelize](https://img.shields.io/badge/Sequelize-52B0E7?logo=sequelize&logoColor=white)
 [![Rust + WebAssembly](https://img.shields.io/badge/core-Rust_%2B_WebAssembly-B7410E?logo=rust&logoColor=white)](crates/core)
 
 </div>
@@ -23,14 +22,14 @@ slow statements, and get the fix for your ORM, down to the line of code.**
 QueryLens is an error tracker for your database traffic. A small SDK in your Node.js backend
 watches every query your ORM sends to PostgreSQL or MySQL, removes the values, and reports
 the requests that look wrong to a backend you deploy in your own Cloudflare account, on the
-free plan. The web dashboard shows requests live, groups the problems it finds into issues
-across requests and releases, and gives each one the code location responsible and the fix
-written for your ORM.
+free plan. The dashboard lists every statement as it arrives, and each one opens a report:
+the SQL, the line of your code that ran it, the problem it's part of with the fix written for
+your ORM, the rest of its request on a timeline, and its last 24 hours.
 
 ```
 your app + querylens-node ──── values removed, gzipped ────▶ your Cloudflare Worker ──▶ dashboard
-  (pg / mysql2, via any ORM)                                   Rust analysis (WebAssembly)
-                                                               issues, stats, live feed (Durable Objects)
+  (pg / postgres.js / mysql2)                                 Rust analysis (WebAssembly)
+                                                               issues, query history, stats, live feed (Durable Objects)
 ```
 
 ## What it finds
@@ -45,17 +44,33 @@ your app + querylens-node ──── values removed, gzipped ────▶ y
 | **Failing statements** | Errors, including ones the ORM swallowed | The error, its statement and its caller |
 | **Chatty requests** | One request running 50+ statements (adjustable) | Batching, eager loading |
 
-Every issue links to the line of your code that ran the statement, the route, the
-environment and release, and the latest requests where it happened. A resolved issue that
-comes back is flagged as **regressed**.
+Problems are grouped into issues across requests, environments and releases, each with the
+line of your code responsible. An issue you've fixed that comes back is flagged as
+**regressed**; one you mute keeps being counted but stays out of your way.
+
+## The dashboard
+
+- **Live**: every statement of the requests your apps send, newest first, across projects,
+  with the history of the last 7 days a click away. Filter by project, environment, search
+  (SQL, file or route) and the built-in views (all, slow, failed, with issues), hide or show
+  muted issues, and save your own filters, built from conditions on SQL, code location,
+  request, statement type, duration, rows, outcome, issue and release.
+- **Query report**: the statement and its parameters (when the SDK sends them), where it
+  came from in your code, the issue it belongs to with the fix and the other lines where it
+  happens, every statement of its request on a timeline, and its totals over 24 hours. Mute
+  an issue from here.
+- **Settings**: each project's DSN (its key can be changed or regenerated), the connected
+  host that goes into every DSN (editable when the backend runs behind your own domain or a
+  proxy), and sign-out.
 
 ## Requirements
 
 **In your app**
 
 - Node.js 18 or later
-- PostgreSQL through [`pg`](https://node-postgres.com/), or MySQL through
-  [`mysql2`](https://sidorares.github.io/node-mysql2/), used directly or by your ORM
+- PostgreSQL through [`pg`](https://node-postgres.com/) or [`postgres`](https://github.com/porsager/postgres)
+  (postgres.js), or MySQL through [`mysql2`](https://sidorares.github.io/node-mysql2/), used
+  directly or by your ORM
 
 **For the backend**
 
@@ -95,6 +110,8 @@ The dashboard is now at `https://querylens.<your-subdomain>.workers.dev`. See
 ### 2. Create a project
 
 Sign in with your token, create a project for your app, and copy its DSN from **Settings**.
+If the backend is reached at another address than the dashboard (your own domain, a proxy),
+set it as the connected host there first: every DSN uses it.
 
 ### 3. Add the SDK to your app
 
@@ -122,6 +139,15 @@ On Next.js, put it in `instrumentation.ts`:
 export async function register() {
   if (process.env.NEXT_RUNTIME === 'nodejs') await import('querylens-node/register')
 }
+```
+
+With Prisma, add the extension to your client so each query carries the line of your Prisma
+call ([details](integrations/node#prisma)):
+
+```js
+const { queryLens } = require('querylens-node/prisma')
+
+const prisma = new PrismaClient({ adapter }).$extends(queryLens())
 ```
 
 For background jobs and serverless functions, name the work and flush before returning:
@@ -165,7 +191,7 @@ their next report. The
   that's kept, which is how an N+1 (different values) is told apart from a repeated query.
 - **Your queries are never changed, and nothing waits on QueryLens.** Reports go out in the
   background, batched and gzipped. If anything fails inside the SDK, your query runs as if
-  it weren't there.
+  it weren't there. (The one exception is Prisma's opt-in [engine mode](integrations/node#prisma).)
 - **Bounded memory.** When the backend is unreachable the SDK backs off and drops the oldest
   data, never holding more than about 4 MB.
 - **Your data stays in your Cloudflare account.** There is no QueryLens service in between.
@@ -177,8 +203,8 @@ their next report. The
 |---|---|
 | **Runtime** | Node.js 18+ (CommonJS and ESM, Next.js) |
 | **Databases** | PostgreSQL, MySQL |
-| **Drivers** | `pg`, `mysql2` (connections, pools and the promise API) |
-| **Captured through** | Sequelize, Knex, TypeORM, MikroORM, Drizzle, the drivers directly, and Prisma when it connects through `pg` (`@prisma/adapter-pg`) |
+| **Drivers** | `pg`, `postgres` (postgres.js), `mysql2` (connections, pools and the promise API) |
+| **Captured through** | Sequelize, Knex, Kysely, Objection.js, TypeORM, MikroORM, Drizzle (`node-postgres`, `postgres-js`, `mysql2`), the drivers directly, and Prisma with the [`querylens-node/prisma`](integrations/node#prisma) extension (through `@prisma/adapter-pg`, or Prisma 6's Rust engine with `engine: true`) |
 | **Fixes with code** | Sequelize, Prisma, TypeORM, Drizzle, MikroORM, Objection.js, Knex and Kysely ([details](#fixes-by-orm)) |
 | **Fixes naming the right API** | Django, Active Record, SQLAlchemy and Hibernate, which the analysis already recognizes |
 | **Backend** | Cloudflare Workers + Durable Objects (SQLite), free plan |
@@ -205,15 +231,20 @@ identical SQL, so they're recognized together and their fixes show both APIs.
 
 ## Roadmap
 
-**Next**
+**Next**, from what developers report as missing in today's tools:
 
-- **AI-suggested optimizations.** A rewrite for each issue, from the scrubbed statement, the
-  finding and your ORM, with Workers AI or Claude.
+- **Fail tests on N+1 queries or a query budget**, in Jest, Vitest or `node:test`, before
+  they reach production.
+- **Mute until slower, per-statement thresholds** and an in-code `querylens-ignore`, so
+  muting sticks and slow-query alerts fit each statement.
+- **Transactions and pools**: transactions still open when the response is sent, long waits
+  inside a transaction, time spent waiting for a pool connection.
+- **Slower since this release**: each statement and route compared with the previous release.
 - **Alerts** on new and regressed issues, by email or webhook.
-- **Sign-in with Cloudflare Access** instead of a shared token.
 
 **Later**
 
+- **Sign-in with Cloudflare Access** instead of a shared token.
 - **SDKs beyond Node.js**, so the Python, Ruby and Java ORMs the analysis already recognizes
   get monitored too.
 
@@ -221,7 +252,7 @@ identical SQL, so they're recognized together and their fixes show both APIs.
 
 ```
 integrations/node/   the SDK (querylens-node on npm)
-cloud/               the backend (Worker + Durable Objects) and the dashboard (React)
+cloud/               the backend (Worker + Durable Objects) and the dashboard (React, shadcn/ui)
 crates/core/         the analysis: fingerprints, pattern detection, ORM fixes (Rust)
 crates/wasm/         crates/core compiled to WebAssembly for the backend
 dev/                 demo PostgreSQL and MySQL, and a Sequelize app with the usual ORM mistakes

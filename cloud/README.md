@@ -10,7 +10,7 @@ evaluates them with QueryLens's Rust analysis and shows the results in a web das
   and custom filters saved in the browser.
 - **Query report**: one statement's SQL and parameters, the line of code that ran it, the
   issue it belongs to (N+1 queries, duplicate queries, writes in a loop, slow, failing and
-  large statements, chatty requests) with the fix for your ORM (full code for Sequelize), the
+  large statements, chatty requests) with the fix written in your ORM's API, the
   rest of its request, and its totals over the last 24 hours.
 
 - **Settings**: the connected host (the public address that goes into every DSN, editable

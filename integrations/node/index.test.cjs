@@ -2,6 +2,8 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
+const path = require('path');
+const vm = require('vm');
 const sdk = require('./index.cjs');
 
 test('routes group requests by replacing ids', () => {
@@ -107,4 +109,419 @@ test('mysql2: callbacks, pool commands and emitters are recorded, as MySQL', asy
   assert.equal(recorded[3].error, "ERROR: Duplicate entry 'ada@x.io' for key 'users.email' (ER_DUP_ENTRY)");
   assert.match(recorded[0].origin(), /index\.test\.cjs:\d+$/);
   assert.equal(sdk._internal.mysqlRows([[{}, {}], { affectedRows: 4 }]), 6, 'multiple statements');
+});
+
+test('postgres.js: tagged, unsafe and failing queries are recorded where they were written', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(q) };
+  // Like postgres.js: a lazy Promise subclass, run on its first then() by a connection.
+  class Query extends Promise {
+    constructor(strings, args, handler) {
+      let resolve;
+      let reject;
+      super((a, b) => {
+        resolve = a;
+        reject = b;
+      });
+      this.tagged = Array.isArray(strings.raw);
+      this.strings = strings;
+      this.args = args;
+      this.handler = handler;
+      this.executed = false;
+      this.resolve = (x) => resolve(x);
+      this.reject = (x) => reject(x);
+    }
+    static get [Symbol.species]() {
+      return Promise;
+    }
+    async handle() {
+      !this.executed && (this.executed = true) && (await 1) && this.handler(this);
+    }
+    then() {
+      this.handle();
+      return super.then.apply(this, arguments);
+    }
+  }
+  const backends = [{ pid: 101 }, { pid: 102 }];
+  const result = (rows, command, count) => Object.defineProperties(rows, { command: { value: command }, count: { value: count } });
+  const handler = (q) => {
+    q.string = q.tagged ? q.strings.reduce((s, part, i) => `${s}$${i}${part}`) : q.strings[0];
+    q.parameters = q.args.map(String);
+    q.state = backends[q.string.includes('orders') ? 1 : 0];
+    setImmediate(() => {
+      if (q.string.includes('missing')) q.reject(Object.assign(new Error('relation "missing" does not exist'), { severity: 'ERROR', code: '42P01' }));
+      else if (q.string.startsWith('update')) q.resolve(result([], 'UPDATE', 3));
+      else if (q.string.includes(';')) q.resolve([result([{}], 'SELECT', 1), result([{}, {}], 'SELECT', 2), result([], null, null)]);
+      else q.resolve(result([{ id: 1 }, { id: 2 }], 'SELECT', 2));
+    });
+  };
+  function execute(q) {
+    q.string = q.strings[0];
+    setImmediate(() => q.resolve(result([], 'SELECT', 0)));
+  }
+  const sql = (strings, ...args) => new Query(strings, args, handler);
+  const unsafe = (text, args = []) => new Query([text], args, handler);
+
+  const before = sql`select 0`;
+  sdk._internal.patchPostgres(Query, monitor);
+  assert.strictEqual(sdk._internal.patchPostgres(Query, monitor), Query, 'patching twice is a no-op');
+
+  const rows = await sql`select * from users where id = ${42}`;
+  assert.deepEqual([...rows], [{ id: 1 }, { id: 2 }], 'results unchanged');
+  await unsafe('select * from orders where user_id = $1', [7]);
+  await assert.rejects(sql`select * from missing`, /relation "missing" does not exist/);
+  await sql`update users set seen = true where id = ${1}`;
+  await unsafe('select 1; select 1, 2');
+  await new Query(['select typarray from pg_type'], [], execute);
+  await before;
+  const fragment = sql`and id = ${1}`; // embedded in another query, never run itself
+
+  assert.ok(fragment instanceof Query && fragment instanceof Promise);
+  assert.equal(recorded.length, 5, 'internal, unpatched and unrun queries are left out');
+  assert.ok(recorded.every((q) => q.dialect === 'postgres' && q.durationMs >= 0));
+  assert.equal(recorded[0].sql, 'select * from users where id = $1');
+  assert.deepEqual(recorded[0].params, ['42']);
+  assert.equal(recorded[0].rows, 2);
+  assert.match(recorded[0].origin(), /index\.test\.cjs:\d+$/);
+  assert.deepEqual([recorded[0].conn, recorded[1].conn], [1, 2], 'one id per connection');
+  assert.equal(recorded[2].error, 'ERROR: relation "missing" does not exist (42P01)');
+  assert.equal(recorded[3].rows, 3, 'rows written');
+  assert.equal(recorded[4].rows, 3, 'several statements');
+});
+
+test('postgres.js: queries join the request they were created in', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(txn), startTransaction: (name) => ({ name }), endTransaction() {} };
+  globalThis[Symbol.for('querylens.sdk')] = { monitor };
+  class Query extends Promise {
+    constructor(strings, args, handler) {
+      let resolve;
+      super((a) => (resolve = a));
+      this.strings = strings;
+      this.handler = handler;
+      this.resolve = resolve;
+      this.reject = () => {};
+    }
+    static get [Symbol.species]() {
+      return Promise;
+    }
+    async handle() {
+      !this.executed && (this.executed = true) && (await 1) && this.handler(this);
+    }
+    then() {
+      this.handle();
+      return super.then.apply(this, arguments);
+    }
+  }
+  const handler = (q) => setTimeout(() => q.resolve([]), 5);
+  sdk._internal.patchPostgres(Query, monitor);
+  try {
+    // Two jobs at once: each query goes to its own.
+    await Promise.all([
+      sdk.withTransaction('job:a', () => new Query(['select 1'], [], handler)),
+      sdk.withTransaction('job:b', () => new Query(['select 2'], [], handler)),
+    ]);
+  } finally {
+    delete globalThis[Symbol.for('querylens.sdk')];
+  }
+  assert.deepEqual(recorded.map((t) => t.name).sort(), ['job:a', 'job:b']);
+});
+
+
+/** The line `offset` lines from the one calling this, as the SDK reports lines. */
+function here(offset = 0) {
+  const [message, , ...frames] = new Error().stack.split('\n');
+  const [file, line] = sdk._internal.siteOf([message, ...frames].join('\n')).split(':');
+  return `${file}:${Number(line) + offset}`;
+}
+
+/**
+ * A stand-in for Drizzle, compiled as if it were in node_modules (its frames aren't the
+ * app's): its QueryPromise, a query that runs its SQL in then() (which `await` calls from a
+ * microtask, where no app frame is on the stack), a select builder that copies
+ * QueryPromise's methods like Drizzle's mixins, and a transaction that awaits queries of its own.
+ */
+function fakeDrizzle(client) {
+  const source = `
+    class QueryPromise {
+      catch(onRejected) { return this.then(undefined, onRejected); }
+      then(onFulfilled, onRejected) { return this.execute().then(onFulfilled, onRejected); }
+    }
+    patchDrizzle(QueryPromise);
+    class Raw extends QueryPromise {
+      constructor(sql) { super(); this.sql = sql; }
+      async execute() { return client.query(this.sql); }
+    }
+    class Select { constructor(sql) { this.sql = sql; } }
+    for (const name of Object.getOwnPropertyNames(QueryPromise.prototype)) {
+      if (name !== 'constructor') Object.defineProperty(Select.prototype, name, Object.getOwnPropertyDescriptor(QueryPromise.prototype, name));
+    }
+    Select.prototype.execute = Raw.prototype.execute;
+    class Transaction extends QueryPromise {
+      async execute() { await new Raw('begin'); return new Raw('commit'); }
+    }
+    return { QueryPromise, Raw, Select, Transaction };`;
+  const filename = path.join(__dirname, 'node_modules', 'drizzle-orm', 'fake.cjs');
+  return vm.compileFunction(source, ['client', 'patchDrizzle'], { filename })(client, sdk._internal.patchDrizzle);
+}
+
+test('drizzle: queries get the line that awaited them', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(q) };
+  class Client {
+    query(text) {
+      if (text.includes('missing')) return Promise.reject(Object.assign(new Error('relation "missing" does not exist'), { code: '42P01' }));
+      return Promise.resolve({ rowCount: 1, rows: [{ text }] });
+    }
+  }
+  sdk._internal.patchPg({ Client }, monitor);
+  const { Raw, Select, Transaction } = fakeDrizzle(new Client());
+  const lines = [];
+
+  const res = await new Select('select 1');
+  lines.push(here(-1));
+  await Promise.all([new Raw('select 2'), new Select('select 3')]);
+  lines.push(here(-1), here(-1));
+  const code = await new Raw('select * from missing').catch((e) => e.code);
+  lines.push(here(-1));
+  await new Transaction();
+  lines.push(here(-1), here(-1));
+  // The app's own queries after an await get their own line again.
+  await new Client().query('select 4');
+  lines.push(here(-1));
+
+  assert.deepEqual(res.rows, [{ text: 'select 1' }], 'results are unchanged');
+  assert.equal(code, '42P01', 'errors are unchanged');
+  assert.equal(recorded[3].error, 'ERROR: relation "missing" does not exist (42P01)');
+  assert.deepEqual(recorded.map((q) => q.sql), ['select 1', 'select 2', 'select 3', 'select * from missing', 'begin', 'commit', 'select 4']);
+  assert.deepEqual(recorded.map((q) => q.origin()), lines);
+});
+
+test('drizzle: then() stays as it was', async () => {
+  const { QueryPromise, Raw } = fakeDrizzle({ query: async () => 'ok' });
+  const query = new Raw('select 1');
+  assert.equal(typeof query.then, 'function');
+  assert.equal(await query, 'ok');
+  assert.equal(sdk._internal.patchDrizzle(QueryPromise), QueryPromise, 'patching twice does nothing');
+  query.then = (resolve) => resolve('own');
+  assert.equal(await query, 'own', 'an assigned then() is used');
+  assert.equal(await new Raw('select 2'), 'ok');
+});
+
+/**
+ * A stand-in for pg with pg-pool, compiled as if in node_modules: a client calls back from
+ * its socket, in the context it was opened in; a pool of one client opens it asynchronously,
+ * queues `connect` callbacks while it's busy, and calls the next one when the query using it
+ * is done (from that socket); `pool.query` runs on a client once it has one, like pg-pool's.
+ */
+function fakePg() {
+  const source = `
+    class Client {
+      constructor() { this.socket = new AsyncResource('socket'); }
+      query(text, values, cb) {
+        const res = text.includes('missing') ? [Object.assign(new Error('relation "missing" does not exist'), { code: '42P01' })] : [null, { rowCount: 1, rows: [{ text }] }];
+        setTimeout(() => this.socket.runInAsyncScope(cb, null, ...res), 2);
+      }
+    }
+    class Pool {
+      constructor() { this.client = null; this.idle = false; this.waiting = []; }
+      connect(cb) {
+        if (!this.client) {
+          this.client = new Client();
+          return setImmediate(() => cb(null, this.client));
+        }
+        if (this.idle) {
+          this.idle = false;
+          return process.nextTick(() => cb(null, this.client));
+        }
+        this.waiting.push(cb);
+      }
+      release() {
+        const next = this.waiting.shift();
+        if (next) next(null, this.client);
+        else this.idle = true;
+      }
+      query(text, values, cb) {
+        if (typeof values === 'function') cb = values;
+        let result;
+        if (!cb) result = new Promise((ok, fail) => (cb = (err, res) => (err ? fail(err) : ok(res))));
+        this.connect((err, client) => client.query(text, [], (err, res) => {
+          this.release();
+          cb(err, res);
+        }));
+        return result;
+      }
+    }
+    class BoundPool extends Pool {}
+    return { Client, Pool: BoundPool };`;
+  const filename = path.join(__dirname, 'node_modules', 'pg-pool', 'fake.cjs');
+  return vm.compileFunction(source, ['AsyncResource'], { filename })(require('async_hooks').AsyncResource);
+}
+
+test('pg.Pool: queries get the line that called pool.query', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(q) };
+  const pg = sdk._internal.patchPg(fakePg(), monitor);
+  const pool = new pg.Pool();
+  const lines = [];
+
+  const res = await pool.query('select 1');
+  lines.push(here(-1));
+  await new Promise((ok) => pool.query('select 2', ok));
+  lines.push(here(-1));
+  // One client: the second and third wait for it.
+  const [, , code] = await Promise.all([pool.query('select 3'), pool.query('select 4'), pool.query('select * from missing').catch((e) => e.code)]);
+  lines.push(here(-1), here(-1), here(-1));
+  // Inside an ORM operation, the operation's line wins, and it learns the driver ran its SQL.
+  const operation = { site: () => 'app/orders.js:7', viaDriver: false };
+  await Promise.all([pool.query('select 5'), sdk._internal.operations.run(operation, () => pool.query('select 6'))]);
+  lines.push(here(-1), 'app/orders.js:7');
+
+  assert.deepEqual(res.rows, [{ text: 'select 1' }], 'results are unchanged');
+  assert.equal(code, '42P01', 'errors are unchanged');
+  assert.equal(operation.viaDriver, true);
+  assert.deepEqual(recorded.map((q) => q.sql), ['select 1', 'select 2', 'select 3', 'select 4', 'select * from missing', 'select 5', 'select 6']);
+  assert.deepEqual(recorded.map((q) => q.origin()), lines);
+  assert.strictEqual(sdk._internal.patchPool(pg.Pool, ['query'], 'connect'), pg.Pool, 'patching twice is a no-op');
+});
+
+test('pg.Pool: queries waiting for a client stay in their request', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(`${txn.name} ${q.sql}`), startTransaction: (name) => ({ name }), endTransaction() {} };
+  globalThis[Symbol.for('querylens.sdk')] = { monitor };
+  const pool = new (sdk._internal.patchPg(fakePg(), monitor).Pool)();
+  try {
+    // One client, opened in job:a: the others wait for it, and get it from job:a's queries.
+    await Promise.all([
+      sdk.withTransaction('job:a', () => pool.query('select a')),
+      sdk.withTransaction('job:b', () => pool.query('select b')),
+      sdk.withTransaction('job:c', () => new Promise((ok) => pool.query('select c1', () => pool.query('select c2', ok)))),
+      sdk.withTransaction('job:d', () => new Promise((ok) => pool.connect((err, client) => client.query('select d1', [], () => client.query('select d2', [], () => ok(pool.release())))))),
+    ]);
+  } finally {
+    delete globalThis[Symbol.for('querylens.sdk')];
+  }
+  assert.deepEqual(recorded.sort(), ['job:a select a', 'job:b select b', 'job:c select c1', 'job:c select c2', 'job:d select d1', 'job:d select d2']);
+});
+
+/**
+ * A stand-in for mysql2, compiled as if in node_modules: a connection calls back from its
+ * socket, in the context it was opened in; a pool of one connection opens it asynchronously,
+ * queues `getConnection` callbacks while it's busy, and calls the next one when the query
+ * using it is done (from that socket); `pool.query` hands a Query command to a connection
+ * once it has one, `pool.execute` runs `execute` on it, like mysql2's.
+ */
+function fakeMysql2() {
+  const source = `
+    class Query extends EventEmitter {
+      constructor(sql, values, cb) { super(); this.sql = sql; this.values = values; this.onResult = cb; }
+    }
+    function result(sql) {
+      return sql.includes('missing') ? [Object.assign(new Error("Table 'shop.missing' doesn't exist"), { code: 'ER_NO_SUCH_TABLE' })] : [null, [{ sql }]];
+    }
+    class BaseConnection {
+      constructor(pool) { this.pool = pool; this.socket = new AsyncResource('socket'); }
+      query(sql, values, cb) {
+        const cmd = sql instanceof Query ? sql : new Query(sql, Array.isArray(values) ? values : undefined, typeof values === 'function' ? values : cb);
+        setTimeout(() => this.socket.runInAsyncScope(() => {
+          cmd.onResult(...result(cmd.sql));
+          cmd.emit('end');
+        }), 2);
+        return cmd;
+      }
+      execute(sql, values, cb) {
+        const cmd = new Query(sql, values, cb);
+        setTimeout(() => this.socket.runInAsyncScope(() => {
+          cmd.onResult(...result(sql));
+          cmd.emit('end');
+        }), 2);
+        return cmd;
+      }
+      release() { this.pool.release(this); }
+    }
+    class Connection extends BaseConnection {}
+    class BasePool {
+      constructor() { this.conn = null; this.idle = false; this.waiting = []; }
+      getConnection(cb) {
+        if (!this.conn) {
+          this.conn = new Connection(this);
+          return setImmediate(() => cb(null, this.conn));
+        }
+        if (this.idle) {
+          this.idle = false;
+          return process.nextTick(() => cb(null, this.conn));
+        }
+        this.waiting.push(cb);
+      }
+      release() {
+        const next = this.waiting.shift();
+        if (next) next(null, this.conn);
+        else this.idle = true;
+      }
+      query(sql, values, cb) {
+        const cmd = new Query(sql, Array.isArray(values) ? values : undefined, typeof values === 'function' ? values : cb);
+        this.getConnection((err, conn) => conn.query(cmd).once('end', () => conn.release()));
+        return cmd;
+      }
+      execute(sql, values, cb) {
+        if (typeof values === 'function') (cb = values), (values = []);
+        this.getConnection((err, conn) => conn.execute(sql, values, cb).once('end', () => conn.release()));
+      }
+    }
+    class Pool extends BasePool {
+      promise() {
+        const run = (method, sql, values) => new Promise((ok, fail) => this[method](sql, values || [], (err, rows) => (err ? fail(err) : ok([rows]))));
+        return { query: (sql, values) => run('query', sql, values), execute: (sql, values) => run('execute', sql, values) };
+      }
+    }
+    return { Connection, Pool };`;
+  const filename = path.join(__dirname, 'node_modules', 'mysql2', 'fake.cjs');
+  return vm.compileFunction(source, ['AsyncResource', 'EventEmitter'], { filename })(require('async_hooks').AsyncResource, require('events'));
+}
+
+test('mysql2 pool: queries get the line that called pool.query or pool.execute', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(q) };
+  const mysql2 = sdk._internal.patchMysql2(fakeMysql2(), monitor);
+  const pool = new mysql2.Pool();
+  const promisePool = pool.promise();
+  const lines = [];
+
+  const [rows] = await promisePool.query('select 1');
+  lines.push(here(-1));
+  await new Promise((ok) => pool.execute('select 2', [], ok));
+  lines.push(here(-1));
+  // One connection: the second and third wait for it.
+  const [, , code] = await Promise.all([new Promise((ok) => pool.query('select 3', ok)), promisePool.execute('select 4'), promisePool.query('select * from missing').catch((e) => e.code)]);
+  lines.push(here(-1), here(-1), here(-1));
+  // Inside an ORM operation, the operation's line wins, and it learns the driver ran its SQL.
+  const operation = { site: () => 'app/orders.js:7', viaDriver: false };
+  await Promise.all([promisePool.query('select 5'), sdk._internal.operations.run(operation, () => promisePool.execute('select 6'))]);
+  lines.push(here(-1), 'app/orders.js:7');
+
+  assert.deepEqual(rows, [{ sql: 'select 1' }], 'results are unchanged');
+  assert.equal(code, 'ER_NO_SUCH_TABLE', 'errors are unchanged');
+  assert.equal(operation.viaDriver, true);
+  assert.deepEqual(recorded.map((q) => q.sql), ['select 1', 'select 2', 'select 3', 'select 4', 'select * from missing', 'select 5', 'select 6']);
+  assert.deepEqual(recorded.map((q) => q.origin()), lines);
+  assert.strictEqual(sdk._internal.patchPool(mysql2.Pool, ['query', 'execute'], 'getConnection'), mysql2.Pool, 'patching twice is a no-op');
+});
+
+test('mysql2 pool: queries waiting for a connection stay in their request', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(`${txn.name} ${q.sql}`), startTransaction: (name) => ({ name }), endTransaction() {} };
+  globalThis[Symbol.for('querylens.sdk')] = { monitor };
+  const pool = new (sdk._internal.patchMysql2(fakeMysql2(), monitor).Pool)();
+  try {
+    // One connection, opened in job:a: the others wait for it, and get it from job:a's queries.
+    await Promise.all([
+      sdk.withTransaction('job:a', () => pool.promise().query('select a')),
+      sdk.withTransaction('job:b', () => new Promise((ok) => pool.query('select b', ok))),
+      sdk.withTransaction('job:c', () => new Promise((ok) => pool.query('select c1', () => pool.execute('select c2', ok)))),
+      sdk.withTransaction('job:d', () => new Promise((ok) => pool.getConnection((err, conn) => conn.query('select d1', () => conn.execute('select d2', [], () => ok(conn.release())))))),
+    ]);
+  } finally {
+    delete globalThis[Symbol.for('querylens.sdk')];
+  }
+  assert.deepEqual(recorded.sort(), ['job:a select a', 'job:b select b', 'job:c select c1', 'job:c select c2', 'job:d select d1', 'job:d select d2']);
 });
