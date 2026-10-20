@@ -1,0 +1,2 @@
+# Local development secrets (copy to .dev.vars).
+ADMIN_TOKEN=dev-admin-token

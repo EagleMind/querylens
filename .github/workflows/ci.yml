@@ -25,8 +25,39 @@ jobs:
       - run: pnpm lint
       - run: pnpm exec prettier --check src
       - run: pnpm build
-      - name: Node.js query-tagging hook
+      - name: Node.js SDK (capture and monitoring)
         run: node --test "integrations/node/*.test.cjs"
+
+  cloud:
+    name: Monitoring backend (core, WebAssembly, Worker, dashboard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: core
+      - run: cargo test --locked -p querylens-core -p querylens-wasm
+        working-directory: src-tauri
+      - run: cargo build --locked -p querylens-wasm --release --target wasm32-unknown-unknown
+        working-directory: src-tauri
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: cloud/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+        working-directory: cloud
+      # Build with the module just compiled, not the committed one.
+      - run: cp src-tauri/target/wasm32-unknown-unknown/release/querylens_wasm.wasm cloud/core/querylens_core.wasm
+      - run: pnpm typecheck
+        working-directory: cloud
+      - run: pnpm build
+        working-directory: cloud
 
   rust:
     name: Rust (unit tests)

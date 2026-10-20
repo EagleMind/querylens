@@ -9,6 +9,9 @@ edition = "2024"
 rust-version = "1.90"
 default-run = "querylens"
 
+[workspace]
+members = ["core", "wasm"]
+
 [lib]
 name = "querylens_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -44,6 +47,7 @@ mongodb = "3.9.1"
 mysql_async = { version = "0.37.1", default-features = false, features = ["minimal-rust", "native-tls-tls"] }
 native-tls = "0.2.18"
 percent-encoding = "2.3.2"
+querylens-core = { path = "core" }
 postgres-native-tls = "0.5.3"
 reqwest = { version = "0.13.5", features = ["json", "stream"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }

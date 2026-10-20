@@ -1,7 +1,7 @@
 {
   "name": "querylens-node",
   "version": "0.0.0",
-  "description": "QueryLens SDK for Node.js: records the queries your app sends through pg (Sequelize, Knex, TypeORM, Drizzle) so QueryLens can find N+1s and missing indexes, with fixes for your ORM. Local only, off in production.",
+  "description": "QueryLens SDK for Node.js: records the queries your app sends through pg (Sequelize, Knex, TypeORM, Drizzle) so QueryLens can find N+1s and missing indexes, with fixes for your ORM. Local capture with the QueryLens CLI, or always-on monitoring (production-safe, values removed) with a QueryLens backend.",
   "license": "MIT",
   "repository": { "type": "git", "url": "git+https://github.com/EagleMind/querylens.git", "directory": "integrations/node" },
   "homepage": "https://github.com/EagleMind/querylens#readme",
@@ -12,7 +12,7 @@
     "./register": "./register.cjs",
     "./package.json": "./package.json"
   },
-  "files": ["index.cjs", "register.cjs", "README.md"],
+  "files": ["index.cjs", "monitor.cjs", "scrub.cjs", "register.cjs", "README.md"],
   "engines": { "node": ">=18" },
   "scripts": {
     "test": "node --test \"*.test.cjs\""

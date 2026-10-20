@@ -7,7 +7,7 @@ pub mod cli;
 pub mod commands;
 pub mod engines;
 pub mod error;
-pub mod format;
+pub use querylens_core::format;
 pub mod llm;
 pub mod mcp;
 pub mod model;

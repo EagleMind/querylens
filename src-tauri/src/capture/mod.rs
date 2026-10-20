@@ -10,19 +10,20 @@
 //! - [`plans`], [`report`]: plan checks against the database, and the assembled report.
 //! - [`render`], [`baseline`]: outputs (Markdown, terminal) and the CI gate.
 
+// The pure layers (SQL reading, detection, ORM advice) live in the core crate, shared
+// with the Cloudflare backend.
+pub use querylens_core::capture::{detect, orm, sql};
+
 pub mod baseline;
 pub mod compare;
-pub mod detect;
 pub mod ingest;
 pub mod node_hook;
-pub mod orm;
 pub mod pgwire;
 pub mod plans;
 pub mod recorder;
 pub mod render;
 pub mod report;
 pub mod session;
-pub mod sql;
 
 pub use detect::Thresholds;
 pub use plans::PlanDepth;

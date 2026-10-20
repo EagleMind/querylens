@@ -29,7 +29,27 @@ in CI, or give it to your coding agent. Everything stays on your machine.
 
 </div>
 
-## Quick start
+## Monitoring (always on, like an error tracker)
+
+Deploy the [Cloudflare backend](cloud) (it fits the Workers free plan), create a project in its
+dashboard, and give your app the DSN:
+
+```bash
+npm install querylens-node
+```
+
+```bash
+QUERYLENS_DSN=https://<key>@querylens.<you>.workers.dev/<project>
+```
+
+With `require('querylens-node/register')` as the first line of your app, the SDK watches every
+request in production. It sends the problematic ones (with values removed), a sample of the
+rest, and totals for every statement. The dashboard shows a live feed of requests and
+statements, the issues grouped across requests and releases with the fix for your ORM, and the
+statements costing the most time. The detection is the same Rust code as the CLI's, compiled
+to WebAssembly. See [cloud/](cloud) and the [SDK](integrations/node#monitoring).
+
+## Quick start (local capture)
 
 In your Node.js project:
 

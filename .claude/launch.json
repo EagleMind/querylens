@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["exec", "vite", "--port", "1430"],
       "port": 1430
+    },
+    {
+      "name": "cloud",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "cloud", "exec", "cf", "dev"],
+      "port": 5173
     }
   ]
 }

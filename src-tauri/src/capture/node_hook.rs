@@ -8,14 +8,18 @@ use std::path::{Path, PathBuf};
 use crate::error::AppResult;
 use crate::paths;
 
-const INDEX: &str = include_str!("../../../integrations/node/index.cjs");
-const REGISTER: &str = include_str!("../../../integrations/node/register.cjs");
+const FILES: &[(&str, &str)] = &[
+    ("index.cjs", include_str!("../../../integrations/node/index.cjs")),
+    ("monitor.cjs", include_str!("../../../integrations/node/monitor.cjs")),
+    ("scrub.cjs", include_str!("../../../integrations/node/scrub.cjs")),
+    ("register.cjs", include_str!("../../../integrations/node/register.cjs")),
+];
 
 /// Write the SDK where Node can preload it, and return the path to `register.cjs`.
 pub fn install() -> AppResult<PathBuf> {
     let dir = paths::runtime_dir()?.join("querylens-node");
     std::fs::create_dir_all(&dir)?;
-    for (name, content) in [("index.cjs", INDEX), ("register.cjs", REGISTER)] {
+    for &(name, content) in FILES {
         let path = dir.join(name);
         if std::fs::read_to_string(&path).ok().as_deref() != Some(content) {
             std::fs::write(&path, content)?;

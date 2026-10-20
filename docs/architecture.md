@@ -416,6 +416,53 @@ the CLI and runs `querylens check`.
 (CLI/CI, password in the URL). The CLI builds without the `gui` feature (no Tauri, no
 WebView libraries).
 
+## 5d. Monitoring on Cloudflare (v1.5)
+
+Capture is something you start and stop. Monitoring is always on, production included, like
+an error tracker. The SDK reports to a backend on Cloudflare (`cloud/`), which keeps *issues*
+across requests and releases.
+
+```
+app + SDK ──gzipped NDJSON──▶ Worker ──RPC──▶ Project DO ─ querylens-core (WASM) → issues, stats (SQLite)
+dashboard ──/api/0, WebSocket─▶ ┘                          └ live feed (hibernating WebSockets)
+```
+
+**The core crate.** `src-tauri/core` (`querylens-core`) holds everything pure: the capture model
+types and plan warnings, `fingerprint` (query fingerprints), `capture::{sql, detect, orm}`,
+`format`, and `monitor::{envelope, evaluate, digest, model}`. The app crate re-exports it
+(`crate::capture::detect`, `crate::model::*`, … keep their paths). `src-tauri/wasm`
+(`querylens-wasm`) builds it for `wasm32-unknown-unknown` with a small C ABI (`ql_alloc`,
+`ql_digest`, `ql_result_ptr/len`): the host writes a JSON `DigestRequest` (envelope body,
+known ORM, project settings), reads a JSON `Digest` (each request's fingerprinted statements
+with findings and ORM fixes, and per-shape statistics). It has no imports and is about 340 KB.
+
+**The SDK in monitoring mode** (`integrations/node/monitor.cjs`, on when `QUERYLENS_DSN` is
+set). Queries are buffered per HTTP request (or per `withTransaction(name, fn)`; anything
+else goes into 5-second "background" batches). When a request ends, a cheap local check (a
+shape repeated ≥ `loopMin` times, slow, failing or large statements, ≥ `chatty` statements)
+decides whether to send it, rate-limited to one per route and problem every 30 s. Clean
+requests are sampled (`liveSampleRate` in production, all elsewhere). Every statement is
+counted into per-shape totals: every 5 min in production, every minute elsewhere. SQL is
+scrubbed with the same literal rules as `normalize_sql` (shared cases in
+`integrations/node/test/scrub-cases.json`, run by both test suites), so scrubbed and full
+statements share a fingerprint. Values are reduced to a 32-bit hash (`vh`), which the
+envelope turns into one opaque parameter, enough for loop detection to tell an N+1 from a
+duplicate. Sending is batched every 5 s, gzipped, with backoff and bounded queues (oldest
+dropped). The backend's reply carries the project settings, so thresholds changed in the
+dashboard apply on the next report.
+
+**The backend.** The Worker (`worker/index.ts`) only routes: a free-plan Worker gets 10 ms
+of CPU per request, a Durable Object 30 s. One SQLite-backed `Project` Durable Object per app
+checks the DSN key, runs the digest, and upserts issues keyed by `(environment, finding id)`:
+severity only rises, origins merge, a resolved issue seen again reopens as regressed, and an
+ignored one keeps counting. It keeps the latest 10 events per issue (their statements, values
+scrubbed) and hourly per-shape stats for 30 days (daily alarm), and broadcasts `LiveEvent`s
+(`transaction`, `issue`, `throughput`) to dashboards connected over hibernating WebSockets.
+A `Registry` Durable Object lists the projects. The dashboard (`web/`) is static assets on the
+same Worker, signed in with the `ADMIN_TOKEN` secret. Writes are kept within the free plan's
+100k rows a day. Plan checks (re-planning with real values, index tests) stay CLI/app-only:
+the backend has no connection to the database.
+
 ## 6. LLM layer
 
 ```rust

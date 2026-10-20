@@ -1,6 +1,6 @@
 //! Finding problems in captured traffic. Pure: statements in, statistics and
 //! findings out. Plan-based findings and ORM-specific fixes are added later by
-//! [`crate::capture::report`].
+//! the capture report.
 
 mod loops;
 mod rules;
@@ -104,7 +104,7 @@ pub fn sort(findings: &mut [CaptureFinding]) {
 }
 
 /// A finding about one fingerprint, with a stable id (`kind:fingerprint`).
-pub(crate) fn finding(
+pub fn finding(
     kind: FindingKind,
     stat: &FingerprintStat,
     severity: SuggestionSeverity,
@@ -160,7 +160,7 @@ fn loop_finding(
         _ => String::new(),
     };
     detail.push_str(&format!(
-        "{} {} in this capture, {} executions, {} in total.",
+        "{} {}, {} executions, {} in total.",
         l.loops,
         if l.loops == 1 { "loop" } else { "loops" },
         fmt_count(l.executions as f64),

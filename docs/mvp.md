@@ -140,6 +140,15 @@ Technical design: [architecture.md](architecture.md). Product context: [vision.m
 - [x] Database discovery (env, `.env*`, sequelize-cli config), free-port fallback, `.querylens/report.md`
 - [x] Distribution: release builds for 5 platforms, npm (`querylens-cli` + platform packages, `querylens-node`), install scripts, GitHub Action
 
+### v1.5 monitoring on Cloudflare (done)
+- [x] `querylens-core` crate (pure analysis) + `querylens-wasm`; the app re-exports it
+- [x] SDK monitoring mode: DSN, per-request buffering, local pre-filter, rate limits, sampling, per-shape stats, scrubbed values with value hashes, gzip batches with backoff, `withTransaction`, `flush`
+- [x] Worker + `Project` / `Registry` Durable Objects (SQLite): ingest, issues with regression, events, hourly stats, live WebSocket feed
+- [x] Dashboard: Live (requests, statements per minute), Evaluation (issues with fixes, top statements), Settings (DSN, thresholds, sampling, projects)
+- [ ] Alerts (email via Cloudflare Email Service, webhooks)
+- [ ] Plan checks for monitored statements (needs a database the backend can reach, e.g. Hyperdrive)
+- [ ] Sign-in with Cloudflare Access instead of a shared token
+
 ### Next for capture
 - [ ] Dedicated advisors for Prisma, TypeORM, Django, Active Record (code templates like Sequelize)
 - [ ] MySQL proxy (handshake without TLS termination needs `caching_sha2_password` RSA exchange)

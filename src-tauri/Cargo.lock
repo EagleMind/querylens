@@ -4336,6 +4336,7 @@ dependencies = [
  "native-tls",
  "percent-encoding",
  "postgres-native-tls",
+ "querylens-core",
  "reqwest",
  "rusqlite",
  "serde",
@@ -4352,6 +4353,24 @@ dependencies = [
  "url",
  "uuid",
  "which",
+]
+
+[[package]]
+name = "querylens-core"
+version = "0.1.0"
+dependencies = [
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "ts-rs",
+]
+
+[[package]]
+name = "querylens-wasm"
+version = "0.1.0"
+dependencies = [
+ "querylens-core",
+ "serde_json",
 ]
 
 [[package]]

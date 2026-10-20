@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::capture::sql::shape;
 use crate::model::{CapturedStatement, FingerprintStat, OriginCount};
-use crate::plan::fingerprint;
+use crate::fingerprint;
 
 /// Origins listed per fingerprint / finding.
 const TOP_ORIGINS: usize = 5;
