@@ -4,6 +4,8 @@ import { type ReactNode, useEffect, useState } from 'react'
 import type { LiveFinding } from '../../bindings/LiveFinding'
 import type { Project } from '../../bindings/Project'
 import { ACTION_FILL, CodeBlock, CopyButton, ErrorNote, Facts, Prose, SeverityDot, SlowMark, StatementTypeLabel } from '@/components/common'
+import { CodeSnippet } from '@/components/Code'
+import { FixActions } from '@/components/FixActions'
 import { Sql } from '@/components/Sql'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -113,6 +115,12 @@ function LastDay({ q }: { q: LiveQuery }) {
     () => api.shape(q.request.projectId, { fingerprint: q.statement.fingerprint, environment: q.request.environment, hours: 24 }),
     [q.request.projectId, q.statement.fingerprint, q.request.environment],
   )
+  const regressions = useAsync(
+    () => api.regressions(q.request.projectId, q.request.environment),
+    [q.request.projectId, q.request.environment],
+  )
+  const report = regressions.data?.[0]
+  const regressed = report?.regressions.filter((g) => g.fingerprint === q.statement.fingerprint) ?? []
   const s = shape.data
   return (
     <Card className="gap-4">
@@ -146,6 +154,20 @@ function LastDay({ q }: { q: LiveQuery }) {
         ) : (
           <p className="text-sm text-muted-foreground">No statistics for this statement yet. The SDK reports them once a minute.</p>
         )}
+        {report &&
+          regressed.map((g) => (
+            <p
+              key={g.regression}
+              className={cn(
+                'mt-4 rounded-md border px-3 py-2 text-sm leading-relaxed',
+                g.regression === 'failing' ? 'border-destructive/40 bg-destructive/10' : 'border-warning/50 bg-warning/10',
+              )}
+            >
+              {g.regression === 'slower'
+                ? `Slower ${report.baseline.kind === 'release' ? `since release ${report.baseline.release}` : 'over the last day'}: ${fmtMs(g.before.meanMs)} per run before, ${fmtMs(g.after.meanMs)} now.`
+                : `Failing more ${report.baseline.kind === 'release' ? `since release ${report.baseline.release}` : 'over the last day'}: ${(g.before.errorRate * 100).toFixed(1)}% of runs before, ${(g.after.errorRate * 100).toFixed(1)}% now.`}
+            </p>
+          ))}
       </CardContent>
     </Card>
   )
@@ -197,6 +219,29 @@ function Statement({ q }: { q: LiveQuery }) {
             </div>
           )
         )}
+      </CardContent>
+    </Card>
+  )
+}
+
+/** The code around the statement's origin, when the SDK sends source context; nothing otherwise. */
+function SourceCard({ q }: { q: LiveQuery }) {
+  const origin = q.statement.origin
+  const source = useAsync(
+    () => (origin ? api.source(q.request.projectId, origin) : Promise.resolve(null)),
+    [q.request.projectId, origin],
+  )
+  if (!origin || !source.data) return null
+  return (
+    <Card className="gap-4">
+      <CardHeader>
+        <CardTitle>Your code</CardTitle>
+        <CardDescription>
+          Around <code className="font-mono text-xs">{origin}</code>, as the SDK last read it.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <CodeSnippet snippet={source.data} />
       </CardContent>
     </Card>
   )
@@ -298,6 +343,7 @@ function IssueCard({ projectId, finding, muted }: { projectId: string; finding: 
                 </ul>
               </div>
             )}
+            <FixActions projectId={projectId} issueId={finding.issueId} />
           </>
         )}
       </CardContent>
@@ -488,6 +534,7 @@ export function QueryPage({ at, projects, requests, muted }: { at: QueryRef; pro
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <div className="grid min-w-0 gap-6">
           <Statement q={q} />
+          <SourceCard q={q} />
           {q.findings.map((f) => (
             <IssueCard key={f.issueId} projectId={q.request.projectId} finding={f} muted={muted} />
           ))}

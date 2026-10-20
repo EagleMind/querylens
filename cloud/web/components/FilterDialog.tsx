@@ -1,6 +1,7 @@
 import { PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
 import { type FormEvent, useEffect, useMemo, useState } from 'react'
 
+import { ErrorNote } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -18,6 +19,7 @@ import {
   matchesFilter,
   newCondition,
 } from '@/lib/filters'
+import { api } from '@/lib/api'
 import type { LiveQuery } from '@/lib/queries'
 
 function blank(): CustomFilter {
@@ -109,12 +111,59 @@ function ConditionRow({
   )
 }
 
+/** A description turned into conditions by the backend (Workers AI), for the user to check. */
+function Describe({ releases, onDraft }: { releases: string[]; onDraft: (d: Omit<CustomFilter, 'id'>) => void }) {
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const fill = async () => {
+    if (!text.trim() || busy) return
+    setBusy(true)
+    setError(null)
+    try {
+      onDraft((await api.draftFilter({ text, releases })).draft)
+    } catch (e) {
+      setError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="grid gap-2 rounded-md border border-primary/25 bg-primary/[0.04] p-3">
+      <Label htmlFor="filter-describe">Describe the queries to show</Label>
+      <div className="flex gap-2">
+        <Input
+          id="filter-describe"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            // Enter fills in the conditions rather than saving the filter.
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              void fill()
+            }
+          }}
+          placeholder="e.g. slow writes on checkout since the last release"
+          maxLength={300}
+          autoFocus
+        />
+        <Button type="button" variant="outline" disabled={!text.trim() || busy} onClick={fill}>
+          {busy ? 'Filling in…' : 'Fill in'}
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">Workers AI writes the conditions below. Check them, and how many queries they match, before saving.</p>
+      <ErrorNote error={error} />
+    </div>
+  )
+}
+
 /** Create or edit a custom filter. `queries` is the current list, for the match count. */
 export function FilterDialog({
   open,
   onOpenChange,
   editing,
   queries,
+  releases,
   onSave,
   onDelete,
 }: {
@@ -122,6 +171,8 @@ export function FilterDialog({
   onOpenChange: (open: boolean) => void
   editing: CustomFilter | null
   queries: LiveQuery[]
+  /** Releases in the list, newest first. */
+  releases: string[]
   onSave: (f: CustomFilter) => void
   onDelete: (id: string) => void
 }) {
@@ -156,6 +207,13 @@ export function FilterDialog({
             <DialogDescription>Saved in this browser. It appears next to the built-in views on the Live page.</DialogDescription>
           </DialogHeader>
 
+          {!editing && (
+            <Describe
+              releases={releases}
+              onDraft={(d) => setDraft((x) => ({ ...x, name: x.name.trim() ? x.name : d.name, match: d.match, conditions: d.conditions }))}
+            />
+          )}
+
           <div className="grid gap-2">
             <Label htmlFor="filter-name">Name</Label>
             <Input
@@ -163,7 +221,7 @@ export function FilterDialog({
               value={draft.name}
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
               placeholder="e.g. Slow checkout queries"
-              autoFocus
+              autoFocus={editing !== null}
             />
           </div>
 

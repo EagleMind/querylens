@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import type { Project } from '../../bindings/Project'
 import { FilterDialog } from '@/components/FilterDialog'
+import { Regressions } from '@/components/Regressions'
 import { Sql } from '@/components/Sql'
 import { CodeBlock, ConnectionStatus, ErrorNote, SeverityDot, SlowMark, StatementTypeLabel } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
@@ -185,6 +186,9 @@ export function LivePage({ projects, feed, muted }: { projects: Project[]; feed:
     [requests, projectId, view.environment, view.mutedIssues, muted.isMuted],
   )
   const environments = useMemo(() => [...new Set(feed.requests.map((r) => r.environment))].sort(), [feed.requests])
+  /** Newest first: what "the last release" means when a filter is described. */
+  const releases = useMemo(() => [...new Set(feed.requests.flatMap((r) => (r.release ? [r.release] : [])))], [feed.requests])
+  const scopeProjects = useMemo(() => (projectId === ALL ? projects : projects.filter((p) => p.id === projectId)), [projects, projectId])
   const searched = useMemo(() => scoped.filter((q) => matchesSearch(q, search)), [scoped, search])
   const slowMs = (q: LiveQuery) => byId.get(q.request.projectId)?.settings.slowMs ?? Infinity
   const counts = useMemo(
@@ -333,6 +337,8 @@ export function LivePage({ projects, feed, muted }: { projects: Project[]; feed:
         </Button>
       </div>
 
+      <Regressions projects={scopeProjects} environment={view.environment === ALL ? null : view.environment} />
+
       <div className="overflow-hidden rounded-lg border">
         {!feed.loaded && feed.requests.length === 0 ? (
           <div className="grid gap-3 p-4" aria-label="Loading queries">
@@ -410,6 +416,7 @@ export function LivePage({ projects, feed, muted }: { projects: Project[]; feed:
         onOpenChange={(o) => setDialog((d) => ({ ...d, open: o }))}
         editing={dialog.editing}
         queries={scoped}
+        releases={releases}
         onSave={saveFilter}
         onDelete={deleteFilter}
       />

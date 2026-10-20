@@ -3,6 +3,7 @@
 import type { CapturedStatement } from '../../bindings/CapturedStatement'
 import type { LiveFinding } from '../../bindings/LiveFinding'
 import type { StoredRequest } from '../../bindings/StoredRequest'
+import { STATEMENT_TYPES, type StatementType } from '../../shared/labels'
 import type { QueryRef } from './router'
 
 /** A stored request and the project it belongs to (request ids are per project). */
@@ -14,15 +15,7 @@ export interface LiveRequest extends StoredRequest {
   arrivedAt?: number
 }
 
-export type StatementType = 'select' | 'insert' | 'update' | 'delete' | 'other'
-
-export const STATEMENT_TYPES: Record<StatementType, string> = {
-  select: 'SELECT',
-  insert: 'INSERT',
-  update: 'UPDATE',
-  delete: 'DELETE',
-  other: 'Other',
-}
+export { STATEMENT_TYPES, type StatementType }
 
 /** What a statement does, the one thing colour encodes about it (`--read` / `--write`). */
 export type StatementAction = 'read' | 'write' | 'other'
