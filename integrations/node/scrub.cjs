@@ -3,7 +3,7 @@
 // Literals become `?` by the same rules QueryLens fingerprints statements with
 // (querylens-core `normalize_sql`): quoted strings, numbers outside identifiers and
 // booleans; `$1` / `?` placeholders, quoted identifiers, keywords and layout stay,
-// comments go. Dialects differ in quoting: PostgreSQL quotes identifiers with "…" and
+// comments go (SQLite's `?1`, `:name`, `@name` and `$name` placeholders stay too). Dialects differ in quoting: PostgreSQL quotes identifiers with "…" and
 // doubles quotes inside strings; MySQL quotes identifiers with `…`, may quote strings
 // with "…", and escapes with backslashes. A value is never mistaken for an identifier.
 // So a scrubbed statement groups with the same statement sent in full. The values
@@ -65,7 +65,8 @@ function scrub(sql, dialect = 'postgres') {
       i = j + 2;
     } else if (c === '-' && sql[i + 1] === '-') {
       while (i < n && sql[i] !== '\n') i++;
-    } else if (c === '$' && DIGIT.test(sql[i + 1] || '')) {
+    } else if ((c === '$' || c === '?') && DIGIT.test(sql[i + 1] || '')) {
+      // Numbered placeholders: `$1` (PostgreSQL), `?1` (SQLite).
       let j = i + 1;
       while (j < n && DIGIT.test(sql[j])) j++;
       out += sql.slice(i, j);

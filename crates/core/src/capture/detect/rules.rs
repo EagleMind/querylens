@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 
 use super::{Thresholds, finding, stats};
+use crate::capture::mongo;
 use crate::capture::sql::shape;
 use crate::format::{fmt_count, fmt_ms};
 use crate::model::{CaptureFinding, CapturedStatement, FindingKind, FingerprintStat, StatementKind, SuggestionSeverity};
@@ -137,8 +138,11 @@ pub fn chatty(statements: &[CapturedStatement], by_fp: &HashMap<&str, &Fingerpri
     out
 }
 
-/// "SELECT on order_items", "INSERT into users".
+/// "SELECT on order_items", "INSERT into users"; for MongoDB "find on order_items".
 pub fn subject(stat: &FingerprintStat) -> String {
+    if let Some(op) = mongo::parse(&stat.sample_sql) {
+        return format!("{} on {}", op.command, op.target);
+    }
     let table = stat.tables.first().map(String::as_str);
     match (stat.kind, table) {
         (StatementKind::Select, Some(t)) => format!("SELECT on {t}"),

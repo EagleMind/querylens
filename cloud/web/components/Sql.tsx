@@ -1,4 +1,4 @@
-// SQL with light syntax colouring: keywords, strings, numbers and placeholders.
+// SQL (and MongoDB commands) with light syntax colouring: keywords, strings, numbers and placeholders.
 // A small tokenizer, not a parser: it only has to colour statements the SDK sent.
 import { memo } from 'react'
 
@@ -9,7 +9,9 @@ const KEYWORDS = new Set(
     'select from where and or not in is null as on join left right inner outer full cross using group by order ' +
     'having limit offset insert into values update set delete returning distinct union all exists between like ' +
     'ilike case when then else end asc desc create table index alter drop with begin commit rollback for share ' +
-    'nowait skip locked default count sum avg min max coalesce true false primary key references unique'
+    'nowait skip locked default count sum avg min max coalesce true false primary key references unique ' +
+    // MongoDB commands and cursor methods, as the SDK writes them (`db.orders.find(…).sort(…)`).
+    'find aggregate findandmodify sort'
   ).split(' '),
 )
 

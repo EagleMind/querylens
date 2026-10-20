@@ -53,7 +53,7 @@ impl Generic {
             Some(Orm::SqlAlchemy) => "`selectinload()` for collections, `joinedload()` for many-to-one",
             Some(Orm::Hibernate) => "`JOIN FETCH` in the query, an entity graph, or `@BatchSize` on the association",
             // These have their own advisors.
-            Some(Orm::Sequelize | Orm::Prisma | Orm::TypeOrm | Orm::Drizzle | Orm::MikroOrm | Orm::Objection | Orm::Knex)
+            Some(Orm::Sequelize | Orm::Prisma | Orm::TypeOrm | Orm::Drizzle | Orm::MikroOrm | Orm::Objection | Orm::Knex | Orm::Mongoose | Orm::MongoDb)
             | None => "a JOIN, or one `WHERE key IN (…)` query for all rows",
         }
     }
@@ -64,7 +64,7 @@ impl Generic {
             Some(Orm::ActiveRecord) => "`insert_all`",
             Some(Orm::SqlAlchemy) => "`session.execute(insert(Model), rows)`",
             Some(Orm::Hibernate) => "JDBC batching (`hibernate.jdbc.batch_size`)",
-            Some(Orm::Sequelize | Orm::Prisma | Orm::TypeOrm | Orm::Drizzle | Orm::MikroOrm | Orm::Objection | Orm::Knex)
+            Some(Orm::Sequelize | Orm::Prisma | Orm::TypeOrm | Orm::Drizzle | Orm::MikroOrm | Orm::Objection | Orm::Knex | Orm::Mongoose | Orm::MongoDb)
             | None => "a multi-row `INSERT … VALUES (…), (…)`",
         }
     }

@@ -3,4 +3,4 @@
 /**
  * The ORM that generated the statements, recognised from their SQL style or tags.
  */
-export type Orm = "sequelize" | "prisma" | "type_orm" | "drizzle" | "mikro_orm" | "objection" | "knex" | "django" | "active_record" | "sql_alchemy" | "hibernate";
+export type Orm = "sequelize" | "prisma" | "type_orm" | "drizzle" | "mikro_orm" | "objection" | "knex" | "mongoose" | "mongo_db" | "django" | "active_record" | "sql_alchemy" | "hibernate";

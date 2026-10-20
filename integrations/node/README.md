@@ -1,9 +1,11 @@
 # querylens-node
 
 The QueryLens SDK for Node.js. It monitors the queries your app sends to PostgreSQL (through
-[`pg`](https://node-postgres.com/) or [`postgres`](https://github.com/porsager/postgres), postgres.js)
-and MySQL (through [`mysql2`](https://sidorares.github.io/node-mysql2/)),
-whether via Sequelize, Knex, TypeORM, MikroORM, Drizzle or the drivers directly, in production too, and reports them to your
+[`pg`](https://node-postgres.com/), [`postgres`](https://github.com/porsager/postgres) or Neon's
+serverless driver), MySQL (through [`mysql2`](https://sidorares.github.io/node-mysql2/) or
+PlanetScale's serverless driver), SQLite (through `better-sqlite3`, `sqlite3`, `node:sqlite` or
+libSQL / Turso) and MongoDB (through the `mongodb` driver or Mongoose), whether via Sequelize,
+Knex, TypeORM, MikroORM, Drizzle, Mongoose or the drivers directly, in production too, and reports them to your
 [QueryLens backend](../../cloud). The backend finds N+1 queries, writes in a loop, slow,
 failing and large statements and chatty requests, and shows how to fix them in your ORM,
 down to the line.
@@ -93,6 +95,11 @@ The `BEGIN` and `COMMIT` of interactive transactions have no line of code.
 
 Each statement carries its timing, rows, error, the first line of your code in the call stack
 (outside `node_modules`), and the route (ids replaced by `:id`).
+
+MongoDB commands are sent as value-free shapes: `db.orders.find({"userId": ?})`, or
+`Order.find(…)` through a Mongoose model. A cursor read in batches counts as one query. The SDK
+turns on the driver's command monitoring when a client connects; if your app listens to
+`commandStarted` events itself, it receives them from then on too.
 
 - **The code around those lines, if you turn it on** (`sourceContext: true` or
   `QUERYLENS_SOURCE_CONTEXT=1`): the 10 lines before and after each line of your code that ran

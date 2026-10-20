@@ -14,10 +14,25 @@ dashboard ──/api/0, WebSocket────────────▶ ┘    
 
 ## 1. The SDK (`integrations/node`)
 
-`index.cjs` patches `pg.Client.prototype.query` and mysql2's base connection `query` /
-`execute` (shared by connections, pools and the promise API; pools hand over ready `Query`
-commands, whose `onResult` is wrapped). It does this through a `Module._load` hook and the
-app's already-loaded copies for ESM. It times every query (promise and callback forms) and records
+Each driver has its own module in `drivers/`, sharing `context.cjs` (the request, the ORM
+operation, the line of code) and `record.cjs` (timing a statement or a batch). `index.cjs`
+sets them up through a `Module._load` hook and the app's already-loaded copies, from two
+tables: drivers with one build, and drivers whose CommonJS and ES module builds load
+separate classes (Neon, PlanetScale, libSQL), patched file by file (`drivers/builds.cjs`).
+
+- `pg.Client.prototype.query`, and mysql2's base connection `query` / `execute` (shared by
+  connections, pools and the promise API; pools hand over ready `Query` commands, whose
+  `onResult` is wrapped). Neon's WebSocket `Pool` and `Client` are a bundled `pg`.
+- Neon's HTTP queries are lazy thenables (`NeonQueryPromise`): timed around `execute`, the
+  line taken when `await` reads `then`. PlanetScale: `Connection.execute`. libSQL: each
+  client's and transaction's `execute` and `batch` (a batch's time shared by its statements).
+- SQLite: better-sqlite3's and node:sqlite's statement methods (synchronous; failed
+  `prepare`s recorded), sqlite3's Statement and Database methods (callbacks). node:sqlite is
+  patched only once the app has loaded it, since loading it prints a warning.
+- MongoDB: `connect()` turns the driver's command monitoring on, and each data command
+  becomes a statement shaped by `drivers/mongo-shape.cjs` (`db.orders.find({"userId": ?})`,
+  or `Order.find(…)` through Mongoose, whose operations carry the model and the line).
+  `getMore` batches are folded into the query that opened the cursor. It times every query (promise and callback forms) and records
 its rows, error, and the first stack frame outside `node_modules`. Async stack traces reach
 the user's `await`. Stacks are captured cheaply and only formatted if the request is sent. An
 `AsyncLocalStorage` context per HTTP request holds its *transaction*;
@@ -66,7 +81,13 @@ the core checks that its origin's line is among the lines and keeps at most 41.
 `ql_digest`, `ql_result_ptr` / `ql_result_len`). The host writes a JSON `DigestRequest`
 (envelope body, the ORM known so far, project settings) and reads back a JSON `Digest` (each
 transaction's fingerprinted statements with findings and fixes, plus per-shape statistics).
-It needs no imports and is about 340 KB.
+It needs no imports and is about 450 KB.
+
+MongoDB operations reach the core as the SDK's canonical text. `capture/mongo.rs` parses it,
+and `capture/sql/shape` answers for it (kind, collection, filter fields, limit), so detection
+runs unchanged. `Orm::Mongoose` and `Orm::MongoDb` (the driver) have their own advisors; SQL
+and MongoDB are recognised apart, and each finding gets the advisor of the API its statement
+went through.
 
 ## 3. The backend (`cloud/worker`)
 

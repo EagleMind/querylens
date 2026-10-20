@@ -139,6 +139,10 @@ pub enum Orm {
     Objection,
     /// Knex, or Kysely: the two build byte-identical SQL.
     Knex,
+    /// MongoDB through Mongoose models.
+    Mongoose,
+    /// MongoDB through the official driver's collections.
+    MongoDb,
     Django,
     ActiveRecord,
     SqlAlchemy,
@@ -155,6 +159,8 @@ impl Orm {
             Orm::MikroOrm => "MikroORM",
             Orm::Objection => "Objection.js",
             Orm::Knex => "Knex / Kysely",
+            Orm::Mongoose => "Mongoose",
+            Orm::MongoDb => "MongoDB driver",
             Orm::Django => "Django ORM",
             Orm::ActiveRecord => "Active Record",
             Orm::SqlAlchemy => "SQLAlchemy",

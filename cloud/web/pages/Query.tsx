@@ -18,8 +18,8 @@ import {
   type LiveQuery,
   type LiveRequest,
   STATEMENT_ACTION,
-  STATEMENT_TYPES,
   STORED_STATEMENT_LIMIT,
+  mongoCommand,
   queriesOf,
   valuesSent,
   withProject,
@@ -179,7 +179,7 @@ function Statement({ q }: { q: LiveQuery }) {
   return (
     <Card className="gap-4">
       <CardHeader>
-        <CardTitle>SQL</CardTitle>
+        <CardTitle>{mongoCommand(s.sql) ? 'MongoDB command' : 'SQL'}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-4">
         <CodeBlock code={s.sql} sql />
@@ -511,7 +511,7 @@ export function QueryPage({ at, projects, requests, muted }: { at: QueryRef; pro
         <BackLink />
         <div className="flex flex-wrap items-center gap-2">
           <Badge variant="outline" className="py-1">
-            <StatementTypeLabel type={q.type} className="text-foreground" />
+            <StatementTypeLabel type={q.type} label={q.verb} className="text-foreground" />
           </Badge>
           {s.error && (
             <Badge variant="outline" className="border-destructive/40 text-destructive">
@@ -526,7 +526,7 @@ export function QueryPage({ at, projects, requests, muted }: { at: QueryRef; pro
           ))}
         </div>
         <h1 className="text-xl font-semibold tracking-tight">
-          {fmtMs(s.durationMs)} {STATEMENT_TYPES[q.type] === 'Other' ? 'statement' : STATEMENT_TYPES[q.type]} in{' '}
+          {fmtMs(s.durationMs)} {q.verb === 'Other' ? 'statement' : q.verb} in{' '}
           <span className="font-mono text-lg">{q.request.name}</span>
         </h1>
       </div>

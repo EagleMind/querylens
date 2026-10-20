@@ -182,6 +182,32 @@ mod tests {
         assert_eq!(d.stats[0].tables, vec!["users".to_string()]);
     }
 
+    /// SQLite, as Sequelize and Drizzle write it (backticks, `?` and `?1` placeholders):
+    /// recognised and evaluated like PostgreSQL and MySQL.
+    #[test]
+    fn sqlite_statements_are_evaluated_like_the_others() {
+        let n_plus_one = |parent: &str, child: &str| {
+            let mut queries = vec![serde_json::json!({ "at": 0, "durationMs": 1, "sql": parent, "vh": "p", "rows": 6 })];
+            for i in 0..6 {
+                queries.push(serde_json::json!({ "at": 1 + i, "durationMs": 1, "sql": child, "vh": format!("c{i}"), "rows": 2 }));
+            }
+            let txn = serde_json::json!({ "type": "transaction", "name": "GET /orders", "start": 0, "queries": queries });
+            digest(&DigestRequest { body: txn.to_string(), orm: None, settings: ProjectSettings::default() })
+        };
+        let sequelize = n_plus_one(
+            "SELECT `id`, `userId` FROM `Orders` AS `Order` WHERE `Order`.`userId` = ?;",
+            "SELECT `id`, `orderId` FROM `OrderItems` AS `OrderItem` WHERE `OrderItem`.`orderId` = ?;",
+        );
+        assert_eq!(sequelize.orm, Some(Orm::Sequelize));
+        assert!(sequelize.transactions[0].findings.iter().any(|f| f.finding.kind == FindingKind::NPlusOne));
+        let drizzle = n_plus_one(
+            r#"select "id", "user_id" from "orders" where "orders"."user_id" = ?1"#,
+            r#"select "id", "order_id" from "order_items" where "order_items"."order_id" = ?1"#,
+        );
+        assert_eq!(drizzle.orm, Some(Orm::Drizzle));
+        assert!(drizzle.transactions[0].findings.iter().any(|f| f.finding.kind == FindingKind::NPlusOne));
+    }
+
     #[test]
     fn settings_tune_detection() {
         let queries: Vec<String> = (0..3)

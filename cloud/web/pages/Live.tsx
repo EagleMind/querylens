@@ -84,7 +84,7 @@ function QueryRow({ q, project, showProject }: { q: LiveQuery; project: Project 
     >
       <TableCell className="font-mono text-xs text-muted-foreground tabular">{fmtTime(q.at)}</TableCell>
       <TableCell className="hidden sm:table-cell">
-        <StatementTypeLabel type={q.type} />
+        <StatementTypeLabel type={q.type} label={q.verb} />
       </TableCell>
       <TableCell className="max-w-0">
         <div className="flex min-w-0 items-center gap-2">

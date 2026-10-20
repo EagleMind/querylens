@@ -15,16 +15,20 @@ pub struct Facts {
     pub key: Option<String>,
     pub parent_table: Option<String>,
     pub parent_alias: Option<String>,
+    /// Every column (MongoDB: field) the statement filters on, in order: what an index would cover.
+    pub fields: Vec<String>,
 }
 
 impl Facts {
     pub fn of(ctx: &HintContext) -> Self {
         let main = shape::main_table(&ctx.stat.sample_sql);
         let table = main.as_ref().map(|t| t.name.clone());
-        let key = shape::filters(&ctx.stat.sample_sql)
+        let filters: Vec<_> = shape::filters(&ctx.stat.sample_sql)
             .into_iter()
-            .find(|f| f.equality && (f.table.is_none() || f.table == table))
-            .map(|f| f.column);
+            .filter(|f| f.table.is_none() || f.table == table)
+            .collect();
+        let key = filters.iter().find(|f| f.equality).map(|f| f.column.clone());
+        let fields = filters.into_iter().map(|f| f.column).collect();
         let parent = ctx.parent.and_then(|p| shape::main_table(&p.sample_sql));
         Self {
             table,
@@ -32,12 +36,13 @@ impl Facts {
             key,
             parent_table: parent.as_ref().map(|t| t.name.clone()),
             parent_alias: parent.and_then(|t| t.alias),
+            fields,
         }
     }
 
-    /// The loop looks rows up by primary key (a belongs-to association) rather
-    /// than by a foreign key (has-many).
+    /// The loop looks rows up by primary key (a belongs-to association, MongoDB: a
+    /// reference) rather than by a foreign key (has-many).
     pub fn by_primary_key(&self) -> bool {
-        self.key.as_deref() == Some("id")
+        matches!(self.key.as_deref(), Some("id" | "_id"))
     }
 }

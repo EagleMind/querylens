@@ -21,6 +21,8 @@ export const ORMS: Record<Orm, string> = {
   mikro_orm: 'MikroORM',
   objection: 'Objection.js',
   knex: 'Knex / Kysely',
+  mongoose: 'Mongoose',
+  mongo_db: 'MongoDB driver',
   django: 'Django ORM',
   active_record: 'Active Record',
   sql_alchemy: 'SQLAlchemy',

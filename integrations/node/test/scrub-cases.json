@@ -49,5 +49,10 @@
     "scrubbed": "UPDATE `users` SET `name` = ? WHERE `id` = ?",
     "values": ["\"Ada \\\"the\\\" first\""],
     "sameFingerprint": false
+  },
+  {
+    "sql": "SELECT \"id\" FROM \"notes\" WHERE \"owner\" = ?1 AND \"tag\" = :tag AND \"kind\" = @kind AND \"title\" = 'draft 2'",
+    "scrubbed": "SELECT \"id\" FROM \"notes\" WHERE \"owner\" = ?1 AND \"tag\" = :tag AND \"kind\" = @kind AND \"title\" = ?",
+    "values": ["'draft 2'"]
   }
 ]
