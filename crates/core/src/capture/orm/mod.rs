@@ -1,15 +1,23 @@
 //! ORM-aware fix advice.
 //!
 //! Detection is ORM-agnostic; this layer turns a finding into a change in the
-//! application's own terms. Each ORM is an [`OrmAdvisor`]: Sequelize has a full
-//! implementation, the rest fall back to [`generic::Generic`], which names the
-//! right API but has no code templates. Adding an ORM = one module implementing
-//! the trait + one arm in [`advisor`].
+//! application's own terms. Each Node.js ORM has its own module implementing
+//! [`templates::Templates`] (one fix per finding kind, with code in that ORM's API);
+//! the rest fall back to [`generic::Generic`], which names the right API but has no
+//! code. Adding an ORM = one module implementing `Templates` + one arm in [`advisor`].
 
+mod drizzle;
 mod facts;
 mod generic;
+mod knex;
+mod mikro_orm;
+mod naming;
+mod objection;
+mod prisma;
 mod recognize;
 mod sequelize;
+mod templates;
+mod typeorm;
 
 pub use facts::Facts;
 pub use recognize::recognize;
@@ -32,6 +40,12 @@ pub trait OrmAdvisor {
 pub fn advisor(orm: Option<Orm>) -> Box<dyn OrmAdvisor> {
     match orm {
         Some(Orm::Sequelize) => Box::new(sequelize::Sequelize),
+        Some(Orm::Prisma) => Box::new(prisma::Prisma),
+        Some(Orm::TypeOrm) => Box::new(typeorm::TypeOrm),
+        Some(Orm::Drizzle) => Box::new(drizzle::Drizzle),
+        Some(Orm::MikroOrm) => Box::new(mikro_orm::MikroOrm),
+        Some(Orm::Objection) => Box::new(objection::Objection),
+        Some(Orm::Knex) => Box::new(knex::Knex),
         other => Box::new(generic::Generic(other)),
     }
 }
