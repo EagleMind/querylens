@@ -289,18 +289,21 @@ pub fn filters(sql: &str) -> Vec<Filter> {
     out
 }
 
-/// `[qualifier.]column` starting at `i`, if the token there is an identifier.
+/// `[[schema.]qualifier.]column` starting at `i`, if the token there is an identifier.
+/// Prisma qualifies columns with the schema too: `"public"."User"."id"`.
 fn column_ref(toks: &[Tok], i: usize) -> Option<(Option<String>, String, usize)> {
-    let first = toks.get(i)?.ident()?;
-    if matches!(toks.get(i + 1), Some(Tok::Punct('.'))) {
-        let second = toks.get(i + 2)?.ident()?;
-        return Some((Some(first.to_string()), second.to_string(), i + 3));
-    }
-    // An identifier right after `.` is the second half of a qualified name.
+    // An identifier right after `.` is the rest of a qualified name.
     if i > 0 && matches!(toks.get(i - 1), Some(Tok::Punct('.'))) {
         return None;
     }
-    Some((None, first.to_string(), i + 1))
+    let mut parts = vec![toks.get(i)?.ident()?];
+    let mut next = i + 1;
+    while matches!(toks.get(next), Some(Tok::Punct('.'))) {
+        parts.push(toks.get(next + 1)?.ident()?);
+        next += 2;
+    }
+    let column = parts.pop()?.to_string();
+    Some((parts.pop().map(String::from), column, next))
 }
 
 /// Whether the outermost query limits its rows (LIMIT / FETCH FIRST).
@@ -367,6 +370,8 @@ mod tests {
         assert_eq!(filters("select * from t where id = any($1::bigint[])")[0].column, "id");
         let update = r#"UPDATE "orders" SET "status"=$1,"total"=$2 WHERE "id" = $3"#;
         assert_eq!(filters(update), vec![Filter { table: Some("orders".into()), column: "id".into(), equality: true }]);
+        let prisma = r#"SELECT "public"."OrderItem"."id" FROM "public"."OrderItem" WHERE "public"."OrderItem"."orderId" = $1 OFFSET $2"#;
+        assert_eq!(filters(prisma), vec![Filter { table: Some("OrderItem".into()), column: "orderId".into(), equality: true }]);
     }
 
     #[test]

@@ -37,9 +37,9 @@ your app + querylens-node ──── values removed, gzipped ────▶ y
 
 | Finding | What it looks like | Typical fix |
 |---|---|---|
-| **N+1 queries** | The same SELECT run once per row of the previous result, with different values | Eager loading (`include`, `relations`, `JOIN`) |
+| **N+1 queries** | The same SELECT run once per row of the previous result, with different values | Eager loading (`include`, `relations`, `with`, `populate`) or one `IN` query |
 | **Duplicate queries** | The identical statement repeated back to back | Run it once and reuse the result |
-| **Writes in a loop** | INSERT / UPDATE / DELETE one row at a time | `bulkCreate`, one `UPDATE … WHERE id IN (…)` |
+| **Writes in a loop** | INSERT / UPDATE / DELETE one row at a time | One multi-row INSERT (`bulkCreate`, `createMany`…), one `UPDATE … WHERE id IN (…)` |
 | **Large results** | Thousands of rows with no LIMIT | Pagination, selecting only the columns used |
 | **Slow statements** | Over 100 ms (adjustable) | An index, with the migration to add it |
 | **Failing statements** | Errors, including ones the ORM swallowed | The error, its statement and its caller |
@@ -179,10 +179,29 @@ their next report. The
 | **Databases** | PostgreSQL, MySQL |
 | **Drivers** | `pg`, `mysql2` (connections, pools and the promise API) |
 | **Captured through** | Sequelize, Knex, TypeORM, MikroORM, Drizzle, the drivers directly, and Prisma when it connects through `pg` (`@prisma/adapter-pg`) |
-| **Fixes with code** | Sequelize (`include` with `separate`, `bulkCreate`, `findAndCountAll`…) |
-| **Fixes naming the right API** | Prisma, TypeORM, plus Django, Active Record, SQLAlchemy and Hibernate, which the analysis already recognizes |
+| **Fixes with code** | Sequelize, Prisma, TypeORM, Drizzle, MikroORM, Objection.js, Knex and Kysely ([details](#fixes-by-orm)) |
+| **Fixes naming the right API** | Django, Active Record, SQLAlchemy and Hibernate, which the analysis already recognizes |
 | **Backend** | Cloudflare Workers + Durable Objects (SQLite), free plan |
 | **Dashboard** | Live queries with built-in and custom filters, and a report per query down to the line of code |
+
+### Fixes by ORM
+
+The ORM is recognized from the shape of the SQL it writes, and each fix comes as code in
+that ORM's API, with the model, table and key names taken from your statements.
+
+| ORM | N+1 queries | Writes in a loop | Large results |
+|---|---|---|---|
+| Sequelize | `include`, with `separate: true` for has-many | `bulkCreate`, `update` / `destroy` on `id: ids` | `findAndCountAll` with `attributes`, `raw` |
+| Prisma | `include`, or `{ in: ids }` | `createMany`, `updateMany`, `$transaction` | `take` / `skip` with `count` in a `$transaction` |
+| TypeORM | `relations` (`relationLoadStrategy: 'query'`), `leftJoinAndSelect`, `In()` | `insert([...])`, `save([...])`, `update({ id: In(ids) })` | `findAndCount` with `select` |
+| Drizzle | relational `with`, or `inArray` | `insert().values([...])`, `inArray` updates and deletes | `limit` / `offset` with `$count` |
+| MikroORM | `populate`, `em.populate()` | one `flush()`, `insertMany`, `nativeUpdate` | `findAndCount` with `fields` |
+| Objection.js | `withGraphFetched`, `fetchGraph` | array `insert`, `patch().whereIn()` | `page()` |
+| Knex / Kysely | one `whereIn` / `where('in')` query per table | array `insert`, `batchInsert` | `limit` / `offset` with `count` |
+
+Every one of them also gets duplicate queries hoisted out of loops, upserts for unique
+violations, and the index declared on the model with its migration. Knex and Kysely write
+identical SQL, so they're recognized together and their fixes show both APIs.
 
 ## Roadmap
 
@@ -192,7 +211,6 @@ their next report. The
   finding and your ORM, with Workers AI or Claude.
 - **Alerts** on new and regressed issues, by email or webhook.
 - **Sign-in with Cloudflare Access** instead of a shared token.
-- **Code-level fixes for more ORMs**, starting with the ones that only get API names today.
 
 **Later**
 
