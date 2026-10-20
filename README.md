@@ -15,12 +15,14 @@ slow statements, and get the fix for your ORM, down to the line of code.**
 [![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-free_plan-F38020?logo=cloudflare&logoColor=white)](cloud)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white)
+![MongoDB](https://img.shields.io/badge/MongoDB-47A248?logo=mongodb&logoColor=white)
 [![Rust + WebAssembly](https://img.shields.io/badge/core-Rust_%2B_WebAssembly-B7410E?logo=rust&logoColor=white)](crates/core)
 
 </div>
 
 QueryLens is an error tracker for your database traffic. A small SDK in your Node.js backend
-watches every query your ORM sends to PostgreSQL or MySQL, removes the values, and reports
+watches every query your ORM sends to PostgreSQL, MySQL, SQLite or MongoDB, removes the values, and reports
 the requests that look wrong to a backend you deploy in your own Cloudflare account, on the
 free plan. The dashboard lists every statement as it arrives, and each one opens a report:
 the SQL, the line of your code that ran it, the problem it's part of with the fix written for
@@ -28,7 +30,7 @@ your ORM, the rest of its request on a timeline, and its last 24 hours.
 
 ```
 your app + querylens-node ──── values removed, gzipped ────▶ your Cloudflare Worker ──▶ dashboard
-  (pg / postgres.js / mysql2)                                 Rust analysis (WebAssembly)
+  (pg, postgres.js, mysql2, Neon, …)                          Rust analysis (WebAssembly)
                                                                issues, query history, stats, live feed (Durable Objects)
 ```
 
@@ -76,9 +78,16 @@ threshold would.
 **In your app**
 
 - Node.js 18 or later
-- PostgreSQL through [`pg`](https://node-postgres.com/) or [`postgres`](https://github.com/porsager/postgres)
-  (postgres.js), or MySQL through [`mysql2`](https://sidorares.github.io/node-mysql2/), used
-  directly or by your ORM
+- One of these databases and drivers, used directly or by your ORM:
+  - PostgreSQL through [`pg`](https://node-postgres.com/), [`postgres`](https://github.com/porsager/postgres)
+    (postgres.js) or [Neon's serverless driver](https://github.com/neondatabase/serverless)
+  - MySQL through [`mysql2`](https://sidorares.github.io/node-mysql2/) or
+    [PlanetScale's serverless driver](https://github.com/planetscale/database-js)
+  - SQLite through [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3),
+    [`sqlite3`](https://github.com/TryGhost/node-sqlite3), `node:sqlite` or
+    [libSQL / Turso](https://github.com/tursodatabase/libsql-client-ts)
+  - MongoDB through the [`mongodb`](https://www.mongodb.com/docs/drivers/node/) driver or
+    [Mongoose](https://mongoosejs.com/)
 
 **For the backend**
 
@@ -234,10 +243,10 @@ their next report. The
 | | Supported today |
 |---|---|
 | **Runtime** | Node.js 18+ (CommonJS and ESM, Next.js) |
-| **Databases** | PostgreSQL, MySQL |
-| **Drivers** | `pg`, `postgres` (postgres.js), `mysql2` (connections, pools and the promise API) |
-| **Captured through** | Sequelize, Knex, Kysely, Objection.js, TypeORM, MikroORM, Drizzle (`node-postgres`, `postgres-js`, `mysql2`), the drivers directly, and Prisma with the [`querylens-node/prisma`](integrations/node#prisma) extension (through `@prisma/adapter-pg`, or Prisma 6's Rust engine with `engine: true`) |
-| **Fixes with code** | Sequelize, Prisma, TypeORM, Drizzle, MikroORM, Objection.js, Knex and Kysely ([details](#fixes-by-orm)) |
+| **Databases** | PostgreSQL, MySQL, SQLite, MongoDB |
+| **Drivers** | `pg`, `postgres` (postgres.js), `mysql2` (connections, pools and the promise API), Neon (`@neondatabase/serverless`, HTTP and WebSocket), PlanetScale (`@planetscale/database`), `better-sqlite3`, `sqlite3`, `node:sqlite`, libSQL / Turso (`@libsql/client`), `mongodb` |
+| **Captured through** | Sequelize, Knex, Kysely, Objection.js, TypeORM, MikroORM, Drizzle (on every driver above), Mongoose, the drivers directly, and Prisma with the [`querylens-node/prisma`](integrations/node#prisma) extension (through its driver adapters, or Prisma 6's Rust engine with `engine: true`) |
+| **Fixes with code** | Sequelize, Prisma, TypeORM, Drizzle, MikroORM, Objection.js, Knex, Kysely, Mongoose and the MongoDB driver ([details](#fixes-by-orm)) |
 | **Fixes naming the right API** | Django, Active Record, SQLAlchemy and Hibernate, which the analysis already recognizes |
 | **Backend** | Cloudflare Workers + Durable Objects (SQLite), free plan |
 | **Dashboard** | Live queries with built-in and custom filters, regressions since the latest release, and a report per query down to the line of code |
@@ -246,8 +255,9 @@ their next report. The
 
 ### Fixes by ORM
 
-The ORM is recognized from the shape of the SQL it writes, and each fix comes as code in
-that ORM's API, with the model, table and key names taken from your statements.
+The ORM is recognized from the shape of the SQL it writes (for MongoDB, from whether a
+command went through a Mongoose model), and each fix comes as code in that ORM's API, with
+the model, table and key names taken from your statements.
 
 | ORM | N+1 queries | Writes in a loop | Large results |
 |---|---|---|---|
@@ -258,10 +268,14 @@ that ORM's API, with the model, table and key names taken from your statements.
 | MikroORM | `populate`, `em.populate()` | one `flush()`, `insertMany`, `nativeUpdate` | `findAndCount` with `fields` |
 | Objection.js | `withGraphFetched`, `fetchGraph` | array `insert`, `patch().whereIn()` | `page()` |
 | Knex / Kysely | one `whereIn` / `where('in')` query per table | array `insert`, `batchInsert` | `limit` / `offset` with `count` |
+| Mongoose | `populate`, a virtual, or one `$in` query | `insertMany`, `updateMany`, `bulkWrite` | `_id` paging, `select`, `lean()`, a cursor |
+| MongoDB driver | one `$in` query, or `$lookup` | `insertMany`, `updateMany`, `bulkWrite` | `_id` paging, `projection`, iterating the cursor |
 
 Every one of them also gets duplicate queries hoisted out of loops, upserts for unique
 violations, and the index declared on the model with its migration. Knex and Kysely write
-identical SQL, so they're recognized together and their fixes show both APIs.
+identical SQL, so they're recognized together and their fixes show both APIs. A slow MongoDB
+query gets an index on the fields it filters on, declared on the schema or with
+`createIndex`, to check with `explain()`.
 
 ## Roadmap
 
@@ -288,7 +302,7 @@ integrations/node/   the SDK (querylens-node on npm)
 cloud/               the backend (Worker + Durable Objects) and the dashboard (React, shadcn/ui)
 crates/core/         the analysis: fingerprints, pattern detection, ORM fixes (Rust)
 crates/wasm/         crates/core compiled to WebAssembly for the backend
-dev/                 demo PostgreSQL and MySQL, and a Sequelize app with the usual ORM mistakes
+dev/                 demo PostgreSQL, MySQL and MongoDB, and a Sequelize app with the usual ORM mistakes
 docs/                architecture
 ```
 
