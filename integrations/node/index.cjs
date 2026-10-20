@@ -25,6 +25,7 @@ const { createMonitor } = require('./monitor.cjs');
 /** Shared by every copy of this file loaded in the process. */
 const GLOBAL = Symbol.for('querylens.sdk');
 const MAX_PARAM = 2000;
+const DRIZZLE_FILE = /[\\/]drizzle-orm[\\/]/;
 
 const requestContext = new AsyncLocalStorage();
 const cwd = process.cwd();
@@ -54,26 +55,32 @@ function siteOf(stack) {
 }
 
 /**
- * The ORM operation running, set by ORM integrations (querylens-node/prisma):
- * `{ site() }`, the app's line for it, and `viaDriver`, set when a driver hook sees its SQL.
+ * The ORM operation running, set by ORM integrations (querylens-node/prisma, the Drizzle
+ * hook): `{ site() }`, the app's line for it, and `viaDriver`, set when a driver hook sees its SQL.
  */
 const operations = new AsyncLocalStorage();
 
-/**
- * For a driver hook, when a query starts: capture the call stack now; read it (the costly
- * part) only when the request is sent. Inside an ORM operation an integration knows the
- * app's line for, that line wins: the driver's own stack may be all ORM internals.
- */
-function lazySite() {
+/** Capture the call stack now; read its app line (the costly part) only when it's asked for. */
+function stackSite() {
   const limit = Error.stackTraceLimit;
   Error.stackTraceLimit = 50;
   const holder = {};
   Error.captureStackTrace(holder);
   Error.stackTraceLimit = limit;
+  let site;
+  return () => (site === undefined ? (site = siteOf(holder.stack)) : site);
+}
+
+/**
+ * For a driver hook, when a query starts: the app's line, read when the request is sent.
+ * Inside an ORM operation an integration knows the app's line for, that line wins: the
+ * driver's own stack may be all ORM internals.
+ */
+function lazySite() {
+  const own = stackSite();
   const operation = operations.getStore();
   if (operation) operation.viaDriver = true;
-  let site;
-  return () => (site === undefined ? (site = (operation && operation.site()) || siteOf(holder.stack)) : site);
+  return () => (operation && operation.site()) || own();
 }
 
 /** `/orders/123/items` → `/orders/:id/items`, so a route groups its requests. */
@@ -405,6 +412,43 @@ function postgresQueryFile(entry) {
   return path.join(path.dirname(entry), 'query.js');
 }
 
+/**
+ * Give Drizzle's queries the line of the app that awaited them. A Drizzle query is a
+ * thenable (QueryPromise): `await` calls its `then` from a microtask, so the driver hooks
+ * see no app frame. But `await` (like `Promise.all`, `.catch`) reads `then` right away, in
+ * the app's code: a getter takes the stack there and starts the query inside an operation
+ * holding that line. `then` itself is unchanged, and assigning one still works.
+ * Select builders copy QueryPromise's methods when they load: patch it before that.
+ */
+function patchDrizzle(QueryPromise) {
+  const proto = QueryPromise && QueryPromise.prototype;
+  const desc = proto && Object.getOwnPropertyDescriptor(proto, 'then');
+  // Already patched (a getter), or not Drizzle's.
+  if (typeof QueryPromise !== 'function' || !desc || typeof desc.value !== 'function') return QueryPromise;
+  const then = desc.value;
+  Object.defineProperty(proto, 'then', {
+    configurable: true,
+    enumerable: desc.enumerable,
+    get() {
+      const own = stackSite();
+      // Drizzle awaiting one of its own queries: the app's line is the outer one's.
+      const outer = operations.getStore();
+      let site;
+      const operation = {
+        site: () => (site === undefined ? (site = own() || (outer ? outer.site() : null)) : site),
+        viaDriver: false,
+      };
+      return function () {
+        return operations.run(operation, () => then.apply(this, arguments));
+      };
+    },
+    set(value) {
+      Object.defineProperty(this, 'then', { value, writable: true, enumerable: true, configurable: true });
+    },
+  });
+  return QueryPromise;
+}
+
 /** Each HTTP request becomes a transaction, ended when the response is done. */
 function instrumentHttp(monitor) {
   for (const name of ['http', 'https']) {
@@ -484,7 +528,8 @@ function init(options = {}) {
   api.monitor = monitor;
   api.flush = () => monitor.flush();
 
-  // `require('pg')` / `require('mysql2')` / `require('postgres')` from anywhere (ORMs load them themselves)…
+  // `require('pg')` / `require('mysql2')` / `require('postgres')` from anywhere (ORMs load them
+  // themselves), and Drizzle's QueryPromise as Drizzle loads it…
   const load = Module._load;
   Module._load = function (request, parent) {
     const exported = load.apply(this, arguments);
@@ -496,6 +541,9 @@ function init(options = {}) {
       if (request === 'postgres') {
         const file = postgresQueryFile(Module._resolveFilename(request, parent));
         patchPostgres(load.call(this, file, parent, false).Query, monitor);
+      }
+      if (request.endsWith('query-promise.cjs') && parent && DRIZZLE_FILE.test(parent.filename)) {
+        patchDrizzle(exported.QueryPromise);
       }
     } catch {}
     return exported;
@@ -526,6 +574,24 @@ function init(options = {}) {
   } catch {
     // Not installed (yet); the require hook still applies to CommonJS.
   }
+  try {
+    // Drizzle too has a CommonJS build (.cjs) and an ESM one (.js). Since Node 20.19 the ESM
+    // one can be loaded synchronously, before the app's imports run; on older versions it's
+    // patched asynchronously, after its select builders copied `then` (they get no line).
+    const file = appRequire.resolve('drizzle-orm/query-promise');
+    patchDrizzle(appRequire(file).QueryPromise);
+    const esm = file.replace(/\.cjs$/, '.js');
+    try {
+      patchDrizzle(require(esm).QueryPromise);
+    } catch {
+      import(url.pathToFileURL(esm).href).then(
+        (m) => patchDrizzle(m.QueryPromise),
+        () => {},
+      );
+    }
+  } catch {
+    // Not installed (yet); the require hook still applies to CommonJS.
+  }
   instrumentHttp(monitor);
   return api;
 }
@@ -536,4 +602,4 @@ function flush() {
   return sdk ? sdk.flush() : Promise.resolve();
 }
 
-module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchMysql2, patchPostgres, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };
+module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchMysql2, patchPostgres, patchDrizzle, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };

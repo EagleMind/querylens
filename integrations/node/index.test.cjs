@@ -2,6 +2,8 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
+const path = require('path');
+const vm = require('vm');
 const sdk = require('./index.cjs');
 
 test('routes group requests by replacing ids', () => {
@@ -223,4 +225,85 @@ test('postgres.js: queries join the request they were created in', async () => {
     delete globalThis[Symbol.for('querylens.sdk')];
   }
   assert.deepEqual(recorded.map((t) => t.name).sort(), ['job:a', 'job:b']);
+});
+
+
+/** The line `offset` lines from the one calling this, as the SDK reports lines. */
+function here(offset = 0) {
+  const [message, , ...frames] = new Error().stack.split('\n');
+  const [file, line] = sdk._internal.siteOf([message, ...frames].join('\n')).split(':');
+  return `${file}:${Number(line) + offset}`;
+}
+
+/**
+ * A stand-in for Drizzle, compiled as if it were in node_modules (its frames aren't the
+ * app's): its QueryPromise, a query that runs its SQL in then() (which `await` calls from a
+ * microtask, where no app frame is on the stack), a select builder that copies
+ * QueryPromise's methods like Drizzle's mixins, and a transaction that awaits queries of its own.
+ */
+function fakeDrizzle(client) {
+  const source = `
+    class QueryPromise {
+      catch(onRejected) { return this.then(undefined, onRejected); }
+      then(onFulfilled, onRejected) { return this.execute().then(onFulfilled, onRejected); }
+    }
+    patchDrizzle(QueryPromise);
+    class Raw extends QueryPromise {
+      constructor(sql) { super(); this.sql = sql; }
+      async execute() { return client.query(this.sql); }
+    }
+    class Select { constructor(sql) { this.sql = sql; } }
+    for (const name of Object.getOwnPropertyNames(QueryPromise.prototype)) {
+      if (name !== 'constructor') Object.defineProperty(Select.prototype, name, Object.getOwnPropertyDescriptor(QueryPromise.prototype, name));
+    }
+    Select.prototype.execute = Raw.prototype.execute;
+    class Transaction extends QueryPromise {
+      async execute() { await new Raw('begin'); return new Raw('commit'); }
+    }
+    return { QueryPromise, Raw, Select, Transaction };`;
+  const filename = path.join(__dirname, 'node_modules', 'drizzle-orm', 'fake.cjs');
+  return vm.compileFunction(source, ['client', 'patchDrizzle'], { filename })(client, sdk._internal.patchDrizzle);
+}
+
+test('drizzle: queries get the line that awaited them', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(q) };
+  class Client {
+    query(text) {
+      if (text.includes('missing')) return Promise.reject(Object.assign(new Error('relation "missing" does not exist'), { code: '42P01' }));
+      return Promise.resolve({ rowCount: 1, rows: [{ text }] });
+    }
+  }
+  sdk._internal.patchPg({ Client }, monitor);
+  const { Raw, Select, Transaction } = fakeDrizzle(new Client());
+  const lines = [];
+
+  const res = await new Select('select 1');
+  lines.push(here(-1));
+  await Promise.all([new Raw('select 2'), new Select('select 3')]);
+  lines.push(here(-1), here(-1));
+  const code = await new Raw('select * from missing').catch((e) => e.code);
+  lines.push(here(-1));
+  await new Transaction();
+  lines.push(here(-1), here(-1));
+  // The app's own queries after an await get their own line again.
+  await new Client().query('select 4');
+  lines.push(here(-1));
+
+  assert.deepEqual(res.rows, [{ text: 'select 1' }], 'results are unchanged');
+  assert.equal(code, '42P01', 'errors are unchanged');
+  assert.equal(recorded[3].error, 'ERROR: relation "missing" does not exist (42P01)');
+  assert.deepEqual(recorded.map((q) => q.sql), ['select 1', 'select 2', 'select 3', 'select * from missing', 'begin', 'commit', 'select 4']);
+  assert.deepEqual(recorded.map((q) => q.origin()), lines);
+});
+
+test('drizzle: then() stays as it was', async () => {
+  const { QueryPromise, Raw } = fakeDrizzle({ query: async () => 'ok' });
+  const query = new Raw('select 1');
+  assert.equal(typeof query.then, 'function');
+  assert.equal(await query, 'ok');
+  assert.equal(sdk._internal.patchDrizzle(QueryPromise), QueryPromise, 'patching twice does nothing');
+  query.then = (resolve) => resolve('own');
+  assert.equal(await query, 'own', 'an assigned then() is used');
+  assert.equal(await new Raw('select 2'), 'ok');
 });

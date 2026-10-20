@@ -36,6 +36,20 @@ export async function register() {
 }
 ```
 
+## Drizzle
+
+Nothing to add: with `register` loaded first, Drizzle's queries (on `pg`, postgres.js and
+`mysql2`) carry the line of your code that awaited them. Drizzle starts a query only when
+it's awaited, from a microtask where your code is no longer on the stack, so the SDK takes
+the line where `await` (or `.then`, `.catch`, `Promise.all`) picks the query up. It does
+that by turning `then` on Drizzle's `QueryPromise` into a getter that returns the same
+function; queries run exactly as before. Recording a line costs a few microseconds per query.
+
+In ESM apps on Node.js older than 20.19, `select` queries have no line: the SDK can patch
+Drizzle's ESM build only after its select builders have copied `then`. Also without a
+line: `db.$count()`, and a prepared statement's `execute()` on a `pg.Pool` (the pool hands
+the query to a connection later, outside your code).
+
 ## Prisma
 
 Prisma 7 sends its SQL through a driver adapter, and so does Prisma 6 with an adapter and
