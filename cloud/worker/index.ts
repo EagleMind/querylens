@@ -13,7 +13,9 @@
 //   GET   /api/0/projects/<id>/issues/<n>       │
 //   PATCH /api/0/projects/<id>/issues/<n>       │
 //   GET   /api/0/projects/<id>/issues/<n>/events│
-//   GET   /api/0/projects/<id>/queries          │
+//   GET   /api/0/projects/<id>/requests?before= │
+//   GET   /api/0/projects/<id>/requests/<n>     │
+//   GET   /api/0/projects/<id>/queries?fingerprint│
 //   GET   /api/0/projects/<id>/environments     ┘
 //   anything else                              the dashboard (static assets, SPA fallback)
 import type { IssueStatus } from '../bindings/IssueStatus'
@@ -184,9 +186,19 @@ async function api(request: Request, env: Env, ns: Exports, url: URL, path: stri
       return json(await stub.updateSettings(await readJson(request)))
     case 'environments':
       return json(await stub.environments())
+    case 'requests': {
+      if (method !== 'GET') return fail(405, 'Method not allowed.')
+      if (!sub) {
+        const before = Number(q.get('before'))
+        return json(await stub.requests(Number.isInteger(before) && before > 0 ? before : null, Number(q.get('limit') ?? 100) || 100))
+      }
+      const n = Number(sub)
+      const request = Number.isInteger(n) && !tail ? await stub.request(n) : null
+      return request ? json(request) : fail(404, 'No such request.')
+    }
     case 'queries': {
       const hours = Number(q.get('hours') ?? 24) || 24
-      return json(await stub.queries(q.get('environment'), hours, Number(q.get('limit') ?? 50) || 50))
+      return json(await stub.queries(q.get('environment'), hours, Number(q.get('limit') ?? 50) || 50, q.get('fingerprint')))
     }
     case 'issues': {
       if (!sub) {

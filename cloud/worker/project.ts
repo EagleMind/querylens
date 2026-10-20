@@ -1,6 +1,7 @@
 // One monitored application. Its Durable Object owns everything about it: the DSN key,
-// settings, issues with their latest events, hourly statement statistics (SQLite), and the
-// dashboards watching it live (hibernating WebSockets). The Worker only routes here.
+// settings, issues with their latest events, the query history (every request the SDKs
+// send, one row each), hourly statement statistics (SQLite), and the dashboards watching it
+// live (hibernating WebSockets). The Worker only routes here.
 //
 // Evaluation (what's wrong in a request) is querylens-core's job (`digest`); this class
 // decides what to remember: issues are keyed by the finding's stable id per environment,
@@ -23,6 +24,7 @@ import type { Orm } from '../bindings/Orm'
 import type { Project as ProjectInfo } from '../bindings/Project'
 import type { ProjectSettings } from '../bindings/ProjectSettings'
 import type { QueryShape } from '../bindings/QueryShape'
+import type { StoredRequest } from '../bindings/StoredRequest'
 import { digest } from './core'
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
@@ -38,9 +40,14 @@ const EVENTS_PER_ISSUE = 10
 /** Statements kept per stored event, and SQL characters per statement. */
 const EVENT_STATEMENTS = 200
 const STORED_SQL = 4000
-/** Statements and SQL characters sent per request to the live feed. */
-const LIVE_STATEMENTS = 100
-const LIVE_SQL = 2000
+/** Statements and SQL characters kept per request in the query history (and sent live). */
+const HISTORY_STATEMENTS = 100
+const HISTORY_SQL = 2000
+/** Query history: the latest requests, and for at most this long. */
+const HISTORY_REQUESTS = 20_000
+const HISTORY_DAYS = 7
+/** Requests between two trims of the history by count. */
+const HISTORY_TRIM_EVERY = 500
 const ORIGINS = 5
 const STATS_RETENTION_HOURS = 24 * 30
 const HOUR_MS = 3_600_000
@@ -85,6 +92,17 @@ const SCHEMA = `
     statements_json TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS issue_events_latest ON issue_events (issue_id, id DESC);
+  CREATE TABLE IF NOT EXISTS requests (
+    id INTEGER PRIMARY KEY,
+    environment TEXT NOT NULL,
+    release TEXT,
+    name TEXT NOT NULL,
+    at TEXT NOT NULL,
+    duration_ms REAL NOT NULL,
+    db_ms REAL NOT NULL,
+    statements_json TEXT NOT NULL,
+    findings_json TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS query_shapes (
     environment TEXT NOT NULL,
     fingerprint TEXT NOT NULL,
@@ -143,6 +161,20 @@ function mergeOrigins(a: OriginCount[], b: OriginCount[]): OriginCount[] {
     .map(([origin, count]) => ({ origin, count }))
     .sort((x, y) => y.count - x.count || x.origin.localeCompare(y.origin))
     .slice(0, ORIGINS)
+}
+
+function requestFromRow(r: Row): StoredRequest {
+  return {
+    id: Number(r.id),
+    environment: String(r.environment),
+    release: (r.release as string | null) ?? null,
+    name: String(r.name),
+    at: String(r.at),
+    durationMs: Number(r.duration_ms),
+    dbMs: Number(r.db_ms),
+    statements: JSON.parse(String(r.statements_json)) as CapturedStatement[],
+    findings: JSON.parse(String(r.findings_json)) as LiveFinding[],
+  }
 }
 
 function issueFromRow(r: Row): Issue {
@@ -275,17 +307,7 @@ export class Project extends DurableObject<Env> {
       for (const txn of d.transactions) {
         const at = iso(txn.start)
         const findings = this.recordFindings(d, txn, at, live)
-        live.push({
-          type: 'transaction',
-          environment: d.environment,
-          release: d.release,
-          name: txn.name,
-          at,
-          durationMs: txn.durationMs,
-          dbMs: txn.dbMs,
-          statements: trimStatements(txn.statements, LIVE_STATEMENTS, LIVE_SQL),
-          findings,
-        })
+        live.push({ type: 'transaction', ...this.recordRequest(d, txn, at, findings) })
       }
       this.recordStats(d)
     })
@@ -331,7 +353,7 @@ export class Project extends DurableObject<Env> {
         EVENTS_PER_ISSUE,
       )
       if (isNew || regressed) live.push({ type: 'issue', issue, regressed })
-      return { issueId: issue.id, kind: f.finding.kind, severity: f.finding.severity, title: f.finding.title }
+      return { issueId: issue.id, fingerprint: f.finding.fingerprint, kind: f.finding.kind, severity: f.finding.severity, title: f.finding.title }
     })
   }
 
@@ -404,6 +426,37 @@ export class Project extends DurableObject<Env> {
     return { issue: issueFromRow(row), isNew: false, regressed }
   }
 
+  /** One row per request: the query history the dashboard lists and reports on. */
+  private recordRequest(d: Digest, txn: DigestedTransaction, at: string, findings: LiveFinding[]): StoredRequest {
+    const statements = trimStatements(txn.statements, HISTORY_STATEMENTS, HISTORY_SQL)
+    const { id } = this.sql
+      .exec<{ id: number }>(
+        `INSERT INTO requests (environment, release, name, at, duration_ms, db_ms, statements_json, findings_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        d.environment,
+        d.release,
+        txn.name,
+        at,
+        txn.durationMs,
+        txn.dbMs,
+        JSON.stringify(statements),
+        JSON.stringify(findings),
+      )
+      .one()
+    if (id % HISTORY_TRIM_EVERY === 0) this.sql.exec('DELETE FROM requests WHERE id <= ?', id - HISTORY_REQUESTS)
+    return {
+      id,
+      environment: d.environment,
+      release: d.release,
+      name: txn.name,
+      at,
+      durationMs: txn.durationMs,
+      dbMs: txn.dbMs,
+      statements,
+      findings,
+    }
+  }
+
   private recordStats(d: Digest) {
     const now = new Date().toISOString()
     // Rows written are the free plan's scarcest resource: a known shape's `last_seen`
@@ -443,6 +496,7 @@ export class Project extends DurableObject<Env> {
   async alarm(): Promise<void> {
     const cutoff = Math.floor(Date.now() / HOUR_MS) - STATS_RETENTION_HOURS
     this.sql.exec('DELETE FROM query_stats WHERE hour < ?', cutoff)
+    this.sql.exec('DELETE FROM requests WHERE at < ?', new Date(Date.now() - HISTORY_DAYS * 24 * HOUR_MS).toISOString())
     await this.ctx.storage.setAlarm(Date.now() + 24 * HOUR_MS)
   }
 
@@ -497,6 +551,19 @@ export class Project extends DurableObject<Env> {
     return this.issue(id)
   }
 
+  /** The query history, newest first; `before` (a request id) pages back. */
+  async requests(before: number | null, limit: number): Promise<StoredRequest[]> {
+    return this.sql
+      .exec('SELECT * FROM requests WHERE (?1 IS NULL OR id < ?1) ORDER BY id DESC LIMIT ?2', before, Math.min(Math.max(limit, 1), 500))
+      .toArray()
+      .map(requestFromRow)
+  }
+
+  async request(id: number): Promise<StoredRequest | null> {
+    const r = this.sql.exec('SELECT * FROM requests WHERE id = ?', id).toArray()[0]
+    return r ? requestFromRow(r) : null
+  }
+
   async events(id: number, limit = EVENTS_PER_ISSUE): Promise<IssueEvent[]> {
     return this.sql
       .exec('SELECT * FROM issue_events WHERE issue_id = ? ORDER BY id DESC LIMIT ?', id, Math.min(Math.max(limit, 1), EVENTS_PER_ISSUE))
@@ -512,8 +579,8 @@ export class Project extends DurableObject<Env> {
       }))
   }
 
-  /** Statement shapes by total time over the last `hours`. */
-  async queries(environment: string | null, hours: number, limit = 50): Promise<QueryShape[]> {
+  /** Statement shapes by total time over the last `hours`, or one shape when `fingerprint` is set. */
+  async queries(environment: string | null, hours: number, limit = 50, fingerprint: string | null = null): Promise<QueryShape[]> {
     const since = Math.floor(Date.now() / HOUR_MS) - Math.min(Math.max(hours, 1), STATS_RETENTION_HOURS) + 1
     return this.sql
       .exec(
@@ -521,11 +588,12 @@ export class Project extends DurableObject<Env> {
                 SUM(s.calls) AS calls, SUM(s.total_ms) AS total_ms, MAX(s.max_ms) AS max_ms, SUM(s.errors) AS errors,
                 SUM(s.rows) AS rows, MAX(q.last_seen) AS last_seen
          FROM query_stats s JOIN query_shapes q USING (environment, fingerprint)
-         WHERE (?1 IS NULL OR s.environment = ?1) AND s.hour >= ?2
+         WHERE (?1 IS NULL OR s.environment = ?1) AND s.hour >= ?2 AND (?4 IS NULL OR s.fingerprint = ?4)
          GROUP BY s.fingerprint ORDER BY SUM(s.total_ms) DESC LIMIT ?3`,
         environment,
         since,
         Math.min(Math.max(limit, 1), 500),
+        fingerprint,
       )
       .toArray()
       .map((r) => {

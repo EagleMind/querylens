@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+
 import { cloudflare } from '@cloudflare/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
@@ -6,5 +8,6 @@ import { defineConfig } from 'vite'
 // The dashboard (web/, built to static assets) and the Worker (worker/) in one build.
 export default defineConfig({
   plugins: [cloudflare(), react(), tailwindcss()],
+  resolve: { alias: { '@': fileURLToPath(new URL('./web', import.meta.url)) } },
   server: { port: 5173 },
 })

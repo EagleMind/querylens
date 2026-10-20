@@ -5,11 +5,17 @@ The backend and dashboard for always-on query monitoring (PostgreSQL and MySQL a
 problematic, a sample of the others, and per-minute totals for every statement. This Worker
 evaluates them with QueryLens's Rust analysis and shows the results in a web dashboard:
 
-- **Live**: requests as they arrive, with their statements and findings, plus statements per minute.
-- **Evaluation**: issues (N+1 queries, duplicate queries, writes in a loop, slow, failing
-  and large statements, chatty requests), grouped across requests and releases, each with the
-  fix for your ORM (full code for Sequelize). Also the top statements by total time.
-- **Settings**: the project's DSN and setup, detection thresholds, live-feed sampling, more projects.
+- **Live**: every statement of the requests the SDKs send, as they arrive, across projects.
+  Built-in views (all, slow, failed, with issues), project and environment filters, search,
+  and custom filters saved in the browser.
+- **Query report**: one statement's SQL and parameters, the line of code that ran it, the
+  issue it belongs to (N+1 queries, duplicate queries, writes in a loop, slow, failing and
+  large statements, chatty requests) with the fix for your ORM (full code for Sequelize), the
+  rest of its request, and its totals over the last 24 hours.
+
+- **Settings**: each project's DSN, the connected host, setup, and sign-out.
+
+Creating projects, thresholds and sampling are managed through the API (`/api/0/projects`) for now.
 
 Everything runs on Cloudflare's Workers Free plan.
 
@@ -18,7 +24,7 @@ Everything runs on Cloudflare's Workers Free plan.
 ```
 app + querylens-node ──POST /api/<project>/envelope──▶ Worker ──RPC──▶ Project Durable Object
    (gzipped NDJSON, values removed)                     │                 ├─ querylens-core (WebAssembly): evaluate
-                                                        │                 ├─ SQLite: issues, events, hourly stats
+                                                        │                 ├─ SQLite: issues, events, requests, hourly stats
 dashboard (static assets) ──/api/0/*──────────────────▶ │                 └─ WebSockets: live feed (hibernating)
                          ──/api/0/live (WebSocket)────▶ ┘
                                                         Registry Durable Object: the project list
@@ -28,7 +34,8 @@ dashboard (static assets) ──/api/0/*─────────────�
 - **One `Project` Durable Object per app** (`worker/project.ts`) does the work. It checks the
   DSN key, runs `querylens-core` compiled to WebAssembly on each envelope, folds findings into
   issues (keyed by the finding's stable id per environment), keeps the latest 10 requests per
-  issue and hourly per-shape statistics (30 days), and pushes everything to open dashboards
+  issue, the query history (every request the SDKs send, 7 days, the latest 20,000) and
+  hourly per-shape statistics (30 days), and pushes everything to open dashboards
   over hibernating WebSockets. A resolved issue that shows up again comes back as *regressed*.
 - **`querylens-core`** (`../crates/core`) is the Rust analysis: SQL fingerprints, pattern
   detection, ORM advice. It's built as `core/querylens_core.wasm` by `../crates/wasm`, a small
@@ -100,11 +107,12 @@ Object requests and 100,000 SQLite rows written a day.
 - **Requests.** Each SDK process sends at most one envelope every 5 seconds, and only when it
   has something to send. That's up to about 17,000 requests a day for a process that's busy
   all day; idle processes send nothing.
-- **Writes.** A request with findings writes 3 rows per finding: the issue, the event, and
-  pruning old events. The SDK sends the same problem on the same route at most once every
+- **Writes.** Every request sent writes 1 row to the query history. A request with findings
+  also writes 3 rows per finding: the issue, the event, and pruning old events. The SDK sends the same problem on the same route at most once every
   30 seconds. Statistics add one row per statement shape per minute (an upsert into the hour).
-- **Live sampling** (Settings) sends that share of problem-free production requests to the
-  live feed. They're broadcast but not stored. Development and other environments send them all.
+- **Live sampling** (`liveSampleRate` in the project settings) sends that share of
+  problem-free production requests. They're stored in the query history like flagged ones.
+  Development and other environments send them all.
 
 ## Rebuild the core
 
@@ -124,7 +132,7 @@ worker/index.ts      routing, auth, body limits (gzip)
 worker/project.ts    the Project Durable Object: ingest, issues, stats, live feed
 worker/registry.ts   the project list
 worker/core.ts       loads querylens_core.wasm and calls it
-web/                 the dashboard (React, Tailwind)
+web/                 the dashboard (React, Tailwind, shadcn/ui)
 scripts/             build-core.mjs, send-sample.mjs
 ```
 

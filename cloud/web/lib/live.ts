@@ -1,120 +1,171 @@
-// The live feed: one WebSocket to the project's Durable Object, reconnecting with
-// backoff. Keeps the latest requests and per-minute throughput for the Live page.
-import { useEffect, useRef, useState } from 'react'
+// The query history and its live tail. For each project: the latest stored requests from the
+// API, then one WebSocket to its Durable Object for new ones (reconnecting with backoff and
+// reloading the latest page on every reconnect, so a gap is filled). Older pages on demand.
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-import type { Issue } from '../../bindings/Issue'
 import type { LiveEvent } from '../../bindings/LiveEvent'
-import { liveUrl } from './api'
-
-export type LiveTransaction = Extract<LiveEvent, { type: 'transaction' }> & { key: number }
-
-export interface Minute {
-  /** Epoch ms of the minute's start. */
-  at: number
-  statements: number
-  dbMs: number
-  errors: number
-}
+import { api, liveUrl } from './api'
+import { type LiveRequest, mergeRequests, withProject } from './queries'
 
 export type Connection = 'connecting' | 'live' | 'offline'
 
-export interface LiveState {
+export interface LiveFeed {
+  /** The worst state among the project connections. */
   connection: Connection
-  transactions: LiveTransaction[]
-  minutes: Minute[]
-  /** Issues that appeared or came back since the page opened, newest first. */
-  issues: { issue: Issue; regressed: boolean; at: number }[]
+  /** Newest first, across projects. */
+  requests: LiveRequest[]
+  /** Statements held, across `requests`. */
+  size: number
+  /** Every project's latest page has arrived (or failed to). */
+  loaded: boolean
+  /** Whether any of these projects has older requests than those loaded. */
+  hasOlder: (projectIds: string[]) => boolean
+  /** Load the page before the oldest loaded request of each of these projects. */
+  loadOlder: (projectIds: string[]) => Promise<LiveRequest[]>
 }
 
-const KEEP_TRANSACTIONS = 300
-const KEEP_MINUTES = 30
-const MINUTE = 60_000
+/** Statements kept while new ones arrive; loading older pages raises it. */
+const KEEP_STATEMENTS = 2000
+/** Requests per project per page of history. */
+const PAGE = 100
 
-const empty: LiveState = { connection: 'connecting', transactions: [], minutes: [], issues: [] }
+type Transaction = Extract<LiveEvent, { type: 'transaction' }>
 
-function addThroughput(minutes: Minute[], at: number, statements: number, dbMs: number, errors: number): Minute[] {
-  const start = Math.floor(at / MINUTE) * MINUTE
-  const next = minutes.filter((m) => m.at !== start)
-  const current = minutes.find((m) => m.at === start)
-  next.push({
-    at: start,
-    statements: (current?.statements ?? 0) + statements,
-    dbMs: (current?.dbMs ?? 0) + dbMs,
-    errors: (current?.errors ?? 0) + errors,
-  })
-  const cutoff = Math.floor(Date.now() / MINUTE) * MINUTE - (KEEP_MINUTES - 1) * MINUTE
-  return next.filter((m) => m.at >= cutoff).sort((a, b) => a.at - b.at)
+function statementCount(requests: LiveRequest[]): number {
+  return requests.reduce((n, r) => n + r.statements.length, 0)
 }
 
-export function useLiveFeed(projectId: string | null, paused: boolean): LiveState {
-  const [state, setState] = useState<LiveState>(empty)
-  const pausedRef = useRef(paused)
-  pausedRef.current = paused
+/** The newest requests that fit in `cap` statements. */
+function keepLatest(requests: LiveRequest[], cap: number): LiveRequest[] {
+  let size = 0
+  let n = 0
+  while (n < requests.length && size + requests[n].statements.length <= cap) size += requests[n++].statements.length
+  return n === requests.length ? requests : requests.slice(0, n)
+}
+
+interface Callbacks {
+  onRequests: (requests: LiveRequest[]) => void
+  onLatestPage: (requests: LiveRequest[] | null) => void
+  onState: (c: Connection) => void
+}
+
+/** Open one project's feed. Returns a function that closes it for good. */
+function openFeed(projectId: string, cb: Callbacks): () => void {
+  let ws: WebSocket | null = null
+  let retry = 0
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let ping: ReturnType<typeof setInterval> | undefined
+  let closed = false
+
+  const connect = () => {
+    cb.onState('connecting')
+    ws = new WebSocket(liveUrl(projectId))
+    ws.onopen = () => {
+      retry = 0
+      cb.onState('live')
+      ping = setInterval(() => ws?.readyState === WebSocket.OPEN && ws.send('ping'), 30_000)
+      api.requests(projectId, { limit: PAGE }).then(
+        (page) => !closed && cb.onLatestPage(page.map((r) => withProject(projectId, r))),
+        () => !closed && cb.onLatestPage(null),
+      )
+    }
+    ws.onmessage = (m) => {
+      if (typeof m.data !== 'string' || m.data === 'pong') return
+      try {
+        const msg = JSON.parse(m.data)
+        if (msg.type !== 'batch') return
+        const fresh = (msg.events as LiveEvent[])
+          .filter((e): e is Transaction => e.type === 'transaction' && e.statements.length > 0)
+          .map(({ type: _, ...r }) => ({ ...withProject(projectId, r), arrivedAt: Date.now() }))
+        if (fresh.length) cb.onRequests(fresh)
+      } catch {
+        // Not ours.
+      }
+    }
+    ws.onclose = () => {
+      clearInterval(ping)
+      if (closed) return
+      cb.onState('offline')
+      timer = setTimeout(connect, Math.min(30_000, 1000 * 2 ** retry++))
+    }
+  }
+  connect()
+  return () => {
+    closed = true
+    clearTimeout(timer)
+    clearInterval(ping)
+    ws?.close()
+  }
+}
+
+const RANK: Record<Connection, number> = { live: 0, connecting: 1, offline: 2 }
+
+export function useLiveFeed(projectIds: string[]): LiveFeed {
+  const [requests, setRequests] = useState<LiveRequest[]>([])
+  const [states, setStates] = useState<Record<string, Connection>>({})
+  const [loadedIds, setLoadedIds] = useState<Set<string>>(new Set())
+  /** Projects whose oldest request is loaded. */
+  const [exhausted, setExhausted] = useState<Set<string>>(new Set())
+  const cap = useRef(KEEP_STATEMENTS)
+  const current = useRef(requests)
+  current.current = requests
+  const key = projectIds.join(',')
 
   useEffect(() => {
-    if (!projectId) return
-    setState(empty)
-    let ws: WebSocket | null = null
-    let retry = 0
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let ping: ReturnType<typeof setInterval> | undefined
-    let closed = false
-    let key = 0
-
-    const apply = (events: LiveEvent[]) =>
-      setState((s) => {
-        let { transactions, minutes, issues } = s
-        const fresh: LiveTransaction[] = []
-        for (const e of events) {
-          if (e.type === 'transaction') {
-            if (!pausedRef.current) fresh.push({ ...e, key: ++key })
-          } else if (e.type === 'throughput') {
-            // A five-minute report is spread evenly over its minutes.
-            const start = new Date(e.at).getTime()
-            const n = Math.max(1, Math.round(e.periodMs / MINUTE))
-            for (let i = 0; i < n; i++) {
-              minutes = addThroughput(minutes, start + i * MINUTE, e.calls / n, e.totalMs / n, e.errors / n)
-            }
-          } else if (e.type === 'issue') {
-            issues = [{ issue: e.issue, regressed: e.regressed, at: Date.now() }, ...issues].slice(0, 20)
+    const ids = key ? key.split(',') : []
+    cap.current = KEEP_STATEMENTS
+    setRequests([])
+    setLoadedIds(new Set())
+    setExhausted(new Set())
+    const add = (fresh: LiveRequest[]) => setRequests((all) => keepLatest(mergeRequests(all, fresh), cap.current))
+    const closers = ids.map((id) =>
+      openFeed(id, {
+        onRequests: add,
+        onLatestPage: (page) => {
+          if (page) {
+            add(page)
+            if (page.length < PAGE) setExhausted((s) => new Set(s).add(id))
           }
-        }
-        if (fresh.length) transactions = [...fresh.reverse(), ...transactions].slice(0, KEEP_TRANSACTIONS)
-        return { ...s, transactions, minutes, issues }
-      })
+          setLoadedIds((s) => new Set(s).add(id))
+        },
+        onState: (state) => setStates((s) => ({ ...s, [id]: state })),
+      }),
+    )
+    return () => closers.forEach((close) => close())
+  }, [key])
 
-    const connect = () => {
-      setState((s) => ({ ...s, connection: 'connecting' }))
-      ws = new WebSocket(liveUrl(projectId))
-      ws.onopen = () => {
-        retry = 0
-        setState((s) => ({ ...s, connection: 'live' }))
-        ping = setInterval(() => ws?.readyState === WebSocket.OPEN && ws.send('ping'), 30_000)
-      }
-      ws.onmessage = (m) => {
-        if (typeof m.data !== 'string' || m.data === 'pong') return
-        try {
-          const msg = JSON.parse(m.data)
-          if (msg.type === 'batch') apply(msg.events as LiveEvent[])
-        } catch {
-          // Not ours.
-        }
-      }
-      ws.onclose = () => {
-        clearInterval(ping)
-        if (closed) return
-        setState((s) => ({ ...s, connection: 'offline' }))
-        timer = setTimeout(connect, Math.min(30_000, 1000 * 2 ** retry++))
-      }
-    }
-    connect()
-    return () => {
-      closed = true
-      clearTimeout(timer)
-      clearInterval(ping)
-      ws?.close()
-    }
-  }, [projectId])
+  const hasOlder = useCallback((ids: string[]) => ids.some((id) => !exhausted.has(id)), [exhausted])
 
-  return state
+  const loadOlder = useCallback(
+    async (ids: string[]) => {
+      const pages = await Promise.all(
+        ids
+          .filter((id) => !exhausted.has(id))
+          .map(async (id) => {
+            const loaded = current.current.filter((r) => r.projectId === id)
+            const before = loaded.length ? Math.min(...loaded.map((r) => r.id)) : undefined
+            const page = (await api.requests(id, { before, limit: PAGE })).map((r) => withProject(id, r))
+            if (page.length < PAGE) setExhausted((s) => new Set(s).add(id))
+            return page
+          }),
+      )
+      const older = pages.flat()
+      const merged = mergeRequests(current.current, older)
+      cap.current = Math.max(cap.current, statementCount(merged))
+      setRequests(merged)
+      return older
+    },
+    [exhausted],
+  )
+
+  const ids = key ? key.split(',') : []
+  const connection = Object.values(states).reduce<Connection>((worst, s) => (RANK[s] > RANK[worst] ? s : worst), 'live')
+  return {
+    connection: Object.keys(states).length ? connection : 'connecting',
+    requests,
+    size: statementCount(requests),
+    loaded: ids.every((id) => loadedIds.has(id)),
+    hasOlder,
+    loadOlder,
+  }
 }

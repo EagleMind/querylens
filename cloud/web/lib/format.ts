@@ -26,8 +26,15 @@ export function fmtRelative(iso: string, now = Date.now()): string {
   return `${Math.floor(s / 86_400)}d ago`
 }
 
-export function fmtClock(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+/** 14:02:11.482 */
+export function fmtTime(epochMs: number): string {
+  const d = new Date(epochMs)
+  const hms = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
+  return `${hms}.${String(d.getMilliseconds()).padStart(3, '0')}`
+}
+
+export function fmtDateTime(epochMs: number): string {
+  return new Date(epochMs).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium', hourCycle: 'h23' })
 }
 
 export const FINDING_KINDS: Record<FindingKind, string> = {
@@ -41,10 +48,10 @@ export const FINDING_KINDS: Record<FindingKind, string> = {
   chatty_request: 'Chatty request',
 }
 
-export const SEVERITY: Record<SuggestionSeverity, { label: string; swatch: string; text: string }> = {
-  high: { label: 'High', swatch: 'bg-sev-high', text: 'text-sev-high' },
-  medium: { label: 'Medium', swatch: 'bg-sev-medium', text: 'text-sev-medium' },
-  low: { label: 'Low', swatch: 'bg-sev-low', text: 'text-muted' },
+export const SEVERITY: Record<SuggestionSeverity, { label: string; dot: string }> = {
+  high: { label: 'High', dot: 'bg-destructive' },
+  medium: { label: 'Medium', dot: 'bg-warning' },
+  low: { label: 'Low', dot: 'bg-muted-foreground' },
 }
 
 export const ORMS: Record<Orm, string> = {

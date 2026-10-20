@@ -8,7 +8,7 @@ query plans and a CI gate. Both were removed; they're in git history before `mon
 ```
 app + querylens-node ──gzipped NDJSON──▶ Worker ──RPC──▶ Project Durable Object
                                            │               ├ querylens-core (WebAssembly): evaluate
-dashboard ──/api/0, WebSocket────────────▶ ┘               ├ SQLite: issues, events, hourly stats
+dashboard ──/api/0, WebSocket────────────▶ ┘               ├ SQLite: issues, events, requests, hourly stats
                                                            └ live feed (hibernating WebSockets)
 ```
 
@@ -73,8 +73,10 @@ Everything fits the Workers Free plan, which sets the shape:
   - Checks the DSN key (constant-time comparison) and runs the digest.
   - Upserts issues keyed by `(environment, finding id)`. Severity only rises and origins merge.
     A resolved issue seen again reopens as regressed; an ignored one keeps counting.
-  - Keeps the latest 10 events per issue (their statements, values scrubbed) and hourly
-    per-shape statistics for 30 days, pruned by a daily alarm.
+  - Keeps the latest 10 events per issue (their statements, values scrubbed), the query
+    history (one row per request sent: its first 100 statements and its findings; 7 days and
+    the latest 20,000, trimmed every 500 requests and by the daily alarm) and hourly per-shape
+    statistics for 30 days, pruned by the same alarm.
   - Broadcasts `LiveEvent`s (`transaction`, `issue`, `throughput`) to dashboards on
     hibernating WebSockets (pings auto-answered).
 - **`Registry` Durable Object**: the project list, touched only by the dashboard.
@@ -85,18 +87,24 @@ Rows written are the free plan's scarcest resource (100,000 a day):
 - A finding costs 3 rows: the issue, the event, and pruning old events.
 - Statistics cost one upsert per shape per report.
 - A known shape's `last_seen` is refreshed at most hourly.
-- Sampled live requests are broadcast, never stored.
+- Every request sent costs 1 row in the query history (plus its share of the trims).
 
 ## 4. The dashboard (`cloud/web`)
 
-React and Tailwind, served as static assets by the same Worker with a single-page-app
-fallback. Its own small router, with types from `cloud/bindings`.
+React, Tailwind and shadcn/ui (`web/components/ui`), served as static assets by the same
+Worker with a single-page-app fallback. Its own small router, with types from `cloud/bindings`.
 
-- **Live**: the WebSocket feed (requests with statements and findings, new and regressed
-  issues) and a statements-per-minute chart. Five-minute reports are spread over their minutes.
-- **Evaluation**: issues (filters, search, resolve/ignore/reopen; detail with fix, statement,
-  parent statement, code locations, latest requests) and top statements by total time.
-- **Settings**: DSN and setup, thresholds and sampling, projects, sign-out.
+- **Live** (`/`): for each project, the latest page of the query history
+  (`GET …/requests`), then its WebSocket for new requests (the page is reloaded on every
+  reconnect, so gaps fill), and older pages on demand (`?before=`). Every statement, newest
+  first. Built-in views, project / environment / search filters, and custom filters
+  (`web/lib/filters.ts`: one small strategy per field) saved in `localStorage`.
+- **Query report** (`/queries/<project>/<request>/<seq>`): the stored request
+  (`GET …/requests/<n>`, or the loaded copy). Adds the issue detail and fix
+  (`GET …/issues/<n>`, matched through `LiveFinding.fingerprint`) and the shape's last 24
+  hours (`GET …/queries?fingerprint=`).
+- **Settings** (`/settings`): the connected host and backend version, each project's DSN,
+  the SDK setup, sign-out.
 
 ## 5. Next
 
