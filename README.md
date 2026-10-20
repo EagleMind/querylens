@@ -29,7 +29,7 @@ written for your ORM.
 
 ```
 your app + querylens-node ──── values removed, gzipped ────▶ your Cloudflare Worker ──▶ dashboard
-  (pg / mysql2, via any ORM)                                   Rust analysis (WebAssembly)
+  (pg / postgres.js / mysql2)                                 Rust analysis (WebAssembly)
                                                                issues, stats, live feed (Durable Objects)
 ```
 
@@ -54,8 +54,9 @@ comes back is flagged as **regressed**.
 **In your app**
 
 - Node.js 18 or later
-- PostgreSQL through [`pg`](https://node-postgres.com/), or MySQL through
-  [`mysql2`](https://sidorares.github.io/node-mysql2/), used directly or by your ORM
+- PostgreSQL through [`pg`](https://node-postgres.com/) or [`postgres`](https://github.com/porsager/postgres)
+  (postgres.js), or MySQL through [`mysql2`](https://sidorares.github.io/node-mysql2/), used
+  directly or by your ORM
 
 **For the backend**
 
@@ -165,7 +166,7 @@ their next report. The
   that's kept, which is how an N+1 (different values) is told apart from a repeated query.
 - **Your queries are never changed, and nothing waits on QueryLens.** Reports go out in the
   background, batched and gzipped. If anything fails inside the SDK, your query runs as if
-  it weren't there.
+  it weren't there. (The one exception is Prisma's opt-in [engine mode](integrations/node#prisma).)
 - **Bounded memory.** When the backend is unreachable the SDK backs off and drops the oldest
   data, never holding more than about 4 MB.
 - **Your data stays in your Cloudflare account.** There is no QueryLens service in between.
@@ -177,8 +178,8 @@ their next report. The
 |---|---|
 | **Runtime** | Node.js 18+ (CommonJS and ESM, Next.js) |
 | **Databases** | PostgreSQL, MySQL |
-| **Drivers** | `pg`, `mysql2` (connections, pools and the promise API) |
-| **Captured through** | Sequelize, Knex, TypeORM, MikroORM, Drizzle, the drivers directly, and Prisma when it connects through `pg` (`@prisma/adapter-pg`) |
+| **Drivers** | `pg`, `postgres` (postgres.js), `mysql2` (connections, pools and the promise API) |
+| **Captured through** | Sequelize, Knex, TypeORM, MikroORM, Drizzle (`node-postgres`, `postgres-js`, `mysql2`), the drivers directly, and Prisma with the [`querylens-node/prisma`](integrations/node#prisma) extension (through `@prisma/adapter-pg`, or Prisma 6's Rust engine with `engine: true`) |
 | **Fixes with code** | Sequelize (`include` with `separate`, `bulkCreate`, `findAndCountAll`…) |
 | **Fixes naming the right API** | Prisma, TypeORM, plus Django, Active Record, SQLAlchemy and Hibernate, which the analysis already recognizes |
 | **Backend** | Cloudflare Workers + Durable Objects (SQLite), free plan |

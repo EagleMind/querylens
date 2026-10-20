@@ -1,7 +1,8 @@
-// QueryLens SDK for Node.js. Monitors the queries your app sends to PostgreSQL (`pg`)
-// and MySQL (`mysql2`), through Sequelize, Knex, TypeORM, MikroORM, Drizzle or the drivers
-// directly, and reports them to your QueryLens backend, which finds N+1s, writes in a loop, slow and
-// failing statements, and says how to fix them in your ORM.
+// QueryLens SDK for Node.js. Monitors the queries your app sends to PostgreSQL (`pg`,
+// `postgres`) and MySQL (`mysql2`), through Sequelize, Knex, TypeORM, MikroORM, Drizzle,
+// Prisma (with querylens-node/prisma) or the drivers directly, and reports them to your
+// QueryLens backend, which finds N+1s, writes in a loop, slow and failing statements, and
+// says how to fix them in your ORM.
 //
 //   QUERYLENS_DSN=https://<key>@<host>/<project>
 //   require('querylens-node/register')        // CommonJS, first line of your entry file
@@ -27,7 +28,7 @@ const MAX_PARAM = 2000;
 
 const requestContext = new AsyncLocalStorage();
 const cwd = process.cwd();
-const SDK_FILES = new Set([__filename, path.join(__dirname, 'monitor.cjs'), path.join(__dirname, 'scrub.cjs')]);
+const SDK_FILES = new Set([__filename, ...['monitor.cjs', 'scrub.cjs', 'prisma.cjs'].map((f) => path.join(__dirname, f))]);
 
 /** First frame of `stack` outside node_modules, Node internals and the SDK, as `file:line`. */
 function siteOf(stack) {
@@ -52,15 +53,27 @@ function siteOf(stack) {
   return null;
 }
 
-/** Capture the call stack now; read it (the costly part) only when the request is sent. */
+/**
+ * The ORM operation running, set by ORM integrations (querylens-node/prisma):
+ * `{ site() }`, the app's line for it, and `viaDriver`, set when a driver hook sees its SQL.
+ */
+const operations = new AsyncLocalStorage();
+
+/**
+ * For a driver hook, when a query starts: capture the call stack now; read it (the costly
+ * part) only when the request is sent. Inside an ORM operation an integration knows the
+ * app's line for, that line wins: the driver's own stack may be all ORM internals.
+ */
 function lazySite() {
   const limit = Error.stackTraceLimit;
   Error.stackTraceLimit = 50;
   const holder = {};
   Error.captureStackTrace(holder);
   Error.stackTraceLimit = limit;
+  const operation = operations.getStore();
+  if (operation) operation.viaDriver = true;
   let site;
-  return () => (site === undefined ? (site = siteOf(holder.stack)) : site);
+  return () => (site === undefined ? (site = (operation && operation.site()) || siteOf(holder.stack)) : site);
 }
 
 /** `/orders/123/items` → `/orders/:id/items`, so a route groups its requests. */
@@ -285,6 +298,113 @@ function patchMysql2(mysql2, monitor) {
   return mysql2;
 }
 
+/**
+ * Rows a postgres.js result holds: its command's count (rows read or written). A Result is
+ * an array of rows carrying `command` and `count`; several statements give an array of them.
+ */
+function postgresRows(res) {
+  if (!res || typeof res !== 'object') return 0;
+  if ('command' in res) return typeof res.count === 'number' ? res.count : res.length;
+  return Array.isArray(res) ? res.reduce((n, r) => n + (r && typeof r === 'object' && 'command' in r ? postgresRows(r) : 0), 0) : 0;
+}
+
+/** The statement postgres.js sent; when it failed before that, its text with `$n` placeholders. */
+function postgresSql(query) {
+  if (typeof query.string === 'string') return query.string;
+  const strings = Array.isArray(query.strings) ? query.strings : [];
+  return strings.length ? strings.reduce((sql, part, i) => `${sql}$${i}${part}`) : null;
+}
+
+/**
+ * Wrap postgres.js (`postgres`, Drizzle's postgres-js driver) through its Query class, which
+ * tagged templates, `sql.unsafe`, `sql.file`, `sql.begin` and reserved connections all use.
+ * A query is a lazy promise: the call site and request are taken when it's created (the
+ * app's line is on the stack then), the timing from when it's handed to a connection until
+ * postgres.js settles it.
+ */
+function patchPostgres(Query, monitor) {
+  const proto = Query && Query.prototype;
+  if (typeof Query !== 'function' || !proto || typeof proto.handle !== 'function' || proto.handle.__querylens) return Query;
+  const Base = Object.getPrototypeOf(Query);
+  const created = new WeakMap();
+  const connIds = new WeakMap();
+  let nextConn = 0;
+
+  // Query's constructor calls `super`, its parent class (Promise): a step in between sees
+  // each query created, and builds it exactly as `super` would.
+  function Created(executor) {
+    const query = Reflect.construct(Base, [executor], new.target);
+    try {
+      created.set(query, { site: lazySite(), ctx: requestContext.getStore() });
+    } catch {}
+    return query;
+  }
+  Object.setPrototypeOf(Created, Base);
+  Created.prototype = Base.prototype;
+  Object.setPrototypeOf(Query, Created);
+
+  function watch(query) {
+    const call = created.get(query);
+    // Created before the patch, or one of the connection's own (array types, read-only
+    // state), which it runs itself, through its `execute`.
+    if (!call || query.handler.name === 'execute') return;
+    created.delete(query);
+    const started = performance.now();
+    const { resolve, reject } = query;
+    let done = false;
+    const finish = (err, res) => {
+      if (done) return;
+      done = true;
+      try {
+        const sql = postgresSql(query);
+        if (sql === null) return;
+        let conn = 0;
+        if (query.state && typeof query.state === 'object') {
+          conn = connIds.get(query.state);
+          if (conn === undefined) connIds.set(query.state, (conn = ++nextConn));
+        }
+        monitor.record(call.ctx ? call.ctx.txn : null, {
+          started,
+          durationMs: performance.now() - started,
+          sql,
+          params: (Array.isArray(query.parameters) ? query.parameters : []).map(paramText),
+          rows: postgresRows(res),
+          error: errorText(err),
+          origin: call.site,
+          conn,
+          dialect: 'postgres',
+        });
+      } catch {}
+    };
+    // An async-iterator cursor replaces these on each batch: it's recorded if it ends in the first.
+    query.resolve = function (value) {
+      finish(null, value);
+      return resolve.apply(this, arguments);
+    };
+    query.reject = function (err) {
+      finish(err, null);
+      return reject.apply(this, arguments);
+    };
+  }
+
+  const handle = proto.handle;
+  proto.handle = function () {
+    if (!this.executed) {
+      try {
+        watch(this);
+      } catch {}
+    }
+    return handle.apply(this, arguments);
+  };
+  proto.handle.__querylens = true;
+  return Query;
+}
+
+/** postgres.js keeps its Query class in `query.js` next to its entry file, in each of its builds. */
+function postgresQueryFile(entry) {
+  return path.join(path.dirname(entry), 'query.js');
+}
+
 /** Each HTTP request becomes a transaction, ended when the response is done. */
 function instrumentHttp(monitor) {
   for (const name of ['http', 'https']) {
@@ -306,13 +426,18 @@ function instrumentHttp(monitor) {
   }
 }
 
+/** The running monitor, from whichever copy of this module started it; `null` when off. */
+function activeMonitor() {
+  const sdk = globalThis[GLOBAL];
+  return (sdk && sdk.monitor) || null;
+}
+
 /**
  * Run `fn` as its own transaction named `name` (a queue job, a cron task, a script), so
  * its queries are evaluated together like a request's. Returns what `fn` returns.
  */
 function withTransaction(name, fn) {
-  const sdk = globalThis[GLOBAL];
-  const monitor = sdk && sdk.monitor;
+  const monitor = activeMonitor();
   if (!monitor) return fn();
   const ctx = { txn: monitor.startTransaction(String(name)) };
   const end = () => monitor.endTransaction(ctx.txn);
@@ -359,7 +484,7 @@ function init(options = {}) {
   api.monitor = monitor;
   api.flush = () => monitor.flush();
 
-  // `require('pg')` / `require('mysql2')` from anywhere (ORMs load them themselves)…
+  // `require('pg')` / `require('mysql2')` / `require('postgres')` from anywhere (ORMs load them themselves)…
   const load = Module._load;
   Module._load = function (request, parent) {
     const exported = load.apply(this, arguments);
@@ -368,10 +493,14 @@ function init(options = {}) {
       if (request === 'mysql2') return patchMysql2(exported, monitor);
       // The promise API shares the core's connection class: patch it through the core.
       if (request === 'mysql2/promise') patchMysql2(load.call(this, 'mysql2', parent, false), monitor);
+      if (request === 'postgres') {
+        const file = postgresQueryFile(Module._resolveFilename(request, parent));
+        patchPostgres(load.call(this, file, parent, false).Query, monitor);
+      }
     } catch {}
     return exported;
   };
-  // …and the app's copies right away (ESM imports share the CommonJS cache).
+  // …and the app's copies right away (ESM imports of pg and mysql2 share the CommonJS cache).
   const appRequire = Module.createRequire(path.join(cwd, 'noop.js'));
   for (const [name, patch] of [
     ['pg', patchPg],
@@ -383,6 +512,20 @@ function init(options = {}) {
       // Not installed (yet); the require hook still applies.
     }
   }
+  try {
+    // postgres.js has a CommonJS build (cjs/src, for require) and an ESM one (src, for
+    // import), each with its own Query class. The ESM one loads asynchronously: it's
+    // patched before the app's first request, possibly after queries run at startup.
+    const entry = appRequire.resolve('postgres');
+    patchPostgres(appRequire(postgresQueryFile(entry)).Query, monitor);
+    const esm = path.join(path.dirname(entry), '..', '..', 'src', 'query.js');
+    import(url.pathToFileURL(esm).href).then(
+      (m) => patchPostgres(m.Query, monitor),
+      () => {},
+    );
+  } catch {
+    // Not installed (yet); the require hook still applies to CommonJS.
+  }
   instrumentHttp(monitor);
   return api;
 }
@@ -393,4 +536,4 @@ function flush() {
   return sdk ? sdk.flush() : Promise.resolve();
 }
 
-module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchMysql2, mysqlRows, siteOf } };
+module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchMysql2, patchPostgres, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };

@@ -108,3 +108,119 @@ test('mysql2: callbacks, pool commands and emitters are recorded, as MySQL', asy
   assert.match(recorded[0].origin(), /index\.test\.cjs:\d+$/);
   assert.equal(sdk._internal.mysqlRows([[{}, {}], { affectedRows: 4 }]), 6, 'multiple statements');
 });
+
+test('postgres.js: tagged, unsafe and failing queries are recorded where they were written', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(q) };
+  // Like postgres.js: a lazy Promise subclass, run on its first then() by a connection.
+  class Query extends Promise {
+    constructor(strings, args, handler) {
+      let resolve;
+      let reject;
+      super((a, b) => {
+        resolve = a;
+        reject = b;
+      });
+      this.tagged = Array.isArray(strings.raw);
+      this.strings = strings;
+      this.args = args;
+      this.handler = handler;
+      this.executed = false;
+      this.resolve = (x) => resolve(x);
+      this.reject = (x) => reject(x);
+    }
+    static get [Symbol.species]() {
+      return Promise;
+    }
+    async handle() {
+      !this.executed && (this.executed = true) && (await 1) && this.handler(this);
+    }
+    then() {
+      this.handle();
+      return super.then.apply(this, arguments);
+    }
+  }
+  const backends = [{ pid: 101 }, { pid: 102 }];
+  const result = (rows, command, count) => Object.defineProperties(rows, { command: { value: command }, count: { value: count } });
+  const handler = (q) => {
+    q.string = q.tagged ? q.strings.reduce((s, part, i) => `${s}$${i}${part}`) : q.strings[0];
+    q.parameters = q.args.map(String);
+    q.state = backends[q.string.includes('orders') ? 1 : 0];
+    setImmediate(() => {
+      if (q.string.includes('missing')) q.reject(Object.assign(new Error('relation "missing" does not exist'), { severity: 'ERROR', code: '42P01' }));
+      else if (q.string.startsWith('update')) q.resolve(result([], 'UPDATE', 3));
+      else if (q.string.includes(';')) q.resolve([result([{}], 'SELECT', 1), result([{}, {}], 'SELECT', 2), result([], null, null)]);
+      else q.resolve(result([{ id: 1 }, { id: 2 }], 'SELECT', 2));
+    });
+  };
+  function execute(q) {
+    q.string = q.strings[0];
+    setImmediate(() => q.resolve(result([], 'SELECT', 0)));
+  }
+  const sql = (strings, ...args) => new Query(strings, args, handler);
+  const unsafe = (text, args = []) => new Query([text], args, handler);
+
+  const before = sql`select 0`;
+  sdk._internal.patchPostgres(Query, monitor);
+  assert.strictEqual(sdk._internal.patchPostgres(Query, monitor), Query, 'patching twice is a no-op');
+
+  const rows = await sql`select * from users where id = ${42}`;
+  assert.deepEqual([...rows], [{ id: 1 }, { id: 2 }], 'results unchanged');
+  await unsafe('select * from orders where user_id = $1', [7]);
+  await assert.rejects(sql`select * from missing`, /relation "missing" does not exist/);
+  await sql`update users set seen = true where id = ${1}`;
+  await unsafe('select 1; select 1, 2');
+  await new Query(['select typarray from pg_type'], [], execute);
+  await before;
+  const fragment = sql`and id = ${1}`; // embedded in another query, never run itself
+
+  assert.ok(fragment instanceof Query && fragment instanceof Promise);
+  assert.equal(recorded.length, 5, 'internal, unpatched and unrun queries are left out');
+  assert.ok(recorded.every((q) => q.dialect === 'postgres' && q.durationMs >= 0));
+  assert.equal(recorded[0].sql, 'select * from users where id = $1');
+  assert.deepEqual(recorded[0].params, ['42']);
+  assert.equal(recorded[0].rows, 2);
+  assert.match(recorded[0].origin(), /index\.test\.cjs:\d+$/);
+  assert.deepEqual([recorded[0].conn, recorded[1].conn], [1, 2], 'one id per connection');
+  assert.equal(recorded[2].error, 'ERROR: relation "missing" does not exist (42P01)');
+  assert.equal(recorded[3].rows, 3, 'rows written');
+  assert.equal(recorded[4].rows, 3, 'several statements');
+});
+
+test('postgres.js: queries join the request they were created in', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(txn), startTransaction: (name) => ({ name }), endTransaction() {} };
+  globalThis[Symbol.for('querylens.sdk')] = { monitor };
+  class Query extends Promise {
+    constructor(strings, args, handler) {
+      let resolve;
+      super((a) => (resolve = a));
+      this.strings = strings;
+      this.handler = handler;
+      this.resolve = resolve;
+      this.reject = () => {};
+    }
+    static get [Symbol.species]() {
+      return Promise;
+    }
+    async handle() {
+      !this.executed && (this.executed = true) && (await 1) && this.handler(this);
+    }
+    then() {
+      this.handle();
+      return super.then.apply(this, arguments);
+    }
+  }
+  const handler = (q) => setTimeout(() => q.resolve([]), 5);
+  sdk._internal.patchPostgres(Query, monitor);
+  try {
+    // Two jobs at once: each query goes to its own.
+    await Promise.all([
+      sdk.withTransaction('job:a', () => new Query(['select 1'], [], handler)),
+      sdk.withTransaction('job:b', () => new Query(['select 2'], [], handler)),
+    ]);
+  } finally {
+    delete globalThis[Symbol.for('querylens.sdk')];
+  }
+  assert.deepEqual(recorded.map((t) => t.name).sort(), ['job:a', 'job:b']);
+});
