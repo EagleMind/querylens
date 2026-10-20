@@ -83,6 +83,19 @@ function lazySite() {
   return () => (operation && operation.site()) || own();
 }
 
+/**
+ * `fn`, for a driver to call back later from code of its own (a pool's queue, a pooled
+ * connection's socket, which keeps the context it was opened in), run in the request and
+ * operation current now. Only QueryLens's own context is carried over.
+ */
+function inCallerContext(fn) {
+  const ctx = requestContext.getStore();
+  const operation = operations.getStore();
+  return function () {
+    return requestContext.run(ctx, () => operations.run(operation, () => fn.apply(this, arguments)));
+  };
+}
+
 /** `/orders/123/items` → `/orders/:id/items`, so a route groups its requests. */
 function routeOf(req) {
   const pathname = (req.url || '').split('?')[0];
@@ -118,10 +131,15 @@ function rowCount(res) {
   return Array.isArray(res.rows) ? res.rows.length : 0;
 }
 
-/** Wrap `pg.Client.prototype.query` so every query is timed and handed to the monitor. */
+/**
+ * Wrap `pg.Client.prototype.query` so every query is timed and handed to the monitor, and
+ * `pg.Pool`'s so its queries keep their line and request.
+ */
 function patchPg(pg, monitor) {
   const Client = pg && pg.Client;
-  if (typeof Client !== 'function' || Client.prototype.query.__querylens) return pg;
+  if (typeof Client !== 'function') return pg;
+  patchPgPool(pg.Pool);
+  if (Client.prototype.query.__querylens) return pg;
   const query = Client.prototype.query;
   const connIds = new WeakMap();
   let nextConn = 0;
@@ -166,7 +184,8 @@ function patchPg(pg, monitor) {
     const args = Array.prototype.slice.call(arguments);
     const cb = args.findIndex((a) => typeof a === 'function');
     if (cb >= 0) {
-      const original = args[cb];
+      // A pooled client calls back from its socket, in the request that opened it.
+      const original = inCallerContext(args[cb]);
       args[cb] = function (err, res) {
         finish(err, res);
         return original.apply(this, arguments);
@@ -185,6 +204,33 @@ function patchPg(pg, monitor) {
   recorded.__querylens = true;
   Client.prototype.query = recorded;
   return pg;
+}
+
+/**
+ * pg-pool runs `pool.query` on a client once it has one, later and outside the app's code:
+ * the app's line is taken when `pool.query` is called, and the query runs inside an
+ * operation holding it (unless an ORM operation already holds one). A pool out of clients
+ * queues `connect` callbacks and calls them from the query that frees a client, in that
+ * query's request: they're run in their own.
+ */
+function patchPgPool(Pool) {
+  let proto = Pool && Pool.prototype;
+  while (proto && !Object.prototype.hasOwnProperty.call(proto, 'query')) proto = Object.getPrototypeOf(proto);
+  if (!proto || typeof proto.query !== 'function' || typeof proto.connect !== 'function' || proto.query.__querylens) return Pool;
+  const { query, connect } = proto;
+
+  proto.connect = function (cb) {
+    if (typeof cb !== 'function') return connect.apply(this, arguments);
+    const args = Array.prototype.slice.call(arguments);
+    args[0] = inCallerContext(cb);
+    return connect.apply(this, args);
+  };
+  proto.query = function () {
+    if (operations.getStore()) return query.apply(this, arguments);
+    return operations.run({ site: stackSite(), viaDriver: false }, () => query.apply(this, arguments));
+  };
+  proto.query.__querylens = true;
+  return Pool;
 }
 
 /** Rows a mysql2 result holds: rows read, or rows written for an INSERT/UPDATE/DELETE. */
@@ -602,4 +648,4 @@ function flush() {
   return sdk ? sdk.flush() : Promise.resolve();
 }
 
-module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchMysql2, patchPostgres, patchDrizzle, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };
+module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchPgPool, patchMysql2, patchPostgres, patchDrizzle, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };

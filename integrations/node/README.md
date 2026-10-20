@@ -47,8 +47,7 @@ function; queries run exactly as before. Recording a line costs a few microsecon
 
 In ESM apps on Node.js older than 20.19, `select` queries have no line: the SDK can patch
 Drizzle's ESM build only after its select builders have copied `then`. Also without a
-line: `db.$count()`, and a prepared statement's `execute()` on a `pg.Pool` (the pool hands
-the query to a connection later, outside your code).
+line: `db.$count()`.
 
 ## Prisma
 
