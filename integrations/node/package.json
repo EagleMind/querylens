@@ -13,7 +13,7 @@
     "./prisma": "./prisma.cjs",
     "./package.json": "./package.json"
   },
-  "files": ["index.cjs", "monitor.cjs", "scrub.cjs", "source.cjs", "register.cjs", "prisma.cjs", "README.md"],
+  "files": ["index.cjs", "context.cjs", "drivers/", "monitor.cjs", "scrub.cjs", "source.cjs", "register.cjs", "prisma.cjs", "README.md"],
   "engines": { "node": ">=18" },
   "scripts": {
     "test": "node --test \"*.test.cjs\""
