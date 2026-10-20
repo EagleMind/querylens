@@ -15,5 +15,5 @@
     "noUnusedLocals": true,
     "paths": { "@/*": ["./web/*"] }
   },
-  "include": ["web", "bindings"]
+  "include": ["web", "shared", "bindings"]
 }
