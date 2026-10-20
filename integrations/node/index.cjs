@@ -138,7 +138,7 @@ function rowCount(res) {
 function patchPg(pg, monitor) {
   const Client = pg && pg.Client;
   if (typeof Client !== 'function') return pg;
-  patchPgPool(pg.Pool);
+  patchPool(pg.Pool, ['query'], 'connect');
   if (Client.prototype.query.__querylens) return pg;
   const query = Client.prototype.query;
   const connIds = new WeakMap();
@@ -207,29 +207,34 @@ function patchPg(pg, monitor) {
 }
 
 /**
- * pg-pool runs `pool.query` on a client once it has one, later and outside the app's code:
- * the app's line is taken when `pool.query` is called, and the query runs inside an
- * operation holding it (unless an ORM operation already holds one). A pool out of clients
- * queues `connect` callbacks and calls them from the query that frees a client, in that
- * query's request: they're run in their own.
+ * A pool runs a query on a connection once it has one, later and outside the app's code
+ * (pg-pool's `query`, mysql2's `query` and `execute`): the app's line is taken when one of
+ * `queries` is called, and the query runs inside an operation holding it (unless an ORM
+ * operation already holds one). A pool out of connections queues `acquire` callbacks and
+ * calls them from the query that frees a connection, in that query's request: they're run
+ * in their own.
  */
-function patchPgPool(Pool) {
+function patchPool(Pool, queries, acquire) {
   let proto = Pool && Pool.prototype;
-  while (proto && !Object.prototype.hasOwnProperty.call(proto, 'query')) proto = Object.getPrototypeOf(proto);
-  if (!proto || typeof proto.query !== 'function' || typeof proto.connect !== 'function' || proto.query.__querylens) return Pool;
-  const { query, connect } = proto;
+  while (proto && !Object.prototype.hasOwnProperty.call(proto, queries[0])) proto = Object.getPrototypeOf(proto);
+  if (!proto || typeof proto[queries[0]] !== 'function' || typeof proto[acquire] !== 'function' || proto[queries[0]].__querylens) return Pool;
 
-  proto.connect = function (cb) {
+  const connect = proto[acquire];
+  proto[acquire] = function (cb) {
     if (typeof cb !== 'function') return connect.apply(this, arguments);
     const args = Array.prototype.slice.call(arguments);
     args[0] = inCallerContext(cb);
     return connect.apply(this, args);
   };
-  proto.query = function () {
-    if (operations.getStore()) return query.apply(this, arguments);
-    return operations.run({ site: stackSite(), viaDriver: false }, () => query.apply(this, arguments));
-  };
-  proto.query.__querylens = true;
+  for (const method of queries) {
+    const query = proto[method];
+    if (typeof query !== 'function') continue;
+    proto[method] = function () {
+      if (operations.getStore()) return query.apply(this, arguments);
+      return operations.run({ site: stackSite(), viaDriver: false }, () => query.apply(this, arguments));
+    };
+    proto[method].__querylens = true;
+  }
   return Pool;
 }
 
@@ -249,11 +254,13 @@ function mysqlRows(res) {
  * MySQL use it). They live on the base connection class, shared by connections, pool
  * connections and the promise API, so one patch covers them all. Handles the three ways
  * mysql2 runs a statement: a callback, a Query command handed over by a pool, and the
- * event-emitter form.
+ * event-emitter form. The pool's own `query` and `execute` are wrapped so their queries
+ * keep their line and request.
  */
 function patchMysql2(mysql2, monitor) {
   const Connection = mysql2 && mysql2.Connection;
   if (typeof Connection !== 'function') return mysql2;
+  patchPool(mysql2.Pool, ['query', 'execute'], 'getConnection');
   let proto = Connection.prototype;
   while (proto && !Object.prototype.hasOwnProperty.call(proto, 'query')) proto = Object.getPrototypeOf(proto);
   if (!proto || typeof proto.query !== 'function' || proto.query.__querylens) return mysql2;
@@ -316,7 +323,8 @@ function patchMysql2(mysql2, monitor) {
       try {
         if (command) {
           if (typeof command.onResult === 'function') {
-            const onResult = command.onResult;
+            // A connection calls back from its socket, in the request that opened it.
+            const onResult = inCallerContext(command.onResult);
             command.onResult = function (err, res) {
               finish(err, mysqlRows(res));
               return onResult.apply(this, arguments);
@@ -329,7 +337,7 @@ function patchMysql2(mysql2, monitor) {
         const args = Array.prototype.slice.call(arguments);
         const cb = args.findIndex((a, i) => i > 0 && typeof a === 'function');
         if (cb >= 0) {
-          const callback = args[cb];
+          const callback = inCallerContext(args[cb]);
           args[cb] = function (err, res) {
             finish(err, mysqlRows(res));
             return callback.apply(this, arguments);
@@ -648,4 +656,4 @@ function flush() {
   return sdk ? sdk.flush() : Promise.resolve();
 }
 
-module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchPgPool, patchMysql2, patchPostgres, patchDrizzle, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };
+module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchPool, patchMysql2, patchPostgres, patchDrizzle, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };

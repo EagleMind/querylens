@@ -382,7 +382,7 @@ test('pg.Pool: queries get the line that called pool.query', async () => {
   assert.equal(operation.viaDriver, true);
   assert.deepEqual(recorded.map((q) => q.sql), ['select 1', 'select 2', 'select 3', 'select 4', 'select * from missing', 'select 5', 'select 6']);
   assert.deepEqual(recorded.map((q) => q.origin()), lines);
-  assert.strictEqual(sdk._internal.patchPgPool(pg.Pool), pg.Pool, 'patching twice is a no-op');
+  assert.strictEqual(sdk._internal.patchPool(pg.Pool, ['query'], 'connect'), pg.Pool, 'patching twice is a no-op');
 });
 
 test('pg.Pool: queries waiting for a client stay in their request', async () => {
@@ -397,6 +397,128 @@ test('pg.Pool: queries waiting for a client stay in their request', async () => 
       sdk.withTransaction('job:b', () => pool.query('select b')),
       sdk.withTransaction('job:c', () => new Promise((ok) => pool.query('select c1', () => pool.query('select c2', ok)))),
       sdk.withTransaction('job:d', () => new Promise((ok) => pool.connect((err, client) => client.query('select d1', [], () => client.query('select d2', [], () => ok(pool.release())))))),
+    ]);
+  } finally {
+    delete globalThis[Symbol.for('querylens.sdk')];
+  }
+  assert.deepEqual(recorded.sort(), ['job:a select a', 'job:b select b', 'job:c select c1', 'job:c select c2', 'job:d select d1', 'job:d select d2']);
+});
+
+/**
+ * A stand-in for mysql2, compiled as if in node_modules: a connection calls back from its
+ * socket, in the context it was opened in; a pool of one connection opens it asynchronously,
+ * queues `getConnection` callbacks while it's busy, and calls the next one when the query
+ * using it is done (from that socket); `pool.query` hands a Query command to a connection
+ * once it has one, `pool.execute` runs `execute` on it, like mysql2's.
+ */
+function fakeMysql2() {
+  const source = `
+    class Query extends EventEmitter {
+      constructor(sql, values, cb) { super(); this.sql = sql; this.values = values; this.onResult = cb; }
+    }
+    function result(sql) {
+      return sql.includes('missing') ? [Object.assign(new Error("Table 'shop.missing' doesn't exist"), { code: 'ER_NO_SUCH_TABLE' })] : [null, [{ sql }]];
+    }
+    class BaseConnection {
+      constructor(pool) { this.pool = pool; this.socket = new AsyncResource('socket'); }
+      query(sql, values, cb) {
+        const cmd = sql instanceof Query ? sql : new Query(sql, Array.isArray(values) ? values : undefined, typeof values === 'function' ? values : cb);
+        setTimeout(() => this.socket.runInAsyncScope(() => {
+          cmd.onResult(...result(cmd.sql));
+          cmd.emit('end');
+        }), 2);
+        return cmd;
+      }
+      execute(sql, values, cb) {
+        const cmd = new Query(sql, values, cb);
+        setTimeout(() => this.socket.runInAsyncScope(() => {
+          cmd.onResult(...result(sql));
+          cmd.emit('end');
+        }), 2);
+        return cmd;
+      }
+      release() { this.pool.release(this); }
+    }
+    class Connection extends BaseConnection {}
+    class BasePool {
+      constructor() { this.conn = null; this.idle = false; this.waiting = []; }
+      getConnection(cb) {
+        if (!this.conn) {
+          this.conn = new Connection(this);
+          return setImmediate(() => cb(null, this.conn));
+        }
+        if (this.idle) {
+          this.idle = false;
+          return process.nextTick(() => cb(null, this.conn));
+        }
+        this.waiting.push(cb);
+      }
+      release() {
+        const next = this.waiting.shift();
+        if (next) next(null, this.conn);
+        else this.idle = true;
+      }
+      query(sql, values, cb) {
+        const cmd = new Query(sql, Array.isArray(values) ? values : undefined, typeof values === 'function' ? values : cb);
+        this.getConnection((err, conn) => conn.query(cmd).once('end', () => conn.release()));
+        return cmd;
+      }
+      execute(sql, values, cb) {
+        if (typeof values === 'function') (cb = values), (values = []);
+        this.getConnection((err, conn) => conn.execute(sql, values, cb).once('end', () => conn.release()));
+      }
+    }
+    class Pool extends BasePool {
+      promise() {
+        const run = (method, sql, values) => new Promise((ok, fail) => this[method](sql, values || [], (err, rows) => (err ? fail(err) : ok([rows]))));
+        return { query: (sql, values) => run('query', sql, values), execute: (sql, values) => run('execute', sql, values) };
+      }
+    }
+    return { Connection, Pool };`;
+  const filename = path.join(__dirname, 'node_modules', 'mysql2', 'fake.cjs');
+  return vm.compileFunction(source, ['AsyncResource', 'EventEmitter'], { filename })(require('async_hooks').AsyncResource, require('events'));
+}
+
+test('mysql2 pool: queries get the line that called pool.query or pool.execute', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(q) };
+  const mysql2 = sdk._internal.patchMysql2(fakeMysql2(), monitor);
+  const pool = new mysql2.Pool();
+  const promisePool = pool.promise();
+  const lines = [];
+
+  const [rows] = await promisePool.query('select 1');
+  lines.push(here(-1));
+  await new Promise((ok) => pool.execute('select 2', [], ok));
+  lines.push(here(-1));
+  // One connection: the second and third wait for it.
+  const [, , code] = await Promise.all([new Promise((ok) => pool.query('select 3', ok)), promisePool.execute('select 4'), promisePool.query('select * from missing').catch((e) => e.code)]);
+  lines.push(here(-1), here(-1), here(-1));
+  // Inside an ORM operation, the operation's line wins, and it learns the driver ran its SQL.
+  const operation = { site: () => 'app/orders.js:7', viaDriver: false };
+  await Promise.all([promisePool.query('select 5'), sdk._internal.operations.run(operation, () => promisePool.execute('select 6'))]);
+  lines.push(here(-1), 'app/orders.js:7');
+
+  assert.deepEqual(rows, [{ sql: 'select 1' }], 'results are unchanged');
+  assert.equal(code, 'ER_NO_SUCH_TABLE', 'errors are unchanged');
+  assert.equal(operation.viaDriver, true);
+  assert.deepEqual(recorded.map((q) => q.sql), ['select 1', 'select 2', 'select 3', 'select 4', 'select * from missing', 'select 5', 'select 6']);
+  assert.deepEqual(recorded.map((q) => q.origin()), lines);
+  assert.strictEqual(sdk._internal.patchPool(mysql2.Pool, ['query', 'execute'], 'getConnection'), mysql2.Pool, 'patching twice is a no-op');
+});
+
+test('mysql2 pool: queries waiting for a connection stay in their request', async () => {
+  const recorded = [];
+  const monitor = { record: (txn, q) => recorded.push(`${txn.name} ${q.sql}`), startTransaction: (name) => ({ name }), endTransaction() {} };
+  globalThis[Symbol.for('querylens.sdk')] = { monitor };
+  const pool = new (sdk._internal.patchMysql2(fakeMysql2(), monitor).Pool)();
+  try {
+    // One connection, opened in job:a: the others wait for it, and get it from job:a's queries.
+    await Promise.all([
+      sdk.withTransaction('job:a', () => pool.promise().query('select a')),
+      sdk.withTransaction('job:b', () => new Promise((ok) => pool.query('select b', ok))),
+      sdk.withTransaction('job:c', () => new Promise((ok) => pool.query('select c1', () => pool.execute('select c2', ok)))),
+      sdk.withTransaction('job:d', () => new Promise((ok) => pool.getConnection((err, conn) => conn.query('select d1', () => conn.execute('select d2', [], () => ok(conn.release())))))),
     ]);
   } finally {
     delete globalThis[Symbol.for('querylens.sdk')];
