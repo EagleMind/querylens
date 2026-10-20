@@ -57,7 +57,8 @@ pub fn normalize_sql(sql: &str) -> String {
             while i < chars.len() && chars[i] != '\n' {
                 i += 1;
             }
-        } else if c == '$' && chars.get(i + 1).is_some_and(char::is_ascii_digit) {
+        } else if (c == '$' || c == '?') && chars.get(i + 1).is_some_and(char::is_ascii_digit) {
+            // Numbered placeholders: `$1` (PostgreSQL), `?1` (SQLite).
             i += 1;
             while i < chars.len() && chars[i].is_ascii_digit() {
                 i += 1;

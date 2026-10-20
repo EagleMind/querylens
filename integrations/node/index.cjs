@@ -1,5 +1,6 @@
 // QueryLens SDK for Node.js. Monitors the queries your app sends to PostgreSQL (`pg`,
-// `postgres`, Neon), MySQL (`mysql2`, PlanetScale) and SQLite (libSQL / Turso), through
+// `postgres`, Neon), MySQL (`mysql2`, PlanetScale) and SQLite (`better-sqlite3`, `sqlite3`,
+// `node:sqlite`, libSQL / Turso), through
 // Sequelize, Knex, TypeORM, MikroORM, Drizzle, Prisma (with querylens-node/prisma) or the
 // drivers directly (one module each in drivers/), and reports them to your
 // QueryLens backend, which finds N+1s, writes in a loop, slow and failing statements, and
@@ -30,11 +31,20 @@ const { packageRoot, patchBuilds } = require('./drivers/builds.cjs');
 const neon = require('./drivers/neon.cjs');
 const planetscale = require('./drivers/planetscale.cjs');
 const libsql = require('./drivers/libsql.cjs');
+const sqlite = require('./drivers/sqlite.cjs');
 
 /** Shared by every copy of this file loaded in the process. */
 const GLOBAL = Symbol.for('querylens.sdk');
 const DRIZZLE_FILE = /[\\/]drizzle-orm[\\/]/;
 const cwd = process.cwd();
+
+/** Drivers with one build: patched through what `require` returns (ESM imports share it). */
+const PACKAGES = [
+  { name: 'pg', patch: patchPg },
+  { name: 'mysql2', patch: patchMysql2 },
+  { name: 'better-sqlite3', patch: sqlite.patchBetterSqlite3 },
+  { name: 'sqlite3', patch: sqlite.patchSqlite3 },
+];
 
 /**
  * Drivers shipped as a CommonJS and an ES module build, each with its own classes: both are
@@ -150,8 +160,9 @@ function init(options = {}) {
   Module._load = function (request, parent) {
     const exported = load.apply(this, arguments);
     try {
-      if (request === 'pg') return patchPg(exported, monitor);
-      if (request === 'mysql2') return patchMysql2(exported, monitor);
+      const lib = PACKAGES.find((l) => l.name === request);
+      if (lib) return lib.patch(exported, monitor);
+      if (request === 'node:sqlite') return sqlite.patchNodeSqlite(exported, monitor);
       // The promise API shares the core's connection class: patch it through the core.
       if (request === 'mysql2/promise') patchMysql2(load.call(this, 'mysql2', parent, false), monitor);
       if (request === 'postgres') {
@@ -166,18 +177,22 @@ function init(options = {}) {
     } catch {}
     return exported;
   };
-  // …and the app's copies right away (ESM imports of pg and mysql2 share the CommonJS cache).
+  // …and the app's copies right away (ESM imports of these share the CommonJS cache).
   const appRequire = Module.createRequire(path.join(cwd, 'noop.js'));
-  for (const [name, patch] of [
-    ['pg', patchPg],
-    ['mysql2', patchMysql2],
-  ]) {
+  for (const lib of PACKAGES) {
     try {
-      patch(appRequire(name), monitor);
+      lib.patch(appRequire(lib.name), monitor);
     } catch {
       // Not installed (yet); the require hook still applies.
     }
   }
+  // node:sqlite warns when it loads, so it's only patched once the app has loaded it: an ES
+  // module importing it is linked before this runs; a later import, by the next turn.
+  const patchNodeSqlite = () => {
+    if (sqlite.builtinLoaded('sqlite')) sqlite.patchNodeSqlite(require('node:sqlite'), monitor);
+  };
+  patchNodeSqlite();
+  setImmediate(patchNodeSqlite).unref();
   try {
     // postgres.js has a CommonJS build (cjs/src, for require) and an ESM one (src, for
     // import), each with its own Query class. The ESM one loads asynchronously: it's
@@ -227,4 +242,4 @@ function flush() {
   return sdk ? sdk.flush() : Promise.resolve();
 }
 
-module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchPool, patchMysql2, patchPostgres, patchDrizzle, patchNeon: neon.patchNeon, patchPlanetScale: planetscale.patchPlanetScale, patchLibsql: libsql.patchLibsql, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };
+module.exports = { init, flush, withTransaction, routeOf, paramText, errorText, rowCount, _internal: { patchPg, patchPool, patchMysql2, patchPostgres, patchDrizzle, patchNeon: neon.patchNeon, patchPlanetScale: planetscale.patchPlanetScale, patchLibsql: libsql.patchLibsql, ...sqlite, mysqlRows, postgresRows, siteOf, lazySite, operations, requestContext, activeMonitor } };
