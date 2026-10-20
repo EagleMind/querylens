@@ -38,7 +38,7 @@ export function CopyButton({ value, label = 'Copy', className }: { value: string
 /** SQL (`sql`: coloured, wrapped) or code (`wrap={false}`: kept as written), with a copy button. */
 export function CodeBlock({ code, sql, wrap = true, className }: { code: string; sql?: boolean; wrap?: boolean; className?: string }) {
   return (
-    <div className={cn('relative rounded-md border bg-muted/40', className)}>
+    <div className={cn('relative min-w-0 rounded-md border bg-muted/40', className)}>
       <pre
         className={cn(
           'max-h-96 overflow-auto p-3 pr-11 font-mono text-[12.5px] leading-relaxed',

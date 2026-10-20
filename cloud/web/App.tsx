@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiError, api, getToken, setToken } from '@/lib/api'
 import { useLiveFeed } from '@/lib/live'
+import { useMuted } from '@/lib/muted'
 import { type Route, href, onLinkClick, useRoute } from '@/lib/router'
 import { cn } from '@/lib/utils'
 import { LivePage } from '@/pages/Live'
@@ -61,7 +62,9 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const route = useRoute()
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState<unknown>(null)
-  const feed = useLiveFeed(projects?.map((p) => p.id) ?? [])
+  const projectIds = projects?.map((p) => p.id) ?? []
+  const feed = useLiveFeed(projectIds)
+  const muted = useMuted(projectIds)
 
   useEffect(() => {
     api.projects().then(setProjects, (e) => (e instanceof ApiError && e.status === 401 ? onSignOut() : setError(e)))
@@ -71,9 +74,9 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   if (error) body = <ErrorNote error={error} />
   else if (!projects) body = <p className="text-sm text-muted-foreground">Loading…</p>
   else if (projects.length === 0) body = <FirstProject onCreated={(p) => setProjects([p])} />
-  else if (route.page === 'query') body = <QueryPage at={route} projects={projects} requests={feed.requests} />
-  else if (route.page === 'settings') body = <SettingsPage projects={projects} connection={feed.connection} onSignOut={onSignOut} />
-  else body = <LivePage projects={projects} feed={feed} />
+  else if (route.page === 'query') body = <QueryPage at={route} projects={projects} requests={feed.requests} muted={muted} />
+  else if (route.page === 'settings') body = <SettingsPage projects={projects} connection={feed.connection} onProjects={setProjects} onSignOut={onSignOut} />
+  else body = <LivePage projects={projects} feed={feed} muted={muted} />
 
   return (
     <div className="min-h-screen">

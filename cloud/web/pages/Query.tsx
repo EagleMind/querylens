@@ -1,5 +1,5 @@
-import { ArrowLeftIcon, FileCode2Icon } from 'lucide-react'
-import { type ReactNode, useEffect } from 'react'
+import { ArrowLeftIcon, BellIcon, BellOffIcon, FileCode2Icon } from 'lucide-react'
+import { type ReactNode, useEffect, useState } from 'react'
 
 import type { LiveFinding } from '../../bindings/LiveFinding'
 import type { Project } from '../../bindings/Project'
@@ -24,6 +24,7 @@ import {
 } from '@/lib/queries'
 import { ApiError } from '@/lib/api'
 import { type QueryRef, href, navigate, onLinkClick } from '@/lib/router'
+import type { Muted } from '@/lib/muted'
 import { useAsync } from '@/lib/useAsync'
 import { cn } from '@/lib/utils'
 
@@ -201,9 +202,36 @@ function Statement({ q }: { q: LiveQuery }) {
   )
 }
 
-function IssueCard({ projectId, finding }: { projectId: string; finding: LiveFinding }) {
+function MuteButton({ projectId, issueId, muted }: { projectId: string; issueId: number; muted: Muted }) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+  const isMuted = muted.isMuted(projectId, issueId)
+  const toggle = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await muted.setMuted(projectId, issueId, !isMuted)
+    } catch (e) {
+      setError(e)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <span className="ml-auto inline-flex items-center gap-2">
+      {error !== null && <span className="text-xs text-destructive">{error instanceof Error ? error.message : 'Failed'}</span>}
+      <Button variant="outline" size="sm" disabled={busy} onClick={toggle}>
+        {isMuted ? <BellIcon /> : <BellOffIcon />}
+        {isMuted ? 'Unmute' : 'Mute'}
+      </Button>
+    </span>
+  )
+}
+
+function IssueCard({ projectId, finding, muted }: { projectId: string; finding: LiveFinding; muted: Muted }) {
   const detail = useAsync(() => api.issue(projectId, finding.issueId), [projectId, finding.issueId])
   const d = detail.data
+  const isMuted = muted.isMuted(projectId, finding.issueId)
   return (
     <Card className="gap-4">
       <CardHeader>
@@ -213,6 +241,12 @@ function IssueCard({ projectId, finding }: { projectId: string; finding: LiveFin
             {SEVERITY[finding.severity].label}
           </Badge>
           <span className="text-muted-foreground">{FINDING_KINDS[finding.kind]}</span>
+          {isMuted && (
+            <Badge variant="secondary">
+              <BellOffIcon /> Muted
+            </Badge>
+          )}
+          <MuteButton projectId={projectId} issueId={finding.issueId} muted={muted} />
         </div>
         <CardTitle className="text-base leading-snug">{finding.title}</CardTitle>
         {d && (
@@ -222,7 +256,7 @@ function IssueCard({ projectId, finding }: { projectId: string; finding: LiveFin
           </CardDescription>
         )}
       </CardHeader>
-      <CardContent className="grid gap-4 text-sm">
+      <CardContent className="grid gap-4 text-sm [&>*]:min-w-0">
         {detail.error ? (
           <ErrorNote error={detail.error} />
         ) : !d ? (
@@ -236,7 +270,7 @@ function IssueCard({ projectId, finding }: { projectId: string; finding: LiveFin
               <Prose text={d.issue.detail} />
             </p>
             {d.fix && (
-              <div className="grid gap-3">
+              <div className="grid min-w-0 gap-3">
                 <p className="font-medium">How to fix it{d.fix.orm ? ` with ${ORMS[d.fix.orm]}` : ''}</p>
                 <p className="leading-relaxed">
                   <Prose text={d.fix.text} />
@@ -390,7 +424,7 @@ function useRequest(at: QueryRef, loaded: LiveRequest[]) {
   return { request: inMemory ?? fetched.data, error: inMemory ? null : fetched.error }
 }
 
-export function QueryPage({ at, projects, requests }: { at: QueryRef; projects: Project[]; requests: LiveRequest[] }) {
+export function QueryPage({ at, projects, requests, muted }: { at: QueryRef; projects: Project[]; requests: LiveRequest[]; muted: Muted }) {
   useEffect(() => {
     window.scrollTo(0, 0)
   }, [at.project, at.request, at.seq])
@@ -455,7 +489,7 @@ export function QueryPage({ at, projects, requests }: { at: QueryRef; projects: 
         <div className="grid min-w-0 gap-6">
           <Statement q={q} />
           {q.findings.map((f) => (
-            <IssueCard key={f.issueId} projectId={q.request.projectId} finding={f} />
+            <IssueCard key={f.issueId} projectId={q.request.projectId} finding={f} muted={muted} />
           ))}
           <RequestStatements q={q} siblings={siblings} />
         </div>

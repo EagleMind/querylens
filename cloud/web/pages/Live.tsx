@@ -1,4 +1,4 @@
-import { PauseIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon } from 'lucide-react'
+import { BellOffIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import type { Project } from '../../bindings/Project'
@@ -24,7 +24,8 @@ import {
 } from '@/lib/filters'
 import { FINDING_KINDS, fmtCount, fmtMs, fmtTime } from '@/lib/format'
 import type { LiveFeed } from '@/lib/live'
-import { type LiveQuery, type LiveRequest, flatten, mergeRequests } from '@/lib/queries'
+import type { Muted } from '@/lib/muted'
+import { type LiveQuery, type LiveRequest, type MutedMode, applyMuted, flatten, mergeRequests } from '@/lib/queries'
 import { href, navigate, onLinkClick } from '@/lib/router'
 import { cn } from '@/lib/utils'
 
@@ -40,13 +41,16 @@ interface View {
   environment: string
   /** A preset, or a custom filter's id. */
   filter: string
+  mutedIssues: MutedMode
 }
+
+const DEFAULT_VIEW: View = { project: ALL, environment: ALL, filter: 'all', mutedIssues: 'hide' }
 
 function loadView(): View {
   try {
-    return { project: ALL, environment: ALL, filter: 'all', ...JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}') }
+    return { ...DEFAULT_VIEW, ...JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}') }
   } catch {
-    return { project: ALL, environment: ALL, filter: 'all' }
+    return DEFAULT_VIEW
   }
 }
 
@@ -99,12 +103,19 @@ function QueryRow({ q, project, showProject }: { q: LiveQuery; project: Project 
               Failed
             </Badge>
           )}
-          {q.findings.map((f) => (
-            <Badge key={f.issueId} variant="outline" className="hidden md:inline-flex">
-              <SeverityDot severity={f.severity} />
-              {FINDING_KINDS[f.kind]}
-            </Badge>
-          ))}
+          {q.findings.map((f) =>
+            q.muted.includes(f.issueId) ? (
+              <Badge key={f.issueId} variant="outline" className="hidden text-muted-foreground md:inline-flex" title="Muted issue">
+                <BellOffIcon />
+                {FINDING_KINDS[f.kind]}
+              </Badge>
+            ) : (
+              <Badge key={f.issueId} variant="outline" className="hidden md:inline-flex">
+                <SeverityDot severity={f.severity} />
+                {FINDING_KINDS[f.kind]}
+              </Badge>
+            ),
+          )}
         </div>
       </TableCell>
       <TableCell className="hidden max-w-0 lg:table-cell">
@@ -152,7 +163,7 @@ function Waiting({ projects }: { projects: Project[] }) {
   )
 }
 
-export function LivePage({ projects, feed }: { projects: Project[]; feed: LiveFeed }) {
+export function LivePage({ projects, feed, muted }: { projects: Project[]; feed: LiveFeed; muted: Muted }) {
   const [view, setView] = useView()
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<CustomFilter[]>(loadFilters)
@@ -167,8 +178,11 @@ export function LivePage({ projects, feed }: { projects: Project[]; feed: LiveFe
 
   const requests = frozen ?? feed.requests
   const scoped = useMemo(
-    () => flatten(requests).filter((q) => (projectId === ALL || q.request.projectId === projectId) && (view.environment === ALL || q.request.environment === view.environment)),
-    [requests, projectId, view.environment],
+    () =>
+      flatten(requests)
+        .filter((q) => (projectId === ALL || q.request.projectId === projectId) && (view.environment === ALL || q.request.environment === view.environment))
+        .map((q) => applyMuted(q, muted.isMuted, view.mutedIssues)),
+    [requests, projectId, view.environment, view.mutedIssues, muted.isMuted],
   )
   const environments = useMemo(() => [...new Set(feed.requests.map((r) => r.environment))].sort(), [feed.requests])
   const searched = useMemo(() => scoped.filter((q) => matchesSearch(q, search)), [scoped, search])
@@ -265,6 +279,15 @@ export function LivePage({ projects, feed }: { projects: Project[]; feed: LiveFe
               ))}
             </SelectContent>
           </Select>
+          <Select value={view.mutedIssues} onValueChange={(v) => setView({ mutedIssues: v as MutedMode })}>
+            <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Muted issues">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="hide">Hide muted issues</SelectItem>
+              <SelectItem value="show">Show muted issues</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="relative min-w-52 flex-1 sm:max-w-80">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -331,7 +354,7 @@ export function LivePage({ projects, feed }: { projects: Project[]; feed: LiveFe
                 size="sm"
                 onClick={() => {
                   setSearch('')
-                  setView({ project: ALL, environment: ALL, filter: 'all' })
+                  setView({ project: ALL, environment: ALL, filter: 'all', mutedIssues: 'hide' })
                 }}
               >
                 Clear filters
