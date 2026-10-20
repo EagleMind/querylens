@@ -42,6 +42,12 @@ same rules as the core's `normalize_sql`, which reads both quoting styles, so sc
 parameters are reduced to a 32-bit FNV hash (`vh`). Quoted values are removed from error
 messages.
 
+`source.cjs` (opt-in, `sourceContext`) reads the 10 lines around each origin of a sent
+request, once per origin per process, during the background flush. Only relative paths
+inside the project are read, files over 1 MB are skipped, and secret-looking assignments,
+URL credentials and long key-like literals are masked. Each becomes a `source` envelope item;
+the core checks that its origin's line is among the lines and keeps at most 41.
+
 ## 2. The analysis (`crates/core`, `crates/wasm`)
 
 `querylens-core` is pure Rust (no I/O):
@@ -79,15 +85,33 @@ Everything fits the Workers Free plan, which sets the shape:
     statistics for 30 days, pruned by the same alarm.
   - Broadcasts `LiveEvent`s (`transaction`, `issue`, `throughput`) to dashboards on
     hibernating WebSockets (pings auto-answered).
-- **`Registry` Durable Object**: the project list, touched only by the dashboard.
-- **Auth**: SDKs use the DSN key; the dashboard uses the `ADMIN_TOKEN` secret, sent as a
-  Bearer token, or in the URL for the WebSocket.
+  - Records when each environment first reports each release, the code around origins the
+    SDK sends (source context, one row per line of code, rewritten only when it changes), and
+    the latest AI change per issue with a hash of what it was written from.
+  - `issueContext(n)`: the issue, its latest event and the code around its top origins. It
+    feeds the fix prompt (`issues/prompt.ts`), the MCP `get_issue` tool and AI rewrites.
+  - `regressions(env)`: hourly statistics summed before and after the latest release's deploy
+    hour (or the last day against the week before, without releases), judged by the pure
+    `analysis/regressions.ts`: enough calls on both sides, 1.5× slower and 2 ms more per call,
+    or failing at least twice as often.
+- **`Registry` Durable Object**: the project list, the public URL and the daily AI allowance.
+- **AI** (`ai/`): one `JsonModel` interface, implemented on the Workers AI binding
+  (`gpt-oss-120b` by default) and faked in tests. Features ask for JSON that follows a schema,
+  then check it: a rewrite must replace lines that are really in the code the SDK sent (which
+  is also how its file and line are found, and how it's re-indented), and a drafted filter
+  must use the dashboard's fields, operators and values (`shared/filters.ts`).
+- **MCP** (`mcp/`): a stateless Streamable HTTP server with JSON replies. `protocol.ts` is
+  pure JSON-RPC (`initialize`, `ping`, `tools/list`, `tools/call`), `tools.ts` defines the tools
+  over an `McpBackend` interface, `server.ts` adds auth and the Durable Objects.
+- **Auth**: SDKs use the DSN key; the dashboard and MCP clients use the `ADMIN_TOKEN` secret
+  as a Bearer token (the live WebSocket takes it in the URL, which browsers require).
 
 Rows written are the free plan's scarcest resource (100,000 a day):
 - A finding costs 3 rows: the issue, the event, and pruning old events.
 - Statistics cost one upsert per shape per report.
 - A known shape's `last_seen` is refreshed at most hourly.
 - Every request sent costs 1 row in the query history (plus its share of the trims).
+- Source context costs a row only for new or changed code; releases one row each.
 
 ## 4. The dashboard (`cloud/web`)
 
@@ -108,11 +132,17 @@ Worker with a single-page-app fallback. Its own small router, with types from `c
   reached at), each project's DSN with an editable key (`PUT …/key`), sign-out.
 - **Muted issues**: an issue set to `ignored` (Mute on the report). Live drops muted findings
   from its views and filters unless the "Show muted issues" filter is on.
+- **Fixing**: each issue card copies its fix prompt (`GET …/issues/<n>/prompt`, loaded with
+  the card so the copy happens within the click) and shows the AI change
+  (`GET/POST …/issues/<n>/suggestion`) as a diff numbered like the file. The report shows the
+  code around the statement's origin when the SDK sent it (`GET …/source?origin=`).
+- **Regressions**: a panel above the Live list (`GET …/regressions`), refreshed every 5
+  minutes, shown only when there are some; the report notes it on the statement's last 24 hours.
+- **Described filters**: the filter dialog sends a description (`POST /api/0/filters/draft`)
+  and fills in the conditions, to check and save like any other.
 
 ## 5. Next
 
-- AI-suggested optimizations on issues. Workers AI or Claude, given the scrubbed statement,
-  the finding and the ORM.
 - Alerts: Cloudflare Email Service or webhooks on new and regressed issues.
 - Sign-in through Cloudflare Access instead of a shared token.
 - More ORMs with code-level fixes (`OrmAdvisor`), and SDKs beyond Node.js.
