@@ -1,6 +1,6 @@
-import type { FindingKind } from '../../../src/bindings/FindingKind'
-import type { Orm } from '../../../src/bindings/Orm'
-import type { SuggestionSeverity } from '../../../src/bindings/SuggestionSeverity'
+import type { FindingKind } from '../../bindings/FindingKind'
+import type { Orm } from '../../bindings/Orm'
+import type { SuggestionSeverity } from '../../bindings/SuggestionSeverity'
 
 export function fmtMs(ms: number): string {
   if (!Number.isFinite(ms)) return '–'

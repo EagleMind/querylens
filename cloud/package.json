@@ -2,6 +2,7 @@
   "name": "querylens-cloud",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@11.8.0",
   "description": "QueryLens monitoring on Cloudflare: the ingest API and live feed (Worker + Durable Objects) and the dashboard (static assets).",
   "license": "MIT",
   "scripts": {

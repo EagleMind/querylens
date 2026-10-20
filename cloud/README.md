@@ -3,8 +3,7 @@
 The backend and dashboard for always-on query monitoring. Your app runs the
 [`querylens-node`](../integrations/node) SDK with a DSN. The SDK sends requests that look
 problematic, a sample of the others, and per-minute totals for every statement. This Worker
-evaluates them with the same analysis as `querylens capture` and shows the results in a web
-dashboard:
+evaluates them with QueryLens's Rust analysis and shows the results in a web dashboard:
 
 - **Live**: requests as they arrive, with their statements and findings, plus statements per minute.
 - **Evaluation**: issues (N+1 queries, duplicate queries, writes in a loop, slow, failing
@@ -31,9 +30,9 @@ dashboard (static assets) ──/api/0/*─────────────�
   issues (keyed by the finding's stable id per environment), keeps the latest 10 requests per
   issue and hourly per-shape statistics (30 days), and pushes everything to open dashboards
   over hibernating WebSockets. A resolved issue that shows up again comes back as *regressed*.
-- **`querylens-core`** (`../src-tauri/core`) is the Rust analysis the CLI and desktop app use,
-  built as `core/querylens_core.wasm` (`src-tauri/wasm`, a small C ABI, no generated glue). So
-  there's one detection engine everywhere.
+- **`querylens-core`** (`../crates/core`) is the Rust analysis: SQL fingerprints, pattern
+  detection, ORM advice. It's built as `core/querylens_core.wasm` by `../crates/wasm`, a small
+  C ABI with no generated glue.
 - **The dashboard** (`web/`) is a React app served as static assets from the same Worker.
 
 ## Run it locally
@@ -129,5 +128,5 @@ web/                 the dashboard (React, Tailwind)
 scripts/             build-core.mjs, send-sample.mjs
 ```
 
-API types come from `../src/bindings` (generated from the Rust core with ts-rs:
-`cargo test -p querylens-core export_bindings` in `src-tauri`).
+API types come from `bindings/` (generated from the Rust core with ts-rs:
+`cargo test -p querylens-core export_bindings` at the repo root, into `bindings/`).

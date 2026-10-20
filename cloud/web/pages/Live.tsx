@@ -1,7 +1,7 @@
 import { ActivityIcon, ChevronRightIcon, PauseIcon, PlayIcon, RadioIcon } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
-import type { Project } from '../../../src/bindings/Project'
+import type { Project } from '../../bindings/Project'
 import { Statements } from '../components/Statements'
 import { ThroughputChart } from '../components/ThroughputChart'
 import { Button, Empty, Select, Severity, Stat, cx } from '../components/ui'

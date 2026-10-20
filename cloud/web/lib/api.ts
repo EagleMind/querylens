@@ -1,11 +1,11 @@
 // The dashboard's only way to the backend: typed calls to the Worker's /api/0 routes.
-import type { Issue } from '../../../src/bindings/Issue'
-import type { IssueDetail } from '../../../src/bindings/IssueDetail'
-import type { IssueEvent } from '../../../src/bindings/IssueEvent'
-import type { IssueStatus } from '../../../src/bindings/IssueStatus'
-import type { Project } from '../../../src/bindings/Project'
-import type { ProjectSettings } from '../../../src/bindings/ProjectSettings'
-import type { QueryShape } from '../../../src/bindings/QueryShape'
+import type { Issue } from '../../bindings/Issue'
+import type { IssueDetail } from '../../bindings/IssueDetail'
+import type { IssueEvent } from '../../bindings/IssueEvent'
+import type { IssueStatus } from '../../bindings/IssueStatus'
+import type { Project } from '../../bindings/Project'
+import type { ProjectSettings } from '../../bindings/ProjectSettings'
+import type { QueryShape } from '../../bindings/QueryShape'
 
 const TOKEN_KEY = 'querylens.token'
 

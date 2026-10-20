@@ -1,70 +1,22 @@
-# Local databases for QueryLens development.
-#   docker compose -f dev/docker-compose.yml up -d --build
-# Connect with (dev only):
-#   PostgreSQL  host=localhost port=54329 db=shop user=querylens (no password)
-#   MySQL       host=localhost port=33069 db=shop user=querylens password=querylens
-#   MongoDB     host=localhost port=27019 db=shop (no auth)
-# Optional IMDB / Join Order Benchmark database: dev/load-job.sh
+# The demo database for trying QueryLens with dev/sequelize-demo.
+#   docker compose -f dev/docker-compose.yml up -d
+# Connect with (dev only): host=localhost port=54329 db=shop user=querylens (no password)
 services:
   postgres:
-    build:
-      context: .
-      dockerfile: postgres.Dockerfile
-    image: querylens-pg:17
+    image: postgres:17
     container_name: querylens-pg
     environment:
       POSTGRES_DB: shop
       POSTGRES_USER: querylens
       POSTGRES_PASSWORD: querylens
-      # Dev only: lets automated tests connect without touching the OS keychain.
+      # Dev only: the demo app connects without a password.
       POSTGRES_HOST_AUTH_METHOD: trust
-    command:
-      - postgres
-      - -c
-      - shared_preload_libraries=pg_stat_statements
-      - -c
-      - pg_stat_statements.track=all
-      - -c
-      - track_io_timing=on
-      # Enough cache for IMDB's hot indexes; the 128 MB default makes JOB queries
-      # re-read gigabytes from disk on every run.
-      - -c
-      - shared_buffers=2GB
-      - -c
-      - effective_cache_size=6GB
-    shm_size: 1g
     ports:
       - "54329:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
 
-  mysql:
-    image: mysql:8.4
-    container_name: querylens-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: querylens
-      MYSQL_DATABASE: shop
-      MYSQL_USER: querylens
-      MYSQL_PASSWORD: querylens
-    command: ["--innodb-buffer-pool-size=1G"]
-    ports:
-      - "33069:3306"
-    volumes:
-      - mysqldata:/var/lib/mysql
-      - ./mysql-seed.sql:/docker-entrypoint-initdb.d/seed.sql:ro
-
-  mongo:
-    image: mongo:8.0
-    container_name: querylens-mongo
-    ports:
-      - "27019:27017"
-    volumes:
-      - mongodata:/data/db
-      - ./mongo-seed.js:/docker-entrypoint-initdb.d/seed.js:ro
-
 volumes:
-  # Survive `docker compose down` (only `down -v` wipes them).
+  # Survives `docker compose down` (only `down -v` wipes it).
   pgdata:
-  mysqldata:
-  mongodata:

@@ -10,26 +10,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  frontend:
-    name: Frontend (typecheck, lint, build)
+  sdk:
+    name: Node.js SDK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm lint
-      - run: pnpm exec prettier --check src
-      - run: pnpm build
-      - name: Node.js SDK (capture and monitoring)
-        run: node --test "integrations/node/*.test.cjs"
+      - run: node --test "integrations/node/*.test.cjs"
 
-  cloud:
-    name: Monitoring backend (core, WebAssembly, Worker, dashboard)
+  core:
+    name: Rust core (tests, WebAssembly)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,91 +29,36 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          key: core
-      - run: cargo test --locked -p querylens-core -p querylens-wasm
-        working-directory: src-tauri
+      - run: cargo test --locked --workspace
       - run: cargo build --locked -p querylens-wasm --release --target wasm32-unknown-unknown
-        working-directory: src-tauri
+      - uses: actions/upload-artifact@v4
+        with:
+          name: querylens-core-wasm
+          path: target/wasm32-unknown-unknown/release/querylens_wasm.wasm
+
+  cloud:
+    name: Backend and dashboard (Cloudflare)
+    needs: core
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cloud
+    steps:
+      - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: cloud/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
           cache-dependency-path: cloud/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-        working-directory: cloud
-      # Build with the module just compiled, not the committed one.
-      - run: cp src-tauri/target/wasm32-unknown-unknown/release/querylens_wasm.wasm cloud/core/querylens_core.wasm
+      # Build with the module CI just compiled, not the committed one.
+      - uses: actions/download-artifact@v4
+        with:
+          name: querylens-core-wasm
+          path: cloud/core
+      - run: mv core/querylens_wasm.wasm core/querylens_core.wasm
       - run: pnpm typecheck
-        working-directory: cloud
       - run: pnpm build
-        working-directory: cloud
-
-  rust:
-    name: Rust (unit tests)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: System libraries for Tauri
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libdbus-1-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      # tauri-build expects the frontend output directory to exist.
-      - run: mkdir -p dist
-      - run: cargo test --lib --locked
-        working-directory: src-tauri
-
-  cli:
-    name: CLI (headless build, no WebView libraries)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      # The keychain (saved connections) links libdbus on Linux; no WebView libraries needed.
-      - run: sudo apt-get update && sudo apt-get install -y pkg-config libdbus-1-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          key: headless
-      - run: cargo test --lib --locked --no-default-features
-        working-directory: src-tauri
-      - run: cargo build --release --locked --no-default-features --bin querylens
-        working-directory: src-tauri
-      - run: src-tauri/target/release/querylens --help
-      - uses: actions/upload-artifact@v4
-        with:
-          name: querylens-cli-linux-x64
-          path: src-tauri/target/release/querylens
-
-  capture-live:
-    name: Capture (live, against the demo database)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      # The keychain (saved connections) links libdbus on Linux; no WebView libraries needed.
-      - run: sudo apt-get update && sudo apt-get install -y pkg-config libdbus-1-dev
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-          key: headless
-      - name: Start the demo PostgreSQL
-        run: docker compose -f dev/docker-compose.yml up -d --build postgres
-      - name: Wait for the seed to finish
-        # TCP opens only after the init scripts have run.
-        run: |
-          for i in $(seq 1 120); do
-            pg_isready -h localhost -p 54329 -U querylens && exit 0
-            sleep 5
-          done
-          docker logs querylens-pg; exit 1
-      - run: cargo test --locked --no-default-features --test live_capture -- --nocapture
-        working-directory: src-tauri
-        env:
-          QUERYLENS_PG_PORT: 54329

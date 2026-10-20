@@ -2,8 +2,8 @@
 // backoff. Keeps the latest requests and per-minute throughput for the Live page.
 import { useEffect, useRef, useState } from 'react'
 
-import type { Issue } from '../../../src/bindings/Issue'
-import type { LiveEvent } from '../../../src/bindings/LiveEvent'
+import type { Issue } from '../../bindings/Issue'
+import type { LiveEvent } from '../../bindings/LiveEvent'
 import { liveUrl } from './api'
 
 export type LiveTransaction = Extract<LiveEvent, { type: 'transaction' }> & { key: number }

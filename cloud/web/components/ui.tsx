@@ -1,7 +1,7 @@
 import { CheckIcon, CopyIcon } from 'lucide-react'
 import { type ButtonHTMLAttributes, type ReactNode, useState } from 'react'
 
-import type { SuggestionSeverity } from '../../../src/bindings/SuggestionSeverity'
+import type { SuggestionSeverity } from '../../bindings/SuggestionSeverity'
 import { SEVERITY } from '../lib/format'
 
 export function cx(...classes: (string | false | null | undefined)[]): string {

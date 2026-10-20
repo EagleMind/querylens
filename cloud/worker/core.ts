@@ -1,11 +1,11 @@
-// querylens-core (Rust, src-tauri/core) as WebAssembly: the same analysis the CLI runs on
-// captured traffic. Rebuild with `pnpm build:core`. The module's ABI is described in
-// src-tauri/wasm/src/lib.rs: write JSON in, call ql_digest, read JSON out.
+// querylens-core (Rust, crates/core) as WebAssembly: the detection and ORM advice.
+// Rebuild with `pnpm build:core`. The module's ABI is described in crates/wasm/src/lib.rs:
+// write JSON in, call ql_digest, read JSON out.
 import coreModule from '../core/querylens_core.wasm?module'
 
-import type { Digest } from '../../src/bindings/Digest'
-import type { Orm } from '../../src/bindings/Orm'
-import type { ProjectSettings } from '../../src/bindings/ProjectSettings'
+import type { Digest } from '../bindings/Digest'
+import type { Orm } from '../bindings/Orm'
+import type { ProjectSettings } from '../bindings/ProjectSettings'
 
 interface CoreExports {
   memory: WebAssembly.Memory

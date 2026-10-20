@@ -1,4 +1,4 @@
-// Records database queries for QueryLens: local capture by default, monitoring with QUERYLENS_DSN.
+// Monitors the database queries for QueryLens (set QUERYLENS_DSN).
 require('querylens-node/register');
 const app = require('./app');
 

@@ -1,7 +1,7 @@
 import { FolderPlusIcon } from 'lucide-react'
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 
-import type { Project } from '../../src/bindings/Project'
+import type { Project } from '../bindings/Project'
 import { Logo } from './components/Logo'
 import { Button, Empty, ErrorNote, Select, cx } from './components/ui'
 import { ApiError, api, getToken, setToken } from './lib/api'

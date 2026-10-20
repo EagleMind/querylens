@@ -1,7 +1,7 @@
 import { DatabaseIcon } from 'lucide-react'
 import { useState } from 'react'
 
-import type { Project } from '../../../src/bindings/Project'
+import type { Project } from '../../bindings/Project'
 import { Empty, ErrorNote, Segmented, Select } from '../components/ui'
 import { api } from '../lib/api'
 import { fmtCount, fmtMs, fmtRelative } from '../lib/format'

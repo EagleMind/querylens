@@ -140,11 +140,11 @@ test('a refused DSN turns sending off; failures back off and keep the newest dat
   assert.ok(m._internal.queue.length > 0, 'kept for a retry');
 });
 
-test('monitoring a pg client inside withTransaction, values scrubbed, SQL untouched', async () => {
+test('a pg client inside withTransaction: values scrubbed, SQL untouched', async () => {
   delete globalThis[Symbol.for('querylens.sdk')];
   const backend = fakeBackend();
   const api = sdk.init({ dsn: DSN, environment: 'test', send: backend.send });
-  assert.equal(api.mode, 'monitor');
+  assert.equal(api.enabled, true);
   const sent = [];
   class Client {
     query(config, values) {
@@ -152,12 +152,12 @@ test('monitoring a pg client inside withTransaction, values scrubbed, SQL untouc
       return Promise.resolve({ rowCount: 1, rows: [{}] });
     }
   }
-  sdk._internal.patchPg({ Client }, sdk._internal.monitorSink(api.monitor));
+  sdk._internal.patchPg({ Client }, api.monitor);
   const client = new Client();
   await sdk.withTransaction('job:send-emails', async () => {
     for (let i = 0; i < 5; i++) await client.query('SELECT * FROM users WHERE id = $1', [i]);
   });
-  assert.equal(sent[0], 'SELECT * FROM users WHERE id = $1', 'no comment added in monitoring mode');
+  assert.equal(sent[0], 'SELECT * FROM users WHERE id = $1', 'queries are never changed');
   await sdk.flush();
   const items = backend.bodies.flat();
   const txn = items.find((i) => i.type === 'transaction');

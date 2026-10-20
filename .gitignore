@@ -7,12 +7,8 @@ dist
 .vscode/*
 !.vscode/extensions.json
 
-# Rust / Tauri
-src-tauri/target
-src-tauri/gen/schemas
+# Rust
+target/
 
 # dev data caches
 dev/.cache
-
-# npm packages assembled by npm/build-packages.mjs
-npm/dist

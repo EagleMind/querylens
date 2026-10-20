@@ -1,11 +1,9 @@
--- Demo dataset with deliberate performance problems for QueryLens to find:
+-- Demo dataset for the Sequelize demo app (dev/sequelize-demo):
 --   * orders.user_id has no index (seq scan + hash join on every lookup)
 --   * orders.status is low-cardinality and unindexed
 --   * statistics on order_items are stale (ANALYZE skipped) → row misestimates
 --   * events.kind is heavily skewed, so `WHERE kind = $1` flips between an index scan
 --     (rare kinds) and a seq scan (common kinds): the parameter-sensitivity demo
-CREATE EXTENSION IF NOT EXISTS hypopg;
-CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
 
 CREATE TABLE users (
   id         bigint PRIMARY KEY,

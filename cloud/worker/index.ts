@@ -16,8 +16,8 @@
 //   GET   /api/0/projects/<id>/queries          │
 //   GET   /api/0/projects/<id>/environments     ┘
 //   anything else                              the dashboard (static assets, SPA fallback)
-import type { IssueStatus } from '../../src/bindings/IssueStatus'
-import type { Project as ProjectInfo } from '../../src/bindings/Project'
+import type { IssueStatus } from '../bindings/IssueStatus'
+import type { Project as ProjectInfo } from '../bindings/Project'
 import { type IssueQuery, Project, sameSecret } from './project'
 import { Registry } from './registry'
 

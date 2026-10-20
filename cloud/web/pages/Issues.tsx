@@ -1,9 +1,9 @@
 import { ArchiveIcon, CheckCircle2Icon, RotateCcwIcon, SearchIcon, ShieldCheckIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
-import type { Issue } from '../../../src/bindings/Issue'
-import type { IssueStatus } from '../../../src/bindings/IssueStatus'
-import type { Project } from '../../../src/bindings/Project'
+import type { Issue } from '../../bindings/Issue'
+import type { IssueStatus } from '../../bindings/IssueStatus'
+import type { Project } from '../../bindings/Project'
 import { Prose } from '../components/Prose'
 import { Statements } from '../components/Statements'
 import { Button, CodeBlock, Empty, ErrorNote, Segmented, Select, Severity, cx } from '../components/ui'

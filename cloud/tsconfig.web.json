@@ -14,5 +14,5 @@
     "skipLibCheck": true,
     "noUnusedLocals": true
   },
-  "include": ["web", "../src/bindings"]
+  "include": ["web", "bindings"]
 }

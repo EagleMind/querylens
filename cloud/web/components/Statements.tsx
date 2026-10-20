@@ -1,4 +1,4 @@
-import type { CapturedStatement } from '../../../src/bindings/CapturedStatement'
+import type { CapturedStatement } from '../../bindings/CapturedStatement'
 import { fmtCount, fmtMs } from '../lib/format'
 import { cx } from './ui'
 

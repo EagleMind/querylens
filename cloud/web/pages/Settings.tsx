@@ -1,8 +1,8 @@
 import { LogOutIcon, PlusIcon, SaveIcon } from 'lucide-react'
 import { type FormEvent, useEffect, useState } from 'react'
 
-import type { Project } from '../../../src/bindings/Project'
-import type { ProjectSettings } from '../../../src/bindings/ProjectSettings'
+import type { Project } from '../../bindings/Project'
+import type { ProjectSettings } from '../../bindings/ProjectSettings'
 import { Button, CodeBlock, CopyButton, ErrorNote } from '../components/ui'
 import { api } from '../lib/api'
 import { ORMS } from '../lib/format'
