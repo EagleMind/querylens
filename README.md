@@ -4,83 +4,206 @@
 
 # QueryLens
 
-**Monitor the queries your app sends, in production, and find the N+1s, loops and slow
-statements, with the fix written for your ORM.**
+**Monitor the SQL your app sends in production. Catch N+1 queries, writes in a loop and
+slow statements, and get the fix for your ORM, down to the line of code.**
 
 [![CI](https://github.com/EagleMind/querylens/actions/workflows/ci.yml/badge.svg)](https://github.com/EagleMind/querylens/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/querylens-node?label=querylens-node&color=f2d84a)](https://www.npmjs.com/package/querylens-node)
+[![Node.js](https://img.shields.io/node/v/querylens-node?logo=nodedotjs&logoColor=white&color=5FA04E)](integrations/node)
 [![License: MIT](https://img.shields.io/badge/license-MIT-f2d84a.svg)](LICENSE)
-![Cloudflare Workers](https://img.shields.io/badge/Cloudflare-Workers-F38020?logo=cloudflare&logoColor=white)
+<br>
+[![Cloudflare Workers](https://img.shields.io/badge/Cloudflare_Workers-free_plan-F38020?logo=cloudflare&logoColor=white)](cloud)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?logo=postgresql&logoColor=white)
 ![MySQL](https://img.shields.io/badge/MySQL-4479A1?logo=mysql&logoColor=white)
+![Sequelize](https://img.shields.io/badge/Sequelize-52B0E7?logo=sequelize&logoColor=white)
+[![Rust + WebAssembly](https://img.shields.io/badge/core-Rust_%2B_WebAssembly-B7410E?logo=rust&logoColor=white)](crates/core)
 
 </div>
 
-QueryLens works like an error tracker for your database traffic. An SDK in your Node.js
-backend watches every query your ORM sends to PostgreSQL or MySQL. It reports the requests that look wrong, with
-values removed, to a backend you deploy on Cloudflare's free plan. The web dashboard shows a
-live feed of requests and statements, and the issues it found, grouped across requests and
-releases, each with the line of code responsible and the fix for your ORM.
+QueryLens is an error tracker for your database traffic. A small SDK in your Node.js backend
+watches every query your ORM sends to PostgreSQL or MySQL, removes the values, and reports
+the requests that look wrong to a backend you deploy in your own Cloudflare account, on the
+free plan. The web dashboard shows requests live, groups the problems it finds into issues
+across requests and releases, and gives each one the code location responsible and the fix
+written for your ORM.
 
-## Set up
-
-1. **Deploy the backend** (Cloudflare Workers + Durable Objects, free plan). See
-   [cloud/README.md](cloud/README.md):
-
-   ```bash
-   cd cloud && pnpm install && pnpm deploy
-   ```
-
-2. **Create a project** in the dashboard and copy its DSN from Settings.
-
-3. **Add the SDK** to your app:
-
-   ```bash
-   npm install querylens-node
-   ```
-
-   ```bash
-   QUERYLENS_DSN=https://<key>@querylens.<you>.workers.dev/<project>
-   ```
-
-   ```js
-   require('querylens-node/register') // first line of your entry file (or: import 'querylens-node/register')
-   ```
+```
+your app + querylens-node ──── values removed, gzipped ────▶ your Cloudflare Worker ──▶ dashboard
+  (pg / mysql2, via any ORM)                                   Rust analysis (WebAssembly)
+                                                               issues, stats, live feed (Durable Objects)
+```
 
 ## What it finds
 
-| Finding | How |
+| Finding | What it looks like | Typical fix |
+|---|---|---|
+| **N+1 queries** | The same SELECT run once per row of the previous result, with different values | Eager loading (`include`, `relations`, `JOIN`) |
+| **Duplicate queries** | The identical statement repeated back to back | Run it once and reuse the result |
+| **Writes in a loop** | INSERT / UPDATE / DELETE one row at a time | `bulkCreate`, one `UPDATE … WHERE id IN (…)` |
+| **Large results** | Thousands of rows with no LIMIT | Pagination, selecting only the columns used |
+| **Slow statements** | Over 100 ms (adjustable) | An index, with the migration to add it |
+| **Failing statements** | Errors, including ones the ORM swallowed | The error, its statement and its caller |
+| **Chatty requests** | One request running 50+ statements (adjustable) | Batching, eager loading |
+
+Every issue links to the line of your code that ran the statement, the route, the
+environment and release, and the latest requests where it happened. A resolved issue that
+comes back is flagged as **regressed**.
+
+## Requirements
+
+**In your app**
+
+- Node.js 18 or later
+- PostgreSQL through [`pg`](https://node-postgres.com/), or MySQL through
+  [`mysql2`](https://sidorares.github.io/node-mysql2/), used directly or by your ORM
+
+**For the backend**
+
+- A Cloudflare account. The [Workers Free plan](cloud/README.md#free-plan-budget) is enough.
+- Node.js and [pnpm](https://pnpm.io/) to deploy it. Rust is only needed if you change the
+  analysis, since the WebAssembly build is committed.
+
+## Get started
+
+### 1. Deploy the backend
+
+```bash
+cd cloud
+```
+
+```bash
+pnpm install
+```
+
+```bash
+pnpm exec cf auth login
+```
+
+```bash
+pnpm run deploy
+```
+
+Then set the dashboard's sign-in token, a long random string you choose:
+
+```bash
+npx wrangler secret put ADMIN_TOKEN --name querylens
+```
+
+The dashboard is now at `https://querylens.<your-subdomain>.workers.dev`. See
+[cloud/README.md](cloud/README.md) for running it locally and for the free-plan budget.
+
+### 2. Create a project
+
+Sign in with your token, create a project for your app, and copy its DSN from **Settings**.
+
+### 3. Add the SDK to your app
+
+```bash
+npm install querylens-node
+```
+
+Give your app the DSN:
+
+```bash
+QUERYLENS_DSN=https://<key>@querylens.<your-subdomain>.workers.dev/<project>
+```
+
+Load the SDK before anything else, as the first line of your entry file:
+
+```js
+require('querylens-node/register')
+// or, in ESM / TypeScript:
+import 'querylens-node/register'
+```
+
+On Next.js, put it in `instrumentation.ts`:
+
+```ts
+export async function register() {
+  if (process.env.NEXT_RUNTIME === 'nodejs') await import('querylens-node/register')
+}
+```
+
+For background jobs and serverless functions, name the work and flush before returning:
+
+```js
+const { withTransaction, flush } = require('querylens-node')
+
+await withTransaction('job:send-invoices', () => sendInvoices())
+await flush()
+```
+
+### 4. Watch it work
+
+Use your app, then open **Live** in the dashboard: requests appear as they arrive, with their
+statements and findings. Issues collect under **Evaluation**.
+
+No app handy? [`dev/sequelize-demo`](dev/sequelize-demo) is an Express + Sequelize app with
+the usual ORM mistakes built in, against a demo PostgreSQL or MySQL in Docker.
+
+### Configuration
+
+| Variable | Effect |
 |---|---|
-| **N+1 queries** | The same SELECT run once per row of the previous result, with different values |
-| **Duplicate queries** | The identical statement repeated back to back |
-| **Writes in a loop** | INSERT / UPDATE / DELETE one row at a time (→ `bulkCreate`, one `UPDATE … WHERE id IN`) |
-| **Large results** | Thousands of rows with no LIMIT |
-| **Slow and failing statements** | Including errors the ORM swallowed |
-| **Chatty requests** | A request that runs dozens of statements |
+| `QUERYLENS_DSN` | Where to report. Without it the SDK does nothing. |
+| `QUERYLENS_ENVIRONMENT` | Environment name. Default: `NODE_ENV`, else `production`. |
+| `QUERYLENS_RELEASE` | Release. Default: the commit from Vercel, Render, Railway, Heroku, Cloudflare Pages, GitHub Actions and others. |
+| `QUERYLENS_SAMPLE_RATE` | Share of problem-free requests sent to the live feed. |
+| `QUERYLENS_SEND_VALUES=1` | Send SQL literals and parameters too, for example in development. |
+| `QUERYLENS_DISABLED=1` | Turn the SDK off. |
 
-Sequelize gets code-level fixes (`include` with `separate`, `bulkCreate`, `findAndCountAll`…).
-Prisma, TypeORM, Django, Active Record, SQLAlchemy and Hibernate are recognized, and the fix
-names the right API.
-
-The dashboard has:
-- **Live:** requests as they arrive, with their statements and findings, plus statements per minute.
-- **Evaluation:** open, resolved and ignored issues. A resolved issue that comes back is
-  flagged as regressed. Also the statements costing the most time.
-- **Settings:** DSN and setup, detection thresholds, live-feed sampling, projects.
+Detection thresholds (slow, large, loop and chatty limits) and live-feed sampling are set
+per project in the dashboard's **Settings** and reach running apps on their next report. The
+[SDK's README](integrations/node) covers the options and exactly what is sent.
 
 ## Private by default
 
-In production the SDK sends no values. Literals become `?`, bound parameters are dropped, and
-only a hash of the values tells an N+1 from a repeated query. Your queries are never modified,
-and sending happens in the background with bounded memory. The backend runs in your own
-Cloudflare account.
+- **No values leave your app in production.** Literals become `?`, bound parameters are
+  dropped, and quoted values are removed from error messages. A hash of the values is all
+  that's kept, which is how an N+1 (different values) is told apart from a repeated query.
+- **Your queries are never changed, and nothing waits on QueryLens.** Reports go out in the
+  background, batched and gzipped. If anything fails inside the SDK, your query runs as if
+  it weren't there.
+- **Bounded memory.** When the backend is unreachable the SDK backs off and drops the oldest
+  data, never holding more than about 4 MB.
+- **Your data stays in your Cloudflare account.** There is no QueryLens service in between.
+- **No dependencies** in the SDK.
+
+## What's supported
+
+| | Supported today |
+|---|---|
+| **Runtime** | Node.js 18+ (CommonJS and ESM, Next.js) |
+| **Databases** | PostgreSQL, MySQL |
+| **Drivers** | `pg`, `mysql2` (connections, pools and the promise API) |
+| **Captured through** | Sequelize, Knex, TypeORM, MikroORM, Drizzle, the drivers directly, and Prisma when it connects through `pg` (`@prisma/adapter-pg`) |
+| **Fixes with code** | Sequelize (`include` with `separate`, `bulkCreate`, `findAndCountAll`…) |
+| **Fixes naming the right API** | Prisma, TypeORM, plus Django, Active Record, SQLAlchemy and Hibernate, which the analysis already recognizes |
+| **Backend** | Cloudflare Workers + Durable Objects (SQLite), free plan |
+| **Dashboard** | Live feed, issues with resolve / ignore / regressions, top statements by time, per-project settings |
+
+## Roadmap
+
+**Next**
+
+- **AI-suggested optimizations.** A rewrite for each issue, from the scrubbed statement, the
+  finding and your ORM, with Workers AI or Claude.
+- **Alerts** on new and regressed issues, by email or webhook.
+- **Sign-in with Cloudflare Access** instead of a shared token.
+- **Code-level fixes for more ORMs**, starting with the ones that only get API names today.
+
+**Later**
+
+- **SDKs beyond Node.js**, so the Python, Ruby and Java ORMs the analysis already recognizes
+  get monitored too.
 
 ## Repository
 
 ```
-integrations/node/   the SDK (querylens-node)
+integrations/node/   the SDK (querylens-node on npm)
 cloud/               the backend (Worker + Durable Objects) and the dashboard (React)
 crates/core/         the analysis: fingerprints, pattern detection, ORM fixes (Rust)
-crates/wasm/         crates/core as WebAssembly, run by the backend
+crates/wasm/         crates/core compiled to WebAssembly for the backend
 dev/                 demo PostgreSQL and MySQL, and a Sequelize app with the usual ORM mistakes
 docs/                architecture
 ```
@@ -94,9 +217,9 @@ docs/                architecture
 | `cd cloud && pnpm dev` | Backend and dashboard locally, at http://localhost:5173 |
 | `cd cloud && pnpm build:core` | Rebuild the WebAssembly module after changing `crates/` |
 | `cd cloud && pnpm typecheck` | TypeScript (Worker and dashboard) |
-| `docker compose -f dev/docker-compose.yml up -d` | The demo databases (PostgreSQL and MySQL) for `dev/sequelize-demo` |
+| `docker compose -f dev/docker-compose.yml up -d` | The demo databases for `dev/sequelize-demo` |
 
-See [docs/architecture.md](docs/architecture.md) for how the pieces fit.
+See [docs/architecture.md](docs/architecture.md) for how the pieces fit together.
 
 ## License
 

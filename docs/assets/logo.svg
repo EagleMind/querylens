@@ -1,10 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" fill="none">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <rect width="1024" height="1024" rx="200" fill="#161f36"/>
-  <g stroke="#f1ead9" stroke-opacity=".12" stroke-width="4">
-    <path d="M128 96v832M896 96v832M96 128h832M96 896h832"/>
+  <g transform="translate(192 192) scale(20)">
+    <path fill="#f1ead9" fill-rule="evenodd" d="M11 2h10a9 9 0 0 1 9 9v10a9 9 0 0 1-9 9H11a9 9 0 0 1-9-9V11a9 9 0 0 1 9-9zM12 9h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3z"/>
+    <rect x="17.5" y="17.5" width="13" height="13" rx="3" fill="#161f36"/>
+    <rect x="20" y="20" width="10" height="10" rx="1.5" fill="#f2d84a"/>
   </g>
-  <circle cx="452" cy="404" r="226" stroke="#f1ead9" stroke-width="80"/>
-  <circle cx="452" cy="404" r="70" fill="#f2d84a"/>
-  <path d="M452 630v168h196" stroke="#f1ead9" stroke-width="80" stroke-linejoin="round"/>
-  <rect x="648" y="718" width="164" height="164" rx="24" fill="#f2d84a"/>
 </svg>

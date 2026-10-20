@@ -63,7 +63,7 @@ pnpm exec cf auth login
 ```
 
 ```bash
-pnpm deploy
+pnpm run deploy
 ```
 
 Then set the dashboard's sign-in token (a long random string) as a secret:
