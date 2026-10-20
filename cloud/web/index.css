@@ -1,123 +1,158 @@
 @import 'tailwindcss';
-@import '@fontsource-variable/bricolage-grotesque/standard.css';
-@import '@fontsource-variable/hanken-grotesk';
-@import '@fontsource/fragment-mono';
+@import 'tw-animate-css';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
 
 /*
- * QueryLens — "blueprint & signal", as in the desktop app.
- * Ink-blue paper, cream ink, hairline rules. One signal yellow marks what you act on.
- * Severity runs cool → hot (slate → ochre → vermilion) and is reserved for findings.
+ * shadcn/ui tokens. Light and dark follow the system (see main.tsx).
+ * Neutrals are tinted toward ink blue. One brand hue (iris) marks what you act on.
+ * Data colours do one job each: --read / --write identify what a statement does (validated
+ * as a pair, both modes, CVD-safe); --warning (slow) and --destructive (failed) are status
+ * and always come with an icon or a label.
  */
+@custom-variant dark (&:is(.dark *));
+
 @theme inline {
-  --font-display: 'Bricolage Grotesque Variable', ui-sans-serif, sans-serif;
-  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, sans-serif;
-  --font-mono: 'Fragment Mono', ui-monospace, monospace;
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
 
   --color-background: var(--background);
-  --color-panel: var(--panel);
-  --color-raised: var(--raised);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
-  --color-rule: var(--rule);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
   --color-border: var(--border);
-  --color-signal: var(--signal);
-  --color-signal-ink: var(--signal-ink);
-  --color-ok: var(--ok);
-  --color-danger: var(--danger);
-  --color-sev-high: var(--sev-high);
-  --color-sev-medium: var(--sev-medium);
-  --color-sev-low: var(--sev-low);
-  --color-bar: var(--bar);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-read: var(--read);
+  --color-write: var(--write);
+  --color-sql-keyword: var(--sql-keyword);
+  --color-sql-string: var(--sql-string);
+  --color-sql-literal: var(--sql-literal);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 :root {
-  --background: oklch(0.2 0.032 262);
-  --panel: oklch(0.225 0.034 262);
-  --raised: oklch(0.255 0.036 262);
-  --foreground: oklch(0.93 0.025 85);
-  --muted: oklch(0.7 0.03 250);
-  --rule: oklch(0.93 0.025 85 / 8%);
-  --border: oklch(0.93 0.025 85 / 12%);
-  --signal: oklch(0.88 0.165 98);
-  --signal-ink: oklch(0.2 0.032 262);
-  --ok: oklch(0.8 0.11 155);
-  --danger: oklch(0.68 0.19 32);
-  --sev-high: oklch(0.67 0.2 33);
-  --sev-medium: oklch(0.8 0.14 72);
-  --sev-low: oklch(0.62 0.06 245);
-  /* The one data hue (throughput); signal stays for actions. */
-  --bar: oklch(0.66 0.13 235); /* validated: dataviz checks pass on --panel */
-  color-scheme: dark;
+  --radius: 0.625rem;
+  --background: oklch(0.985 0.004 270);
+  --foreground: oklch(0.22 0.03 270);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.22 0.03 270);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.22 0.03 270);
+  --primary: #6250d6;
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.955 0.012 280);
+  --secondary-foreground: oklch(0.3 0.05 280);
+  --muted: oklch(0.962 0.007 270);
+  --muted-foreground: oklch(0.52 0.025 270);
+  --accent: oklch(0.955 0.02 285);
+  --accent-foreground: oklch(0.32 0.1 285);
+  --destructive: #d03b3b;
+  --warning: #fab219;
+  --success: #0ca30c;
+  --read: #2a78d6;
+  --write: #eb6834;
+  --border: oklch(0.915 0.01 270);
+  --input: oklch(0.89 0.012 270);
+  --ring: #6250d6;
+  /* SQL syntax: text colours, all >= 4.5:1 on the card. */
+  --sql-keyword: #5a47cf;
+  --sql-string: oklch(0.5 0.11 165);
+  --sql-literal: oklch(0.54 0.17 350);
+}
+
+.dark {
+  --background: #0d0f17;
+  --foreground: oklch(0.96 0.008 270);
+  --card: #161922;
+  --card-foreground: oklch(0.96 0.008 270);
+  --popover: #1a1d28;
+  --popover-foreground: oklch(0.96 0.008 270);
+  --primary: #9085e9;
+  --primary-foreground: #0d0f17;
+  --secondary: oklch(0.26 0.025 275);
+  --secondary-foreground: oklch(0.93 0.015 275);
+  --muted: oklch(0.235 0.018 270);
+  --muted-foreground: oklch(0.7 0.022 270);
+  --accent: oklch(0.27 0.04 282);
+  --accent-foreground: oklch(0.95 0.02 282);
+  --destructive: #e66767;
+  --warning: #fab219;
+  --success: #0ca30c;
+  --read: #3987e5;
+  --write: #d95926;
+  --border: oklch(0.9 0.02 270 / 9%);
+  --input: oklch(0.9 0.02 270 / 14%);
+  --ring: #9085e9;
+  --sql-keyword: #a39af0;
+  --sql-string: oklch(0.8 0.11 165);
+  --sql-literal: oklch(0.78 0.13 350);
 }
 
 @layer base {
   * {
-    border-color: var(--border);
+    @apply border-border outline-ring/50;
   }
   html {
-    font-family: var(--font-sans);
-    font-size: 14.5px;
     -webkit-font-smoothing: antialiased;
   }
   body {
-    background: var(--background);
-    color: var(--foreground);
-    min-height: 100vh;
+    @apply bg-background text-foreground font-sans;
   }
-  h1,
-  h2,
-  h3 {
-    font-family: var(--font-display);
-    font-stretch: 90%;
-  }
-  ::selection {
-    background: oklch(0.88 0.165 98 / 30%);
-  }
-  :focus-visible {
-    outline: 2px solid oklch(0.88 0.165 98 / 60%);
-    outline-offset: 2px;
-  }
+}
+
+::selection {
+  background: color-mix(in oklab, var(--primary) 28%, transparent);
 }
 
 @utility tabular {
   font-variant-numeric: tabular-nums;
 }
 
-@utility blueprint {
-  background-image: radial-gradient(circle at 1px 1px, oklch(0.93 0.025 85 / 9%) 1px, transparent 0);
-  background-size: 22px 22px;
-}
-
-* {
-  scrollbar-width: thin;
-  scrollbar-color: oklch(0.93 0.025 85 / 14%) transparent;
-}
-
-@keyframes ql-rise {
+/* A request that just arrived over the live feed: a brief wash of the brand colour. */
+@keyframes ql-arrive {
   from {
-    opacity: 0;
-    transform: translateY(-3px);
+    background-color: color-mix(in oklab, var(--primary) 14%, transparent);
   }
   to {
-    opacity: 1;
-    transform: none;
+    background-color: transparent;
   }
 }
-@utility animate-rise {
-  animation: ql-rise 260ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+@utility animate-arrive {
+  animation: ql-arrive 1.8s ease-out both;
 }
 
-@keyframes ql-pulse {
-  0%,
-  100% {
-    opacity: 1;
+/* The live dot: one soft ring, the only motion that runs on its own. */
+@keyframes ql-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.55;
   }
-  50% {
-    opacity: 0.35;
+  80%,
+  100% {
+    transform: scale(2.6);
+    opacity: 0;
   }
 }
-@utility animate-live {
-  animation: ql-pulse 1.8s ease-in-out infinite;
+@utility animate-live-ring {
+  animation: ql-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

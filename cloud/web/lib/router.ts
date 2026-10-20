@@ -1,27 +1,28 @@
-// A small path router: the dashboard has four screens, not worth a dependency.
+// A small path router: the dashboard has two screens, not worth a dependency.
 // The Worker's assets fall back to index.html for unknown paths, so deep links work.
 import { useEffect, useState } from 'react'
 
-export type Route =
-  | { page: 'live' }
-  | { page: 'issues'; issue: number | null }
-  | { page: 'queries' }
-  | { page: 'settings' }
+/** A query is one statement (`seq`) of one stored request of one project. */
+export interface QueryRef {
+  project: string
+  request: number
+  seq: number
+}
+
+export type Route = { page: 'live' } | ({ page: 'query' } & QueryRef)
+
+const POSITIVE = /^[1-9]\d*$/
 
 export function parse(pathname: string): Route {
-  const [first, second] = pathname.split('/').filter(Boolean)
-  if (first === 'issues') {
-    const n = Number(second)
-    return { page: 'issues', issue: Number.isInteger(n) && n > 0 ? n : null }
+  const [first, project, request, seq] = pathname.split('/').filter(Boolean)
+  if (first === 'queries' && project && POSITIVE.test(request ?? '') && POSITIVE.test(seq ?? '')) {
+    return { page: 'query', project, request: Number(request), seq: Number(seq) }
   }
-  if (first === 'queries') return { page: 'queries' }
-  if (first === 'settings') return { page: 'settings' }
   return { page: 'live' }
 }
 
 export function href(route: Route): string {
-  if (route.page === 'issues') return route.issue ? `/issues/${route.issue}` : '/issues'
-  return route.page === 'live' ? '/' : `/${route.page}`
+  return route.page === 'query' ? `/queries/${encodeURIComponent(route.project)}/${route.request}/${route.seq}` : '/'
 }
 
 export function navigate(to: Route | string) {

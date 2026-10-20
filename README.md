@@ -135,8 +135,9 @@ await flush()
 
 ### 4. Watch it work
 
-Use your app, then open **Live** in the dashboard: requests appear as they arrive, with their
-statements and findings. Issues collect under **Evaluation**.
+Use your app, then open the dashboard: every statement of the requests the SDK sends appears
+on **Live** as it arrives. Click one for its report: the SQL, the line of your code that ran
+it, the issue it belongs to with the fix, the rest of its request and its last 24 hours.
 
 No app handy? [`dev/sequelize-demo`](dev/sequelize-demo) is an Express + Sequelize app with
 the usual ORM mistakes built in, against a demo PostgreSQL or MySQL in Docker.
@@ -153,7 +154,8 @@ the usual ORM mistakes built in, against a demo PostgreSQL or MySQL in Docker.
 | `QUERYLENS_DISABLED=1` | Turn the SDK off. |
 
 Detection thresholds (slow, large, loop and chatty limits) and live-feed sampling are set
-per project in the dashboard's **Settings** and reach running apps on their next report. The
+per project through the API (`PUT /api/0/projects/<id>/settings`) and reach running apps on
+their next report. The
 [SDK's README](integrations/node) covers the options and exactly what is sent.
 
 ## Private by default
@@ -180,7 +182,7 @@ per project in the dashboard's **Settings** and reach running apps on their next
 | **Fixes with code** | Sequelize (`include` with `separate`, `bulkCreate`, `findAndCountAll`…) |
 | **Fixes naming the right API** | Prisma, TypeORM, plus Django, Active Record, SQLAlchemy and Hibernate, which the analysis already recognizes |
 | **Backend** | Cloudflare Workers + Durable Objects (SQLite), free plan |
-| **Dashboard** | Live feed, issues with resolve / ignore / regressions, top statements by time, per-project settings |
+| **Dashboard** | Live queries with built-in and custom filters, and a report per query down to the line of code |
 
 ## Roadmap
 

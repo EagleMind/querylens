@@ -141,9 +141,29 @@ pub struct QueryShape {
 #[ts(export)]
 pub struct LiveFinding {
     pub issue_id: i32,
+    /// The statement shape it is about, to tie it to the request's statements.
+    pub fingerprint: String,
     pub kind: FindingKind,
     pub severity: SuggestionSeverity,
     pub title: String,
+}
+
+/// A request an SDK sent (flagged, or sampled), as the backend keeps it for the query history.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct StoredRequest {
+    /// Increasing within the project: newer requests have larger ids.
+    pub id: i32,
+    pub environment: String,
+    pub release: Option<String>,
+    /// The route (`GET /orders/:id`) or job name.
+    pub name: String,
+    pub at: String,
+    pub duration_ms: f64,
+    pub db_ms: f64,
+    pub statements: Vec<CapturedStatement>,
+    pub findings: Vec<LiveFinding>,
 }
 
 /// What the dashboard's live view receives over its WebSocket.
@@ -151,18 +171,8 @@ pub struct LiveFinding {
 #[serde(tag = "type", rename_all = "camelCase")]
 #[ts(export)]
 pub enum LiveEvent {
-    /// A request an SDK sent: flagged, or sampled for the feed.
-    #[serde(rename_all = "camelCase")]
-    Transaction {
-        environment: String,
-        release: Option<String>,
-        name: String,
-        at: String,
-        duration_ms: f64,
-        db_ms: f64,
-        statements: Vec<CapturedStatement>,
-        findings: Vec<LiveFinding>,
-    },
+    /// A request an SDK sent, just stored.
+    Transaction(StoredRequest),
     /// An issue was created, or came back after being resolved.
     #[serde(rename_all = "camelCase")]
     Issue { issue: Issue, regressed: bool },

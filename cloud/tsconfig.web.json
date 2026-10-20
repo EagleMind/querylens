@@ -12,7 +12,8 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "skipLibCheck": true,
-    "noUnusedLocals": true
+    "noUnusedLocals": true,
+    "paths": { "@/*": ["./web/*"] }
   },
   "include": ["web", "bindings"]
 }

@@ -5,4 +5,8 @@ import type { SuggestionSeverity } from "./SuggestionSeverity";
 /**
  * A finding as the live feed shows it next to its request.
  */
-export type LiveFinding = { issueId: number, kind: FindingKind, severity: SuggestionSeverity, title: string, };
+export type LiveFinding = { issueId: number, 
+/**
+ * The statement shape it is about, to tie it to the request's statements.
+ */
+fingerprint: string, kind: FindingKind, severity: SuggestionSeverity, title: string, };

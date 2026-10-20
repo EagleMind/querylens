@@ -1,144 +1,395 @@
-import { ActivityIcon, ChevronRightIcon, PauseIcon, PlayIcon, RadioIcon } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { PauseIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
 
 import type { Project } from '../../bindings/Project'
-import { Statements } from '../components/Statements'
-import { ThroughputChart } from '../components/ThroughputChart'
-import { Button, Empty, Select, Severity, Stat, cx } from '../components/ui'
-import { FINDING_KINDS, fmtClock, fmtCount, fmtMs } from '../lib/format'
-import { type LiveState, type LiveTransaction } from '../lib/live'
-import { href, onLinkClick } from '../lib/router'
+import { FilterDialog } from '@/components/FilterDialog'
+import { Sql } from '@/components/Sql'
+import { CodeBlock, ConnectionStatus, ErrorNote, SeverityDot, SlowMark, StatementTypeLabel } from '@/components/common'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import {
+  type CustomFilter,
+  PRESETS,
+  type Preset,
+  loadFilters,
+  matchesFilter,
+  matchesPreset,
+  matchesSearch,
+  saveFilters,
+} from '@/lib/filters'
+import { FINDING_KINDS, fmtCount, fmtMs, fmtTime } from '@/lib/format'
+import type { LiveFeed } from '@/lib/live'
+import { type LiveQuery, type LiveRequest, flatten, mergeRequests } from '@/lib/queries'
+import { href, navigate, onLinkClick } from '@/lib/router'
+import { cn } from '@/lib/utils'
 
-function TransactionRow({ t }: { t: LiveTransaction }) {
-  const [open, setOpen] = useState(false)
-  const flagged = t.findings.length > 0
+/** Rows rendered at once; the rest are a click away. */
+const PAGE = 300
+const ALL = 'all'
+const VIEW_KEY = 'querylens.live'
+/** The selected view wears the brand colour. */
+const ACTIVE_VIEW = 'data-[state=on]:bg-primary/10 data-[state=on]:text-primary dark:data-[state=on]:bg-primary/15'
+
+interface View {
+  project: string
+  environment: string
+  /** A preset, or a custom filter's id. */
+  filter: string
+}
+
+function loadView(): View {
+  try {
+    return { project: ALL, environment: ALL, filter: 'all', ...JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}') }
+  } catch {
+    return { project: ALL, environment: ALL, filter: 'all' }
+  }
+}
+
+function useView(): [View, (patch: Partial<View>) => void] {
+  const [view, setView] = useState(loadView)
+  const update = (patch: Partial<View>) =>
+    setView((v) => {
+      const next = { ...v, ...patch }
+      try {
+        localStorage.setItem(VIEW_KEY, JSON.stringify(next))
+      } catch {
+        // Not remembered: fine.
+      }
+      return next
+    })
+  return [view, update]
+}
+
+function open(q: LiveQuery) {
+  navigate({ page: 'query', ...q.ref })
+}
+
+function QueryRow({ q, project, showProject }: { q: LiveQuery; project: Project | undefined; showProject: boolean }) {
+  const s = q.statement
+  const slow = project ? s.durationMs >= project.settings.slowMs : false
   return (
-    <li className="animate-rise border-b border-rule last:border-0">
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        className="grid w-full grid-cols-[1rem_4.25rem_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2 text-left hover:bg-raised/60 sm:grid-cols-[1rem_4.25rem_minmax(0,1fr)_5rem_5.5rem_4rem]"
-      >
-        <ChevronRightIcon className={cx('size-3.5 text-muted transition-transform', open && 'rotate-90')} />
-        <span className="font-mono text-[11.5px] text-muted tabular">{fmtClock(t.at)}</span>
-        <span className="flex min-w-0 items-center gap-2">
-          <span className={cx('size-1.5 shrink-0 rounded-full', flagged ? 'bg-sev-high' : 'bg-ok')} aria-hidden />
-          <span className="truncate font-mono text-[12.5px]">{t.name}</span>
-          {t.findings.slice(0, 2).map((f) => (
-            <span key={f.issueId} className="hidden shrink-0 rounded-[2px] border border-rule px-1.5 py-px text-[11px] text-foreground/80 md:inline">
+    <TableRow
+      className={cn('cursor-pointer', q.request.arrivedAt !== undefined && Date.now() - q.request.arrivedAt < 1500 && 'animate-arrive')}
+      onClick={() => open(q)}
+    >
+      <TableCell className="font-mono text-xs text-muted-foreground tabular">{fmtTime(q.at)}</TableCell>
+      <TableCell className="hidden sm:table-cell">
+        <StatementTypeLabel type={q.type} />
+      </TableCell>
+      <TableCell className="max-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <a
+            href={href({ page: 'query', ...q.ref })}
+            onClick={(e) => {
+              e.stopPropagation()
+              onLinkClick(e)
+            }}
+            className="truncate font-mono text-xs outline-none hover:underline focus-visible:underline"
+            title={s.sql}
+          >
+            <Sql sql={s.sql} />
+          </a>
+          {s.error && (
+            <Badge variant="outline" className="border-destructive/40 text-destructive">
+              Failed
+            </Badge>
+          )}
+          {q.findings.map((f) => (
+            <Badge key={f.issueId} variant="outline" className="hidden md:inline-flex">
+              <SeverityDot severity={f.severity} />
               {FINDING_KINDS[f.kind]}
-            </span>
+            </Badge>
           ))}
-          {t.environment !== 'production' && (
-            <span className="hidden shrink-0 text-[11px] text-muted lg:inline">{t.environment}</span>
-          )}
-        </span>
-        <span className="hidden text-right text-[12px] tabular sm:block">{fmtMs(t.durationMs)}</span>
-        <span className="hidden text-right text-[12px] text-muted tabular sm:block">{fmtMs(t.dbMs)} DB</span>
-        <span className="text-right text-[12px] text-muted tabular">{t.statements.length} stmt</span>
-      </button>
-      {open && (
-        <div className="space-y-3 px-3 pt-1 pb-4 sm:pl-10">
-          {t.findings.length > 0 && (
-            <ul className="space-y-1.5">
-              {t.findings.map((f) => (
-                <li key={f.issueId} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
-                  <Severity severity={f.severity} />
-                  <a href={href({ page: 'issues', issue: f.issueId })} onClick={onLinkClick} className="underline decoration-rule underline-offset-4 hover:decoration-signal">
-                    {f.title}
-                  </a>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Statements statements={t.statements} />
-          {t.release && <p className="text-[11.5px] text-muted">Release {t.release}</p>}
         </div>
-      )}
-    </li>
+      </TableCell>
+      <TableCell className="hidden max-w-0 lg:table-cell">
+        <span className="block truncate font-mono text-xs text-muted-foreground" title={s.origin ?? undefined}>
+          {s.origin ?? '—'}
+        </span>
+      </TableCell>
+      <TableCell className="hidden max-w-0 md:table-cell">
+        <span className="block truncate text-xs" title={q.request.name}>
+          {q.request.name}
+        </span>
+        {showProject && <span className="block truncate text-xs text-muted-foreground">{project?.name ?? 'Unknown project'}</span>}
+      </TableCell>
+      <TableCell className={cn('text-right text-xs tabular', slow && 'font-medium')}>
+        <span className="inline-flex items-center justify-end gap-1.5">
+          {slow && project && <SlowMark slowMs={project.settings.slowMs} />}
+          {fmtMs(s.durationMs)}
+        </span>
+      </TableCell>
+      <TableCell className="hidden w-20 text-right text-xs text-muted-foreground tabular sm:table-cell">{fmtCount(s.rows)}</TableCell>
+    </TableRow>
   )
 }
 
-export function LivePage({ project, live, paused, onPause }: { project: Project; live: LiveState; paused: boolean; onPause: (p: boolean) => void }) {
-  const [env, setEnv] = useState('')
-  const [onlyFlagged, setOnlyFlagged] = useState(false)
-  const environments = useMemo(() => [...new Set(live.transactions.map((t) => t.environment))].sort(), [live.transactions])
-  const shown = live.transactions.filter((t) => (!env || t.environment === env) && (!onlyFlagged || t.findings.length > 0))
+function Waiting({ projects }: { projects: Project[] }) {
+  return (
+    <div className="mx-auto grid max-w-2xl gap-4 px-6 py-14 text-sm">
+      <div className="grid gap-1.5 text-center">
+        <p className="text-base font-medium">Waiting for queries</p>
+        <p className="text-muted-foreground">
+          Queries appear here as your app sends them. The SDK always sends requests with a problem, and a sample of the
+          others ({Math.round((projects[0]?.settings.liveSampleRate ?? 0.05) * 100)}% in production, all of them in
+          development).
+        </p>
+      </div>
+      {projects.map((p) => (
+        <div key={p.id} className="grid gap-1.5">
+          <p className="text-muted-foreground">
+            DSN for <span className="font-medium text-foreground">{p.name}</span>
+          </p>
+          <CodeBlock code={p.dsn} />
+        </div>
+      ))}
+    </div>
+  )
+}
 
-  // Each SDK reports statistics once a minute; the latest complete minute is the headline.
-  const latest = live.minutes.at(-1)
-  const since = latest ? `minute of ${new Date(latest.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })}` : 'waiting for SDK statistics'
-  const flaggedCount = live.transactions.filter((t) => t.findings.length > 0).length
+export function LivePage({ projects, feed }: { projects: Project[]; feed: LiveFeed }) {
+  const [view, setView] = useView()
+  const [search, setSearch] = useState('')
+  const [filters, setFilters] = useState<CustomFilter[]>(loadFilters)
+  const [dialog, setDialog] = useState<{ open: boolean; editing: CustomFilter | null }>({ open: false, editing: null })
+  const [frozen, setFrozen] = useState<LiveRequest[] | null>(null)
+  const [limit, setLimit] = useState(PAGE)
+
+  const byId = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
+  const projectId = view.project !== ALL && byId.has(view.project) ? view.project : ALL
+  const custom = filters.find((f) => f.id === view.filter) ?? null
+  const preset: Preset | null = custom ? null : (PRESETS.find((p) => p.id === view.filter)?.id ?? 'all')
+
+  const requests = frozen ?? feed.requests
+  const scoped = useMemo(
+    () => flatten(requests).filter((q) => (projectId === ALL || q.request.projectId === projectId) && (view.environment === ALL || q.request.environment === view.environment)),
+    [requests, projectId, view.environment],
+  )
+  const environments = useMemo(() => [...new Set(feed.requests.map((r) => r.environment))].sort(), [feed.requests])
+  const searched = useMemo(() => scoped.filter((q) => matchesSearch(q, search)), [scoped, search])
+  const slowMs = (q: LiveQuery) => byId.get(q.request.projectId)?.settings.slowMs ?? Infinity
+  const counts = useMemo(
+    () => Object.fromEntries(PRESETS.map((p) => [p.id, searched.filter((q) => matchesPreset(p.id, q, slowMs(q))).length])),
+    [searched, byId],
+  )
+  const shown = useMemo(
+    () => searched.filter((q) => (custom ? matchesFilter(q, custom) : matchesPreset(preset ?? 'all', q, slowMs(q)))),
+    [searched, custom, preset, byId],
+  )
+  useEffect(() => {
+    setLimit(PAGE)
+  }, [view, search])
+
+  const newWhilePaused = frozen ? feed.requests.findIndex((r) => r.id === frozen[0]?.id) : 0
+  const pending = frozen ? (newWhilePaused === -1 ? feed.requests.length : newWhilePaused) : 0
+  const showProject = projectId === ALL && projects.length > 1
+  const filtered = search.trim() !== '' || view.filter !== 'all' || view.environment !== ALL || projectId !== ALL
+
+  const scopeIds = projectId === ALL ? projects.map((p) => p.id) : [projectId]
+  const older = feed.loaded && feed.hasOlder(scopeIds)
+  const [loadingOlder, setLoadingOlder] = useState(false)
+  const [olderError, setOlderError] = useState<unknown>(null)
+  const loadOlder = async () => {
+    setLoadingOlder(true)
+    setOlderError(null)
+    try {
+      const page = await feed.loadOlder(scopeIds)
+      // While paused, older requests still join the frozen list.
+      setFrozen((f) => (f ? mergeRequests(f, page) : f))
+    } catch (e) {
+      setOlderError(e)
+    } finally {
+      setLoadingOlder(false)
+    }
+  }
+
+  const saveFilter = (f: CustomFilter) => {
+    const next = filters.some((x) => x.id === f.id) ? filters.map((x) => (x.id === f.id ? f : x)) : [...filters, f]
+    setFilters(next)
+    saveFilters(next)
+    setView({ filter: f.id })
+  }
+  const deleteFilter = (id: string) => {
+    const next = filters.filter((x) => x.id !== id)
+    setFilters(next)
+    saveFilters(next)
+    if (view.filter === id) setView({ filter: 'all' })
+  }
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Statements" value={latest ? fmtCount(latest.statements) : '–'} hint={since} />
-        <Stat label="DB time" value={latest ? fmtMs(latest.dbMs) : '–'} hint={since} />
-        <Stat label="Failed statements" value={latest ? fmtCount(latest.errors) : '–'} hint={since} />
-        <Stat label="Flagged requests" value={fmtCount(flaggedCount)} hint={`of ${fmtCount(live.transactions.length)} received since you opened this page`} />
+    <div className="grid gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="grid gap-1">
+          <h1 className="text-xl font-semibold tracking-tight">Live queries</h1>
+          <p className="text-sm text-muted-foreground">Every statement of the requests your apps send, newest first, kept for 7 days.</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <ConnectionStatus state={feed.connection} />
+          <Button variant="outline" size="sm" onClick={() => setFrozen(frozen ? null : feed.requests)}>
+            {frozen ? <PlayIcon /> : <PauseIcon />}
+            {frozen ? (pending > 0 ? `Resume (${fmtCount(pending)} new requests)` : 'Resume') : 'Pause'}
+          </Button>
+        </div>
       </div>
 
-      <ThroughputChart minutes={live.minutes} />
-
-      {live.issues.length > 0 && (
-        <section aria-label="New issues" className="rounded-[3px] border border-sev-high/30 bg-sev-high/[0.06] px-4 py-3">
-          <p className="text-[12px] font-semibold text-sev-high">New and returning issues</p>
-          <ul className="mt-1.5 space-y-1">
-            {live.issues.slice(0, 5).map(({ issue, regressed }) => (
-              <li key={`${issue.id}-${issue.lastSeen}`} className="flex items-center gap-3 text-[13px]">
-                <Severity severity={issue.severity} />
-                <a href={href({ page: 'issues', issue: issue.id })} onClick={onLinkClick} className="truncate hover:underline">
-                  {issue.title}
-                </a>
-                <span className="shrink-0 text-[11.5px] text-muted">{regressed ? 'regressed' : 'new'}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      <section aria-label="Requests" className="rounded-[3px] border border-rule bg-panel">
-        <header className="flex flex-wrap items-center gap-2 border-b border-rule px-3 py-2">
-          <h2 className="mr-auto flex items-center gap-2 text-[14px] font-semibold">
-            <ActivityIcon className="size-4 text-muted" /> Requests
-          </h2>
-          <label className="flex items-center gap-1.5 text-[12.5px] text-muted">
-            <input type="checkbox" checked={onlyFlagged} onChange={(e) => setOnlyFlagged(e.target.checked)} className="accent-[var(--signal)]" />
-            Only with problems
-          </label>
-          {environments.length > 1 && (
-            <Select label="Environment" value={env} onChange={setEnv}>
-              <option value="">All environments</option>
-              {environments.map((e) => (
-                <option key={e} value={e}>
-                  {e}
-                </option>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
+          <Select value={projectId} onValueChange={(v) => setView({ project: v })}>
+            <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Project">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All projects</SelectItem>
+              {projects.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
               ))}
-            </Select>
-          )}
-          <Button size="sm" onClick={() => onPause(!paused)}>
-            {paused ? <PlayIcon /> : <PauseIcon />}
-            {paused ? 'Resume' : 'Pause'}
+            </SelectContent>
+          </Select>
+          <Select value={view.environment} onValueChange={(v) => setView({ environment: v })}>
+            <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Environment">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL}>All environments</SelectItem>
+              {[...new Set([...environments, ...(view.environment !== ALL ? [view.environment] : [])])].map((e) => (
+                <SelectItem key={e} value={e}>
+                  {e}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="relative min-w-52 flex-1 sm:max-w-80">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search SQL, file or route"
+            aria-label="Search queries"
+            className="h-8 pl-8"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={view.filter}
+          onValueChange={(v) => v && setView({ filter: v })}
+          aria-label="View"
+          className="flex-wrap"
+        >
+          {PRESETS.map((p) => (
+            <ToggleGroupItem key={p.id} value={p.id} className={cn('group/view gap-1.5 px-3', ACTIVE_VIEW)}>
+              {p.label}
+              <span className="text-muted-foreground tabular group-data-[state=on]/view:text-primary/70">{fmtCount(counts[p.id] ?? 0)}</span>
+            </ToggleGroupItem>
+          ))}
+          {filters.map((f) => (
+            <ToggleGroupItem key={f.id} value={f.id} className={cn('px-3', ACTIVE_VIEW)}>
+              {f.name}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+        {custom && (
+          <Button variant="ghost" size="sm" onClick={() => setDialog({ open: true, editing: custom })}>
+            <PencilIcon /> Edit filter
           </Button>
-        </header>
-        {shown.length === 0 ? (
-          <div className="p-4">
-            <Empty title={live.connection === 'live' ? 'Waiting for requests' : 'Connecting…'} icon={<RadioIcon />}>
-              Requests appear here as the SDK sends them: every request with a problem, plus{' '}
-              {Math.round(project.settings.liveSampleRate * 100)}% of the others in production (all of them in development).
-              No app yet? Settings has the setup.
-            </Empty>
+        )}
+        <Button variant="ghost" size="sm" onClick={() => setDialog({ open: true, editing: null })}>
+          <PlusIcon /> New filter
+        </Button>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border">
+        {!feed.loaded && feed.requests.length === 0 ? (
+          <div className="grid gap-3 p-4" aria-label="Loading queries">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-5" />
+            ))}
+          </div>
+        ) : feed.requests.length === 0 && !frozen ? (
+          <Waiting projects={projectId === ALL ? projects : projects.filter((p) => p.id === projectId)} />
+        ) : shown.length === 0 ? (
+          <div className="grid justify-items-center gap-3 px-6 py-14 text-center text-sm">
+            <p className="text-base font-medium">No queries match</p>
+            <p className="text-muted-foreground">
+              None of the {fmtCount(feed.size)} loaded queries match the current project, environment, search and view.
+            </p>
+            {filtered && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearch('')
+                  setView({ project: ALL, environment: ALL, filter: 'all' })
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
           </div>
         ) : (
-          <ul>
-            {shown.map((t) => (
-              <TransactionRow key={t.key} t={t} />
-            ))}
-          </ul>
+          <Table className="table-fixed">
+            <TableHeader className="bg-muted/40">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-24 sm:w-28">Time</TableHead>
+                <TableHead className="hidden w-24 sm:table-cell">Type</TableHead>
+                <TableHead>Query</TableHead>
+                <TableHead className="hidden w-[22%] lg:table-cell">Code location</TableHead>
+                <TableHead className="hidden w-[18%] md:table-cell">Request</TableHead>
+                <TableHead className="w-24 text-right">Duration</TableHead>
+                <TableHead className="hidden w-20 text-right sm:table-cell">Rows</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {shown.slice(0, limit).map((q) => (
+                <QueryRow key={q.id} q={q} project={byId.get(q.request.projectId)} showProject={showProject} />
+              ))}
+            </TableBody>
+          </Table>
         )}
-      </section>
+      </div>
+
+      {(shown.length > 0 || older) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="tabular">
+            {shown.length > limit
+              ? `Showing ${limit.toLocaleString()} of ${shown.length.toLocaleString()} matching queries.`
+              : `${shown.length.toLocaleString()} matching ${shown.length === 1 ? 'query' : 'queries'} of ${feed.size.toLocaleString()} loaded.`}
+          </span>
+          {shown.length > limit ? (
+            <Button variant="outline" size="sm" onClick={() => setLimit((l) => l + PAGE)}>
+              Show more
+            </Button>
+          ) : (
+            older && (
+              <Button variant="outline" size="sm" disabled={loadingOlder} onClick={loadOlder}>
+                {loadingOlder ? 'Loading…' : 'Load older queries'}
+              </Button>
+            )
+          )}
+        </div>
+      )}
+      <ErrorNote error={olderError} />
+
+      <FilterDialog
+        open={dialog.open}
+        onOpenChange={(o) => setDialog((d) => ({ ...d, open: o }))}
+        editing={dialog.editing}
+        queries={scoped}
+        onSave={saveFilter}
+        onDelete={deleteFilter}
+      />
     </div>
   )
 }
