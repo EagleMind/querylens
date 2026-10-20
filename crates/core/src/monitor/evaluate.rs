@@ -104,6 +104,28 @@ mod tests {
         assert!(code.contains("include: [{ model: OrderItem"), "{code}");
     }
 
+    /// A Drizzle N+1 (a core `select` per order): recognized, and fixed with `with`.
+    #[test]
+    fn drizzle_n_plus_one_gets_a_drizzle_fix() {
+        let mut queries = vec![
+            r#"{"at":0,"durationMs":2,"sql":"select \"id\", \"user_id\" from \"orders\" where \"orders\".\"user_id\" = $1","vh":"p","rows":8}"#.to_string(),
+        ];
+        for i in 0..8 {
+            queries.push(format!(
+                r#"{{"at":{},"durationMs":1,"sql":"select \"id\", \"order_id\", \"quantity\" from \"order_items\" where \"order_items\".\"order_id\" = $1","vh":"v{i}","rows":2}}"#,
+                1 + i
+            ));
+        }
+        let body = format!(r#"{{"type":"transaction","name":"GET /orders","start":0,"queries":[{}]}}"#, queries.join(","));
+        let statements = envelope::parse(&body).transactions[0].statements();
+        let out = evaluate(&statements, None, &Thresholds::default());
+        assert_eq!(out.orm, Some(Orm::Drizzle));
+        let n1 = out.findings.iter().find(|f| f.finding.kind == FindingKind::NPlusOne).expect("an N+1");
+        let code = n1.finding.fix.as_ref().and_then(|f| f.code.clone()).unwrap_or_default();
+        assert!(code.contains("db.query.orders.findMany({"), "{code}");
+        assert!(code.contains("with: { orderItems: true }"), "{code}");
+    }
+
     #[test]
     fn identical_values_are_a_duplicate_not_an_n_plus_one() {
         let statements: Vec<CapturedStatement> = (0..6)

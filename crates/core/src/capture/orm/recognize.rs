@@ -26,14 +26,16 @@ fn signature(sql: &str) -> Option<Orm> {
     // backticks but ORMs shape their SQL the same way.
     let unified = sql.trim().replace('`', "\"");
     let s = unified.as_str();
-    // Prisma qualifies every column with the schema ("public"."User"."id") and
-    // never ends with ';'.
-    if s.contains("\"public\".\"") && !s.ends_with(';') {
-        return Some(Orm::Prisma);
-    }
-    // TypeORM: "User"."id" AS "User_id".
-    if aliases(s).any(|(qualified, alias)| alias.contains('_') && qualified.replace("\".\"", "_") == alias) {
+    // TypeORM: "User"."id" AS "User_id"; inserts put no space before the column list.
+    if aliases(s).any(|(qualified, alias)| alias.contains('_') && qualified.replace("\".\"", "_") == alias)
+        || (s.starts_with("INSERT INTO \"") && s.split_once('(').is_some_and(|(head, _)| head.ends_with('"')))
+    {
         return Some(Orm::TypeOrm);
+    }
+    // Prisma qualifies every column with the schema ("public"."User"."id"; on MySQL the
+    // database) and never ends with ';'.
+    if (s.contains("\"public\".\"") || schema_qualified_column(s)) && !s.ends_with(';') {
+        return Some(Orm::Prisma);
     }
     // Sequelize ends statements with ';', aliases the table as the model
     // ("users" AS "User") and eager-loaded columns with dots ("items.id").
@@ -42,6 +44,9 @@ fn signature(sql: &str) -> Option<Orm> {
     }
     if s.starts_with("INSERT INTO \"") && s.contains("VALUES (DEFAULT,") && s.ends_with(';') {
         return Some(Orm::Sequelize);
+    }
+    if let Some(orm) = query_builder(s) {
+        return Some(orm);
     }
     // Active Record: SELECT "orders".* FROM "orders".
     if s.contains("\".* FROM \"") {
@@ -62,6 +67,65 @@ fn signature(sql: &str) -> Option<Orm> {
         return Some(Orm::Django);
     }
     None
+}
+
+/// The Node.js query builders and the ORMs built like them write lowercase keywords
+/// and quote every identifier. They differ in how they alias and qualify.
+fn query_builder(s: &str) -> Option<Orm> {
+    let lowercase = ["select ", "insert into \"", "update \"", "delete from \""].iter().any(|k| s.starts_with(k));
+    if !lowercase || !s.contains('"') {
+        return None;
+    }
+    // MikroORM aliases tables by entity initial and depth: from "order_item" as "o0".
+    if s.match_indices(" as \"").any(|(i, _)| s[..i].ends_with('"') && numbered_alias(&s[i + 5..])) {
+        return Some(Orm::MikroOrm);
+    }
+    // Drizzle lists every column in inserts, `default` for the unset ones, …
+    if s.starts_with("insert into \"") && s.contains(" values (") && (s.contains("(default") || s.contains(" default,") || s.contains(" default)")) {
+        return Some(Orm::Drizzle);
+    }
+    // … aliases relational queries' tables as themselves without `as` (from "users" "users"),
+    // and in plain selects leaves the column list unqualified but qualifies the filters.
+    if let Some(table) = from_table(s).filter(|_| s.starts_with("select ")) {
+        let after = &s[s.find(" from \"").unwrap_or(0)..];
+        if after.contains(&format!("\"{table}\" \"{table}\"")) {
+            return Some(Orm::Drizzle);
+        }
+        // Objection selects whole rows qualified: select "orders".* from "orders".
+        if s.starts_with(&format!("select \"{table}\".* from \"{table}\"")) {
+            return Some(Orm::Objection);
+        }
+        let columns = &s["select ".len()..s.len() - after.len()];
+        let filters = after.split_once(" where ").map(|(_, w)| w).unwrap_or_default();
+        if !columns.contains("\".\"") && columns.starts_with('"') && filters.contains(&format!("\"{table}\".\"")) {
+            return Some(Orm::Drizzle);
+        }
+    }
+    // Knex, and Kysely, which writes the same SQL: unqualified names throughout. Drizzle and
+    // Objection qualify their filters, so a qualified name here says nothing.
+    (!s.contains("\".\"")).then_some(Orm::Knex)
+}
+
+/// `"x0"`, `"o12"`: lowercase letters then digits, as the alias starting `rest`.
+fn numbered_alias(rest: &str) -> bool {
+    let Some(alias) = rest.split('"').next() else { return false };
+    let letters = alias.trim_end_matches(|c: char| c.is_ascii_digit());
+    !letters.is_empty() && letters.len() < alias.len() && letters.len() <= 2 && letters.chars().all(|c| c.is_ascii_lowercase())
+}
+
+/// The table after the first ` from "`, unqualified.
+fn from_table(s: &str) -> Option<&str> {
+    let start = s.find(" from \"")? + 7;
+    let name = &s[start..start + s[start..].find('"')?];
+    Some(name)
+}
+
+/// A column qualified with schema and table: `"db"."User"."id"`.
+fn schema_qualified_column(s: &str) -> bool {
+    s.match_indices("\".\"").any(|(i, _)| {
+        let rest = &s[i + 3..];
+        rest.find('"').is_some_and(|end| rest[end..].starts_with("\".\""))
+    })
 }
 
 /// `"x"."y" AS "alias"` pairs: (`x"."y`, `alias`).
@@ -108,9 +172,60 @@ mod tests {
             (r#"SELECT "shop_order"."id", "shop_order"."total" FROM "shop_order" LIMIT 21"#, Some(Orm::Django)),
             ("select u1_0.id from users u1_0", Some(Orm::Hibernate)),
             ("SELECT 1", None),
+            ("select * from users where id = $1", None),
         ];
         for (sql, want) in cases {
             assert_eq!(signature(sql), want, "{sql}");
         }
+    }
+
+    /// SQL as each Node.js ORM writes it: compiled with drizzle-orm 0.45, Knex 3,
+    /// Kysely 0.29, Objection 4, MikroORM 7 and TypeORM 1.1, and Prisma 6's engine.
+    #[test]
+    fn node_orm_signatures() {
+        let cases = [
+            // Prisma on MySQL qualifies with the database.
+            ("SELECT `shop`.`User`.`id`, `shop`.`User`.`email` FROM `shop`.`User` WHERE `shop`.`User`.`id` = ? LIMIT ? OFFSET ?", Orm::Prisma),
+            (r#"INSERT INTO "order_item"("id", "quantity", "orderId") VALUES (DEFAULT, $1, $2) RETURNING "id""#, Orm::TypeOrm),
+            (r#"SELECT "OrderItem"."id" AS "OrderItem_id" FROM "order_item" "OrderItem" WHERE (("OrderItem"."orderId" IN ($1, $2))) LIMIT 10"#, Orm::TypeOrm),
+            (r#"select "id", "order_id", "quantity" from "order_items" where "order_items"."order_id" = $1"#, Orm::Drizzle),
+            ("select `id`, `order_id` from `order_items` where `order_items`.`order_id` = ?", Orm::Drizzle),
+            (r#"insert into "orders" ("id", "user_id", "status", "created_at") values (default, $1, $2, default) returning "id""#, Orm::Drizzle),
+            ("insert into `order_items` (`id`, `order_id`) values (default, ?)", Orm::Drizzle),
+            (r#"select "id", "user_id", "status" from "orders" "orders" where "orders"."id" = $1 limit $2"#, Orm::Drizzle),
+            (
+                r#"select "orders"."id", "orders_items"."data" as "items" from "orders" "orders" left join lateral (select coalesce(json_agg(json_build_array("orders_items"."id")), '[]'::json) as "data" from "order_items" "orders_items" where "orders_items"."order_id" = "orders"."id") "orders_items" on true where "orders"."user_id" = $1"#,
+                Orm::Drizzle,
+            ),
+            (r#"select "o0".* from "order_item" as "o0" where "o0"."order_id" = ?"#, Orm::MikroOrm),
+            (r#"select "u0".* from "users" as "u0" where "u0"."id" = ? limit ?"#, Orm::MikroOrm),
+            (r#"select "order_items".* from "order_items" where "order_items"."order_id" in ($1)"#, Orm::Objection),
+            (r#"select * from "order_items" where "order_id" = $1"#, Orm::Knex),
+            (r#"select "id", "quantity" from "order_items" where "order_id" = $1 limit $2"#, Orm::Knex),
+            (r#"insert into "audit_entries" ("at", "kind") values ($1, $2) returning "id""#, Orm::Knex),
+            (r#"update "orders" set "status" = $1 where "id" = $2"#, Orm::Knex),
+            ("delete from `orders` where `id` in (?, ?)", Orm::Knex),
+        ];
+        for (sql, want) in cases {
+            assert_eq!(signature(sql), Some(want), "{sql}");
+        }
+        // Qualified writes could be Drizzle's or Objection's: no vote.
+        assert_eq!(signature(r#"update "orders" set "status" = $1 where "orders"."id" = $2"#), None);
+    }
+
+    #[test]
+    fn majority_of_calls() {
+        let stat = |sql: &str, calls| crate::model::FingerprintStat {
+            calls,
+            ..crate::capture::orm::templates::test_support::stat(sql, crate::model::StatementKind::Select)
+        };
+        // A Drizzle app's own SELECTs outvote its unqualified (Knex-looking) inserts.
+        let stats = [
+            stat(r#"select "id" from "orders" where "orders"."user_id" = $1"#, 30),
+            stat(r#"insert into "events" ("kind") values ($1)"#, 5),
+        ];
+        assert_eq!(recognize(&stats), Some(Orm::Drizzle));
+        let split = [stat(r#"select * from "orders" where "id" = $1"#, 5), stat(r#"select "o0".* from "orders" as "o0""#, 5)];
+        assert_eq!(recognize(&split), None);
     }
 }

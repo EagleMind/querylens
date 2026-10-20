@@ -266,6 +266,12 @@ export class Project extends DurableObject<Env> {
     }
   }
 
+  /** Replace the DSN key: SDKs still using the old one are refused from now on. */
+  async setKey(key: string): Promise<void> {
+    if (!this.meta('id')) throw new Error('No such project')
+    this.setMeta('key', key)
+  }
+
   async rename(name: string): Promise<void> {
     if (!this.meta('id')) throw new Error('No such project')
     this.setMeta('name', name)

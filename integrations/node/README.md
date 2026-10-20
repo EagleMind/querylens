@@ -1,7 +1,8 @@
 # querylens-node
 
 The QueryLens SDK for Node.js. It monitors the queries your app sends to PostgreSQL (through
-[`pg`](https://node-postgres.com/)) and MySQL (through [`mysql2`](https://sidorares.github.io/node-mysql2/)),
+[`pg`](https://node-postgres.com/) or [`postgres`](https://github.com/porsager/postgres), postgres.js)
+and MySQL (through [`mysql2`](https://sidorares.github.io/node-mysql2/)),
 whether via Sequelize, Knex, TypeORM, MikroORM, Drizzle or the drivers directly, in production too, and reports them to your
 [QueryLens backend](../../cloud). The backend finds N+1 queries, writes in a loop, slow,
 failing and large statements and chatty requests, and shows how to fix them in your ORM,
@@ -35,6 +36,50 @@ export async function register() {
 }
 ```
 
+## Drizzle
+
+Nothing to add: with `register` loaded first, Drizzle's queries (on `pg`, postgres.js and
+`mysql2`) carry the line of your code that awaited them. Drizzle starts a query only when
+it's awaited, from a microtask where your code is no longer on the stack, so the SDK takes
+the line where `await` (or `.then`, `.catch`, `Promise.all`) picks the query up. It does
+that by turning `then` on Drizzle's `QueryPromise` into a getter that returns the same
+function; queries run exactly as before. Recording a line costs a few microseconds per query.
+
+In ESM apps on Node.js older than 20.19, `select` queries have no line: the SDK can patch
+Drizzle's ESM build only after its select builders have copied `then`. Also without a
+line: `db.$count()`.
+
+## Prisma
+
+Prisma 7 sends its SQL through a driver adapter, and so does Prisma 6 with an adapter and
+`engineType = "client"` in its generator. With `@prisma/adapter-pg` that SQL goes through `pg`,
+which the SDK records. Add the extension so each query carries the line of your Prisma
+call (otherwise the driver sees only Prisma's internals):
+
+```js
+const { queryLens } = require('querylens-node/prisma')
+
+const prisma = new PrismaClient({ adapter }).$extends(queryLens())
+```
+
+Prisma 6 on its default Rust engine runs SQL outside the drivers. Record it through Prisma's
+tracing instead:
+
+```js
+const prisma = new PrismaClient().$extends(queryLens({ engine: true }))
+```
+
+This mode has a cost, which is why it's opt-in: Prisma's engine tracing adds about 0.3 ms per
+query, and inside interactive transactions Prisma appends a `/* traceparent='…' */` comment to
+the SQL it sends. It works alongside Sentry's or OpenTelemetry's Prisma instrumentation when
+those are set up first. A statement's values are its Prisma operation's arguments, and rows
+are known only for an operation's first statement. Clients with an adapter are left to the
+driver hooks, so nothing is counted twice.
+
+Not covered: Prisma 6 with an adapter but still on the Rust engine, which calls the driver
+from native code, so its queries can't be tied to a request (add `engineType = "client"`).
+The `BEGIN` and `COMMIT` of interactive transactions have no line of code.
+
 ## What it sends
 
 - **Requests with problems.** Queries are buffered per HTTP request. When the request ends,
@@ -57,7 +102,8 @@ Each statement carries its timing, rows, error, the first line of your code in t
   repeated query. `sendValues: true` sends them anyway, for example in development.
 - **Your queries are never changed**, and nothing waits on QueryLens. Sending happens in the
   background, batched every few seconds and gzipped. If anything goes wrong inside the SDK,
-  the query runs as if it weren't there.
+  the query runs as if it weren't there. (The one exception is Prisma's opt-in
+  [engine mode](#prisma).)
 - **Bounded memory.** When the backend is unreachable, the SDK backs off and drops the oldest
   data rather than holding more than about 4 MB.
 - **No dependencies.** Plain Node.js, a few small files.

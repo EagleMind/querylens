@@ -1,5 +1,6 @@
-//! Advice for ORMs without a dedicated advisor (and for hand-written SQL): the
-//! technique, and the API that implements it when the ORM is known.
+//! Advice for ORMs without a dedicated advisor (the Python, Ruby and Java ones, which
+//! no SDK captures yet) and for hand-written SQL: the technique, and the API that
+//! implements it when the ORM is known.
 
 use super::{Facts, HintContext, OrmAdvisor, tested_index};
 use crate::model::{CaptureFinding, FindingKind, FixHint, Orm, StatementKind};
@@ -47,27 +48,24 @@ impl OrmAdvisor for Generic {
 impl Generic {
     fn eager_loading(&self) -> &'static str {
         match self.0 {
-            Some(Orm::Prisma) => "`include: { relation: true }` on the findMany",
-            Some(Orm::TypeOrm) => "`relations: [...]` on find, or `leftJoinAndSelect` on the query builder",
             Some(Orm::Django) => "`select_related()` for foreign keys, `prefetch_related()` for reverse and many-to-many",
             Some(Orm::ActiveRecord) => "`includes(:association)` (or `preload`)",
             Some(Orm::SqlAlchemy) => "`selectinload()` for collections, `joinedload()` for many-to-one",
             Some(Orm::Hibernate) => "`JOIN FETCH` in the query, an entity graph, or `@BatchSize` on the association",
-            Some(Orm::Sequelize) => "`include` on findAll",
-            None => "a JOIN, or one `WHERE key IN (…)` query for all rows",
+            // These have their own advisors.
+            Some(Orm::Sequelize | Orm::Prisma | Orm::TypeOrm | Orm::Drizzle | Orm::MikroOrm | Orm::Objection | Orm::Knex)
+            | None => "a JOIN, or one `WHERE key IN (…)` query for all rows",
         }
     }
 
     fn bulk_insert(&self) -> &'static str {
         match self.0 {
-            Some(Orm::Prisma) => "`createMany`",
-            Some(Orm::TypeOrm) => "`repository.insert([...])` or `save([...])`",
             Some(Orm::Django) => "`bulk_create()`",
             Some(Orm::ActiveRecord) => "`insert_all`",
             Some(Orm::SqlAlchemy) => "`session.execute(insert(Model), rows)`",
             Some(Orm::Hibernate) => "JDBC batching (`hibernate.jdbc.batch_size`)",
-            Some(Orm::Sequelize) => "`bulkCreate`",
-            None => "a multi-row `INSERT … VALUES (…), (…)`",
+            Some(Orm::Sequelize | Orm::Prisma | Orm::TypeOrm | Orm::Drizzle | Orm::MikroOrm | Orm::Objection | Orm::Knex)
+            | None => "a multi-row `INSERT … VALUES (…), (…)`",
         }
     }
 }

@@ -45,9 +45,14 @@ export interface LiveQuery {
   /** Start, epoch ms. */
   at: number
   type: StatementType
-  /** The request's findings about this statement's shape. */
+  /** The request's findings about this statement's shape (muted ones left out when hidden). */
   findings: LiveFinding[]
+  /** Issue ids among its findings that are muted. */
+  muted: number[]
 }
+
+/** Whether muted issues are left out of the list's findings, or shown (marked as muted). */
+export type MutedMode = 'hide' | 'show'
 
 /** The backend keeps at most this many statements per request (see worker/project.ts). */
 export const STORED_STATEMENT_LIMIT = 100
@@ -71,7 +76,15 @@ export function queriesOf(request: LiveRequest): LiveQuery[] {
     at: start + statement.atMs,
     type: statementType(statement.sql),
     findings: request.findings.filter((f) => f.fingerprint === statement.fingerprint),
+    muted: [],
   }))
+}
+
+/** Mark muted findings, and drop them in `hide` mode, so views and filters ignore them. */
+export function applyMuted(q: LiveQuery, isMuted: (projectId: string, issueId: number) => boolean, mode: MutedMode): LiveQuery {
+  const muted = q.findings.filter((f) => isMuted(q.request.projectId, f.issueId)).map((f) => f.issueId)
+  if (muted.length === 0) return q
+  return { ...q, muted, findings: mode === 'hide' ? q.findings.filter((f) => !muted.includes(f.issueId)) : q.findings }
 }
 
 /** Newest first: requests are newest first, and so are the statements within one. */

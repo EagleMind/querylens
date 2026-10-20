@@ -5,9 +5,12 @@
 //   POST  /api/<project>/envelope              SDK events (DSN key in `x-querylens-key`)
 //   GET   /api/0/info                           version, whether the token is set (no auth)
 //   GET   /api/0/live?project=<id>&token=…      the live feed (WebSocket)
-//   GET   /api/0/projects                       ┐
+//   GET   /api/0/settings                       ┐ the public URL (goes into DSNs)
+//   PUT   /api/0/settings          {publicUrl}  │
+//   GET   /api/0/projects                       │
 //   POST  /api/0/projects             {name}    │
 //   PATCH /api/0/projects/<id>        {name}    │
+//   PUT   /api/0/projects/<id>/key    {key?}    │ new DSN key (generated when absent)
 //   PUT   /api/0/projects/<id>/settings         │ `Authorization: Bearer <ADMIN_TOKEN>`
 //   GET   /api/0/projects/<id>/issues           │
 //   GET   /api/0/projects/<id>/issues/<n>       │
@@ -31,6 +34,22 @@ const MAX_BODY = 4 * 1024 * 1024
 const MAX_INFLATED = 16 * 1024 * 1024
 const PROJECT_ID = /^[0-9a-f]{12}$/
 const STATUSES: IssueStatus[] = ['unresolved', 'resolved', 'ignored']
+const DSN_KEY = /^[A-Za-z0-9_-]{16,64}$/
+
+/** `https://host[:port]` from what the user typed; throws on anything else. */
+function publicOrigin(input: string): string {
+  let url: URL
+  try {
+    url = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(input) ? input : `https://${input}`)
+  } catch {
+    throw new HttpError(400, 'The host must be a URL like https://querylens.example.com.')
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new HttpError(400, 'The host must use http or https.')
+  if ((url.pathname !== '/' && url.pathname !== '') || url.search || url.hash || url.username) {
+    throw new HttpError(400, 'The host is an address only: no path, query or credentials.')
+  }
+  return url.origin
+}
 
 class HttpError extends Error {
   constructor(
@@ -137,13 +156,20 @@ async function api(request: Request, env: Env, ns: Exports, url: URL, path: stri
   if (!env.ADMIN_TOKEN) return fail(503, 'Set the ADMIN_TOKEN secret on the Worker to use the dashboard.')
   if (!authorized(request, env, url)) return fail(401, 'Sign in with the admin token.')
 
-  const origin = url.origin
   const q = url.searchParams
-
+  if (path[0] === 'settings' && path.length === 1) {
+    if (method === 'PUT') {
+      const { publicUrl } = await readJson<{ publicUrl?: string | null }>(request)
+      await registry(ns).setPublicUrl(publicUrl?.trim() ? publicOrigin(publicUrl.trim()) : null)
+    } else if (method !== 'GET') return fail(405, 'Method not allowed.')
+    return json({ publicUrl: await registry(ns).publicUrl(), dashboardUrl: url.origin })
+  }
   if (path[0] === 'live' && path.length === 1) {
     return project(ns, q.get('project') ?? '').fetch(request)
   }
   if (path[0] !== 'projects') return fail(404, 'No such endpoint.')
+  // DSNs carry the configured public URL, else the address the dashboard was reached at.
+  const origin = (await registry(ns).publicUrl()) ?? url.origin
 
   const [, id, section, sub, tail] = path
   if (!id) {
@@ -186,6 +212,14 @@ async function api(request: Request, env: Env, ns: Exports, url: URL, path: stri
       return json(await stub.updateSettings(await readJson(request)))
     case 'environments':
       return json(await stub.environments())
+    case 'key': {
+      if (method !== 'PUT') return fail(405, 'Method not allowed.')
+      const { key } = await readJson<{ key?: string }>(request)
+      const next = key?.trim() || randomHex(16)
+      if (!DSN_KEY.test(next)) return fail(400, 'A key is 16 to 64 letters, digits, - or _.')
+      await stub.setKey(next)
+      return json(await info(ns, id, origin))
+    }
     case 'requests': {
       if (method !== 'GET') return fail(405, 'Method not allowed.')
       if (!sub) {

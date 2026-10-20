@@ -103,8 +103,11 @@ Worker with a single-page-app fallback. Its own small router, with types from `c
   (`GET …/requests/<n>`, or the loaded copy). Adds the issue detail and fix
   (`GET …/issues/<n>`, matched through `LiveFinding.fingerprint`) and the shape's last 24
   hours (`GET …/queries?fingerprint=`).
-- **Settings** (`/settings`): the connected host and backend version, each project's DSN,
-  the SDK setup, sign-out.
+- **Settings** (`/settings`): the connected host (the public URL stored in the `Registry`,
+  `GET/PUT /api/0/settings`, used in every DSN; defaults to the address the dashboard was
+  reached at), each project's DSN with an editable key (`PUT …/key`), sign-out.
+- **Muted issues**: an issue set to `ignored` (Mute on the report). Live drops muted findings
+  from its views and filters unless the "Show muted issues" filter is on.
 
 ## 5. Next
 
