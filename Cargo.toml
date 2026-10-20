@@ -1,0 +1,11 @@
+# QueryLens's Rust: the pure analysis (crates/core) and its WebAssembly build
+# (crates/wasm), which the monitoring backend in cloud/ runs.
+[workspace]
+members = ["crates/core", "crates/wasm"]
+resolver = "3"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

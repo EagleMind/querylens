@@ -1,0 +1,53 @@
+[
+  {
+    "sql": "SELECT \"id\", \"name\" FROM \"users\" AS \"User\" WHERE \"User\".\"email\" = 'ada@example.com' AND \"User\".\"age\" > 30;",
+    "scrubbed": "SELECT \"id\", \"name\" FROM \"users\" AS \"User\" WHERE \"User\".\"email\" = ? AND \"User\".\"age\" > ?;",
+    "values": ["'ada@example.com'", "30"]
+  },
+  {
+    "sql": "SELECT * FROM t1 WHERE a = $1 AND b IN (1, 2, 3) AND c = 'it''s' -- trailing\n",
+    "scrubbed": "SELECT * FROM t1 WHERE a = $1 AND b IN (?, ?, ?) AND c = ? \n",
+    "values": ["1", "2", "3", "'it''s'"]
+  },
+  {
+    "sql": "INSERT INTO \"events\" (\"kind\",\"ok\") VALUES ('signup',true),('login',FALSE) /*file='app.js'*/",
+    "scrubbed": "INSERT INTO \"events\" (\"kind\",\"ok\") VALUES (?,?),(?,?) ",
+    "values": ["'signup'", "true", "'login'", "FALSE"]
+  },
+  {
+    "sql": "UPDATE \"orders\" SET \"total\"=12.50 WHERE \"id\" = 7",
+    "scrubbed": "UPDATE \"orders\" SET \"total\"=? WHERE \"id\" = ?",
+    "values": ["12.50", "7"]
+  },
+  {
+    "sql": "select col2 from \"table 3\" where x2y = 4",
+    "scrubbed": "select col2 from \"table 3\" where x2y = ?",
+    "values": ["4"]
+  },
+  {
+    "dialect": "mysql",
+    "sql": "SELECT `id`, `user_id` FROM `orders` AS `Order` WHERE `Order`.`user_id` = 7 AND `Order`.`status` = 'paid';",
+    "scrubbed": "SELECT `id`, `user_id` FROM `orders` AS `Order` WHERE `Order`.`user_id` = ? AND `Order`.`status` = ?;",
+    "values": ["7", "'paid'"]
+  },
+  {
+    "dialect": "mysql",
+    "sql": "INSERT INTO `events` (`id`,`kind`) VALUES (DEFAULT,?);",
+    "scrubbed": "INSERT INTO `events` (`id`,`kind`) VALUES (DEFAULT,?);",
+    "values": []
+  },
+  {
+    "dialect": "mysql",
+    "sql": "SELECT * FROM `2fa_codes` WHERE `code` = 'o\\'brien' AND `t1` IN (1, 2);",
+    "scrubbed": "SELECT * FROM `2fa_codes` WHERE `code` = ? AND `t1` IN (?, ?);",
+    "values": ["'o\\'brien'", "1", "2"],
+    "sameFingerprint": false
+  },
+  {
+    "dialect": "mysql",
+    "sql": "UPDATE `users` SET `name` = \"Ada \\\"the\\\" first\" WHERE `id` = ?",
+    "scrubbed": "UPDATE `users` SET `name` = ? WHERE `id` = ?",
+    "values": ["\"Ada \\\"the\\\" first\""],
+    "sameFingerprint": false
+  }
+]

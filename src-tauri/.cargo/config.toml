@@ -1,3 +1,0 @@
-[env]
-# ts-rs writes generated TypeScript bindings straight into the frontend.
-TS_RS_EXPORT_DIR = { value = "../src/bindings", relative = true }

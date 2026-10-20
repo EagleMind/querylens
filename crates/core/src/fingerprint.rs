@@ -1,0 +1,164 @@
+//! Stable fingerprints for "the same query".
+//!
+//! FNV-1a is used instead of `DefaultHasher` because the fingerprints are persisted and
+//! must not change between Rust releases.
+
+pub fn fnv1a(bytes: &[u8]) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// Normalize SQL so that the same statement with different literals, parameters,
+/// casing, whitespace, comments or IN-list lengths maps to one fingerprint.
+pub fn normalize_sql(sql: &str) -> String {
+    let lower = sql.trim().trim_end_matches(';').to_lowercase();
+    let chars: Vec<char> = lower.chars().collect();
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
+    let mut out = String::with_capacity(lower.len());
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        let prev_ident = out.chars().next_back().is_some_and(is_ident);
+        if c == '\'' {
+            // String literal, with '' escapes.
+            i += 1;
+            while i < chars.len() {
+                if chars[i] == '\'' {
+                    if chars.get(i + 1) == Some(&'\'') {
+                        i += 2;
+                        continue;
+                    }
+                    break;
+                }
+                i += 1;
+            }
+            out.push('?');
+            i += 1;
+        } else if c == '"' || c == '`' {
+            // Quoted identifier (PostgreSQL "…", MySQL `…`): copied as is (it may contain digits).
+            let start = i;
+            i += 1;
+            while i < chars.len() && chars[i] != c {
+                i += 1;
+            }
+            i += 1;
+            out.extend(&chars[start..i.min(chars.len())]);
+        } else if c == '/' && chars.get(i + 1) == Some(&'*') {
+            i += 2;
+            while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                i += 1;
+            }
+            i += 2;
+        } else if c == '-' && chars.get(i + 1) == Some(&'-') {
+            while i < chars.len() && chars[i] != '\n' {
+                i += 1;
+            }
+        } else if c == '$' && chars.get(i + 1).is_some_and(char::is_ascii_digit) {
+            i += 1;
+            while i < chars.len() && chars[i].is_ascii_digit() {
+                i += 1;
+            }
+            out.push('?');
+        } else if c.is_ascii_digit() && !prev_ident {
+            while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == '.') {
+                i += 1;
+            }
+            out.push('?');
+        } else if c.is_whitespace() {
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
+            }
+            if !out.is_empty() {
+                out.push(' ');
+            }
+        } else if is_ident(c) && !prev_ident {
+            let start = i;
+            while i < chars.len() && is_ident(chars[i]) {
+                i += 1;
+            }
+            let word: String = chars[start..i].iter().collect();
+            // ORMs inline booleans as literals, like numbers.
+            out.push_str(if word == "true" || word == "false" { "?" } else { &word });
+        } else {
+            out.push(c);
+            i += 1;
+        }
+    }
+    // A trailing comment may have hidden the statement's own semicolon.
+    collapse_lists(out.trim_end().trim_end_matches(';').trim_end())
+}
+
+/// `in (?, ?, ?)` → `in (?)` and `values (?, ?), (?, ?)` → `values (?)`: the number
+/// of values doesn't make it a different statement.
+fn collapse_lists(s: &str) -> String {
+    let only_values = |body: &str| !body.is_empty() && body.split(',').all(|v| v.trim() == "?");
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(open) = rest.find('(') {
+        out.push_str(&rest[..open]);
+        let after = &rest[open + 1..];
+        let body = &after[..after.find(')').unwrap_or(0)];
+        if !only_values(body) {
+            out.push('(');
+            rest = after;
+            continue;
+        }
+        out.push_str("(?)");
+        rest = &after[body.len() + 1..];
+        // Further rows of a multi-row VALUES.
+        while let Some(more) = rest.strip_prefix(", (").or_else(|| rest.strip_prefix(",(")) {
+            let Some(end) = more.find(')').filter(|&e| only_values(&more[..e])) else { break };
+            rest = &more[end + 1..];
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+pub fn query_fp(sql: &str) -> String {
+    fnv1a(normalize_sql(sql).as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn literals_params_and_whitespace_normalize_away() {
+        let a = "SELECT * FROM orders WHERE user_id = 42 AND status = 'paid';";
+        let b = "select *\n  from orders\n where user_id = 7 and status = 'it''s'";
+        let c = "SELECT * FROM orders WHERE user_id = $1 AND status = $2";
+        assert_eq!(normalize_sql(a), "select * from orders where user_id = ? and status = ?");
+        assert_eq!(query_fp(a), query_fp(b));
+        assert_eq!(query_fp(a), query_fp(c));
+        // Digits inside identifiers are not literals.
+        assert_eq!(normalize_sql("select t1.x from t1"), "select t1.x from t1");
+        assert_ne!(query_fp(a), query_fp("SELECT * FROM users WHERE id = 1"));
+    }
+
+    #[test]
+    fn mysql_backticks_and_placeholders() {
+        assert_eq!(normalize_sql("SELECT * FROM `2fa_codes` WHERE `t1`.`id` IN (?, ?) LIMIT 1"), "select * from `2fa_codes` where `t1`.`id` in (?) limit ?");
+        assert_eq!(query_fp("SELECT * FROM `users` WHERE `id` = 7"), query_fp("select * from `users` where `id` = ?"));
+    }
+
+    #[test]
+    fn comments_lists_and_booleans_normalize_away() {
+        let tagged = r#"SELECT "id" FROM "Users" AS "User" WHERE "User"."id" IN (1, 2, 3) /*file='a.js%3A1'*/;"#;
+        let plain = r#"SELECT "id" FROM "Users" AS "User" WHERE "User"."id" IN (7);"#;
+        assert_eq!(normalize_sql(plain), r#"select "id" from "users" as "user" where "user"."id" in (?)"#);
+        assert_eq!(query_fp(tagged), query_fp(plain));
+        assert_eq!(query_fp("-- note\nselect 1 where a = true"), query_fp("select 1 where a = false"));
+        assert_eq!(
+            normalize_sql("INSERT INTO t (a, b) VALUES ($1, $2), ($3, $4) RETURNING id"),
+            "insert into t (a, b) values (?) returning id"
+        );
+        // Function arguments and column lists are not value lists.
+        assert_eq!(normalize_sql("select coalesce(a, b) from t"), "select coalesce(a, b) from t");
+        assert_eq!(normalize_sql(r#"select "t1"."x2" from t1"#), r#"select "t1"."x2" from t1"#);
+    }
+}

@@ -2,10 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ui-mock",
+      "name": "cloud",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "vite", "--port", "1430"],
-      "port": 1430
+      "runtimeArgs": [
+        "--dir",
+        "cloud",
+        "exec",
+        "cf",
+        "dev"
+      ],
+      "port": 5173
     }
   ]
 }
