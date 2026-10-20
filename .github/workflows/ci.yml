@@ -61,4 +61,5 @@ jobs:
           path: cloud/core
       - run: mv core/querylens_wasm.wasm core/querylens_core.wasm
       - run: pnpm typecheck
+      - run: pnpm test
       - run: pnpm build
