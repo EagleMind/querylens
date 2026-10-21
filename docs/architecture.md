@@ -144,10 +144,17 @@ Worker with a single-page-app fallback. Its own small router, with types from `c
   reconnect, so gaps fill), and older pages on demand (`?before=`). Every statement, newest
   first. Built-in views, project / environment / search filters, and custom filters
   (`web/lib/filters.ts`: one small strategy per field) saved in `localStorage`.
-- **Query report** (`/queries/<project>/<request>/<seq>`): the stored request
-  (`GET …/requests/<n>`, or the loaded copy). Adds the issue detail and fix
-  (`GET …/issues/<n>`, matched through `LiveFinding.fingerprint`) and the shape's last 24
-  hours (`GET …/queries?fingerprint=`).
+- **Query report** (`/queries/<project>/<request>/<seq>`): one column of cards in diagnosis
+  order, each a summary with its evidence folded under "Details": the verdict (with what the
+  page can't show and why), what's wrong (most serious first, one plain sentence each), how
+  to fix it (the one fix that covers the most, with the AI change and fix prompt), where in
+  the code, the query, the request as an event log (time in the app's code between queries
+  as lines, runs of one statement folded), and the last 24 hours. `web/lib/report.ts` works
+  out what each card says (pure, tested in `test/report.test.ts`); `components/report` lays
+  it out. Data: the stored request (`GET …/requests/<n>`, or the loaded copy), its issues
+  (`GET …/issues/<n>`), the code (`GET …/source`), the shape's 24 hours and regressions.
+- **Docs** (`/docs`): what each "not shown" note links to (line of code, source context,
+  values, releases, AI, MCP) and the project's thresholds.
 - **Settings** (`/settings`): the connected host (the public URL stored in the `Registry`,
   `GET/PUT /api/0/settings`, used in every DSN; defaults to the address the dashboard was
   reached at), each project's DSN with an editable key (`PUT …/key`), sign-out.

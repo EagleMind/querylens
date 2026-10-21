@@ -3,7 +3,7 @@
 import type { CapturedStatement } from '../../bindings/CapturedStatement'
 import type { LiveFinding } from '../../bindings/LiveFinding'
 import type { StoredRequest } from '../../bindings/StoredRequest'
-import { STATEMENT_TYPES, type StatementType } from '../../shared/labels'
+import { STATEMENT_TYPES, type StatementType } from '../../shared/labels.ts'
 import type { QueryRef } from './router'
 
 /** A stored request and the project it belongs to (request ids are per project). */

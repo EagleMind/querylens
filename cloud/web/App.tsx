@@ -14,6 +14,7 @@ import { useMuted } from '@/lib/muted'
 import { type Route, href, onLinkClick, useRoute } from '@/lib/router'
 import { cn } from '@/lib/utils'
 import { LivePage } from '@/pages/Live'
+import { DocsPage } from '@/pages/Docs'
 import { QueryPage } from '@/pages/Query'
 import { SettingsPage } from '@/pages/Settings'
 import { SignIn } from '@/pages/SignIn'
@@ -56,6 +57,7 @@ function FirstProject({ onCreated }: { onCreated: (p: Project) => void }) {
 const NAV: { label: string; route: Route; pages: Route['page'][] }[] = [
   { label: 'Live', route: { page: 'live' }, pages: ['live', 'query'] },
   { label: 'Settings', route: { page: 'settings' }, pages: ['settings'] },
+  { label: 'Docs', route: { page: 'docs' }, pages: ['docs'] },
 ]
 
 function Dashboard({ onSignOut }: { onSignOut: () => void }) {
@@ -75,6 +77,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   else if (!projects) body = <p className="text-sm text-muted-foreground">Loading…</p>
   else if (projects.length === 0) body = <FirstProject onCreated={(p) => setProjects([p])} />
   else if (route.page === 'query') body = <QueryPage at={route} projects={projects} requests={feed.requests} muted={muted} />
+  else if (route.page === 'docs') body = <DocsPage projects={projects} />
   else if (route.page === 'settings') body = <SettingsPage projects={projects} connection={feed.connection} onProjects={setProjects} onSignOut={onSignOut} />
   else body = <LivePage projects={projects} feed={feed} muted={muted} />
 

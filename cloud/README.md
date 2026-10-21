@@ -10,12 +10,14 @@ evaluates them with QueryLens's Rust analysis and shows the results in a web das
   and custom filters saved in the browser (written by hand, or drafted by Workers AI from a
   description). Above them, regressions: statements that got slower or started failing since
   the latest release.
-- **Query report**: one statement's SQL and parameters, the line of code that ran it, the
-  issue it belongs to (N+1 queries, duplicate queries, writes in a loop, slow, failing and
-  large statements, chatty requests) with the fix written in your ORM's API, the
-  rest of its request, and its totals over the last 24 hours. Each issue copies as a prompt
-  for a coding agent and, when the SDK sends source context, Workers AI writes the change for
-  the app's code.
+- **Query report**: one statement, ordered for diagnosis: the verdict, its problems (N+1
+  queries, duplicate queries, writes in a loop, slow, failing and large statements, chatty
+  requests) most serious first, the fix in your ORM's API, the line of code that ran it, the
+  query, its request as an event log, and its last 24 hours, each card opening to its
+  evidence. A fix copies as a prompt for a coding agent and, when the SDK sends source
+  context, Workers AI writes the change for the app's code.
+- **Docs**: how to get everything onto the report (source context, values, releases, AI),
+  and each project's thresholds.
 
 - **Settings**: the connected host (the public address that goes into every DSN, editable
   for a custom domain or proxy), each project's DSN (its key can be changed or regenerated),
