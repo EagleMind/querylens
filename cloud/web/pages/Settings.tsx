@@ -6,7 +6,7 @@ import { type FormEvent, useState } from 'react'
 import { ConnectionStatus, ErrorNote, Facts } from '@/components/common'
 import { EditableValue, EditorActions, useChange } from '@/components/editing'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { api } from '@/lib/api'
@@ -64,18 +64,11 @@ export function SettingsPage({
 
   return (
     <div className="mx-auto grid max-w-3xl grid-cols-1 gap-6">
-      <div className="grid gap-1">
-        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Where your services reach this QueryLens server, and this browser’s session.</p>
-      </div>
+      <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
 
       <Card className="gap-4">
         <CardHeader>
           <CardTitle>Connected host</CardTitle>
-          <CardDescription>
-            The address your services reach this QueryLens server at; it goes into every DSN. Change it when the server runs behind
-            your own domain or proxy.
-          </CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-4">
           <ErrorNote error={settings.error} />
@@ -97,7 +90,6 @@ export function SettingsPage({
       <Card className="gap-4">
         <CardHeader>
           <CardTitle>Session</CardTitle>
-          <CardDescription>Signed in with the server’s admin token. Signing out removes it from this browser.</CardDescription>
         </CardHeader>
         <CardFooter>
           <Button variant="outline" onClick={onSignOut}>

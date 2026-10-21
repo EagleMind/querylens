@@ -165,6 +165,25 @@ export function groupByShape(queries: LiveQuery[]): QueryGroup[] {
   return [...groups.values()]
 }
 
+/** How the Live list is ordered: newest first, or slowest first (by duration, or a shape's average). */
+export type SortOrder = 'recent' | 'latency'
+
+/** Runs, slowest first; ties stay newest first. */
+export function slowestRuns(queries: LiveQuery[]): LiveQuery[] {
+  return [...queries].sort((a, b) => b.statement.durationMs - a.statement.durationMs)
+}
+
+/** Shapes, slowest on average first; ties stay where their latest run put them. */
+export function slowestShapes(groups: QueryGroup[]): QueryGroup[] {
+  return [...groups].sort((a, b) => b.totalMs / b.runs - a.totalMs / a.runs)
+}
+
+/** `src/routes/orders.js:16` → the directory and the file with its line, shown apart. */
+export function splitOrigin(origin: string): { dir: string; file: string } {
+  const slash = Math.max(origin.lastIndexOf('/'), origin.lastIndexOf('\\'))
+  return { dir: origin.slice(0, slash + 1), file: origin.slice(slash + 1) }
+}
+
 /** Where a word (`FROM`, `WHERE`) first appears outside brackets and quotes, from `start`; -1 if it doesn't. */
 function topLevel(sql: string, word: string, start: number): number {
   const re = new RegExp(String.raw`^${word}\b`, 'i')

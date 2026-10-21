@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import type { IssueDetail } from '../bindings/IssueDetail'
 import type { LiveFinding } from '../bindings/LiveFinding'
 import type { ProjectSettings } from '../bindings/ProjectSettings'
-import { type LiveRequest, flatten, groupByShape, queriesOf, withProject } from '../web/lib/queries.ts'
+import { type LiveRequest, flatten, groupByShape, queriesOf, slowestRuns, slowestShapes, withProject } from '../web/lib/queries.ts'
 import { eventLog, missingParts, primaryFix, problemsOf, verdict } from '../web/lib/report.ts'
 import { context, statement } from './fixtures.ts'
 
@@ -81,4 +81,13 @@ test('the same SQL in two backends is two shapes', () => {
       ['0123456789ab:1a2b3c4d:fp-events', 1],
     ],
   )
+})
+
+test('slowest first: runs by duration, shapes by their average', () => {
+  const qs = queriesOf(request([]))
+  assert.deepEqual(slowestRuns(qs).map((q) => q.statement.durationMs), [132, 1.1])
+  const groups = groupByShape(flatten([request([])]))
+  assert.equal(groups[0].latest.statement.fingerprint, 'fp-events', 'newest first: the events query ran last')
+  const reversed = [...groups].reverse()
+  assert.deepEqual(slowestShapes(reversed).map((g) => g.latest.statement.durationMs), [132, 1.1])
 })

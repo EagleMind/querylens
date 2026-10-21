@@ -153,8 +153,9 @@ Worker with a single-page-app fallback. Its own small router, with types from `c
 
 - **Live** (`/`): for the chosen project, the latest page of the query history
   (`GET …/requests`), then its WebSocket for new requests (the page is reloaded on every
-  reconnect, so gaps fill), and older pages on demand (`?before=`). Every statement, newest
-  first. Built-in views, backend / environment / search filters, and custom filters
+  reconnect, so gaps fill), and older pages on demand (`?before=`). Every statement, shown by
+  the line of code that ran it (`file:line`, the SQL in its tooltip), newest first or, from the
+  Average / Duration header, slowest first. Built-in views, service / environment / search filters, and custom filters
   (`web/lib/filters.ts`: one small strategy per field) saved in `localStorage`.
 - **Query report** (`/queries/<project>/<request>/<seq>`): one column of cards in diagnosis
   order, each a summary with its evidence folded under "Details": the verdict (with what the

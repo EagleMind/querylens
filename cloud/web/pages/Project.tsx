@@ -41,9 +41,6 @@ function KeyEditor({ project, service, onSaved, close }: { project: Project; ser
       <div className="grid grid-cols-1 gap-2">
         <Label htmlFor={`key-${service.id}`}>Key</Label>
         <Input id={`key-${service.id}`} value={value} onChange={(e) => setValue(e.target.value)} className="font-mono" autoFocus />
-        <p className="text-xs text-muted-foreground">
-          16 to 64 letters, digits, - or _. {service.name} stops reporting until it’s given the new DSN.
-        </p>
       </div>
       <ErrorNote error={error} />
       <EditorActions busy={busy} onCancel={close}>
@@ -169,7 +166,6 @@ function ConnectService({ project, onSaved }: { project: Project; onSaved: (p: P
             <PlusIcon /> Connect
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">Each service gets its own DSN, so you can disconnect one without touching the others.</p>
       </form>
       <ErrorNote error={error} />
       {added?.dsn && (
@@ -225,10 +221,9 @@ function EnvBuilder({ project }: { project: Project }) {
       <ul className="divide-y">
         <li className="flex gap-3 px-4 py-3 sm:px-5">
           <Checkbox checked disabled aria-label="QUERYLENS_DSN, always set" className="mt-0.5" />
-          <div className="grid grid-cols-1 gap-0.5">
-            <code className="font-mono text-[13px] font-medium">QUERYLENS_DSN</code>
-            <p className="text-xs text-muted-foreground">Where {service.name} reports. Always set: without it the SDK does nothing.</p>
-          </div>
+          <code className="font-mono text-[13px] font-medium" title={`Where ${service.name} reports. Always set: without it the SDK does nothing.`}>
+            QUERYLENS_DSN
+          </code>
         </li>
         {ENV_VARS.map((v) => {
           const c = choice[v.name] ?? { on: false, value: '' }
@@ -239,10 +234,9 @@ function EnvBuilder({ project }: { project: Project }) {
               <Checkbox id={id} checked={c.on} onCheckedChange={(on) => set(v.name, { on: on === true })} className="mt-0.5" />
               <div className="grid grid-cols-1 min-w-0 flex-1 gap-1.5">
                 <div className="grid grid-cols-1 gap-0.5">
-                  <label htmlFor={id} className="w-fit cursor-pointer font-mono text-[13px] font-medium">
+                  <label htmlFor={id} title={v.help} className="w-fit cursor-pointer font-mono text-[13px] font-medium">
                     {v.name}
                   </label>
-                  <p className="text-xs text-muted-foreground">{v.help}</p>
                   {v.caution && c.on && (
                     <p className="flex items-center gap-1.5 text-xs">
                       <TriangleAlertIcon className="size-3.5 shrink-0 text-warning" /> {v.caution}
@@ -268,10 +262,7 @@ function EnvBuilder({ project }: { project: Project }) {
           )
         })}
       </ul>
-      <div className="grid grid-cols-1 gap-2 border-t bg-muted/30 px-4 py-4 sm:px-5">
-        <p className="text-sm">
-          Paste into <span className="font-medium">{service.name}</span>’s env file, or set each in its host’s environment settings:
-        </p>
+      <div className="grid grid-cols-1 border-t bg-muted/30 px-4 py-4 sm:px-5">
         <CodeBlock code={envFile(service, choice)} wrap={false} className="bg-card" />
       </div>
     </div>
@@ -364,8 +355,8 @@ function Thresholds({ project, onSaved }: { project: Project; onSaved: (p: Proje
       </div>
       <ErrorNote error={error} />
       <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-        <p className="text-xs text-muted-foreground">
-          {saved && !dirty ? 'Saved. Your services pick it up with their next report.' : 'Your services pick changes up with their next report, within seconds.'}
+        <p className="text-xs" role="status">
+          {saved && !dirty ? 'Saved' : ''}
         </p>
         <span className="flex gap-2">
           {dirty && (
@@ -384,8 +375,6 @@ function Thresholds({ project, onSaved }: { project: Project; onSaved: (p: Proje
 
 export function ProjectPage({ project, onProject }: { project: Project; onProject: (p: Project) => void }) {
   const [renaming, setRenaming] = useState(false)
-  const connected = project.backends.filter((b) => b.dsn).length
-  const disconnected = project.backends.length - connected
   return (
     <div className="mx-auto grid max-w-3xl grid-cols-1 gap-8">
       <header className="grid grid-cols-1 gap-1.5">
@@ -405,11 +394,6 @@ export function ProjectPage({ project, onProject }: { project: Project; onProjec
             </Button>
           </div>
         )}
-        <p className="text-sm text-muted-foreground">
-          {project.backends.length === 0
-            ? 'No service is connected yet. Connect each service of your app, and give each its own DSN.'
-            : `${connected} ${connected === 1 ? 'service' : 'services'} connected${disconnected ? `, ${disconnected} disconnected` : ''}. Each sends its queries with its own DSN, set as QUERYLENS_DSN in its environment.`}
-        </p>
       </header>
 
       <section aria-labelledby="services" className="grid grid-cols-1 gap-3">
@@ -429,22 +413,16 @@ export function ProjectPage({ project, onProject }: { project: Project; onProjec
       </section>
 
       <section aria-labelledby="env" className="grid grid-cols-1 gap-3">
-        <div className="grid grid-cols-1 gap-1">
-          <h2 id="env" className="text-base font-semibold">
-            Environment variables
-          </h2>
-          <p className="text-sm text-muted-foreground">Choose what to turn on in a service; the SDK reads these when it starts.</p>
-        </div>
+        <h2 id="env" className="text-base font-semibold">
+          Environment variables
+        </h2>
         <EnvBuilder key={project.id} project={project} />
       </section>
 
       <section aria-labelledby="limits" className="grid grid-cols-1 gap-3">
-        <div className="grid grid-cols-1 gap-1">
-          <h2 id="limits" className="text-base font-semibold">
-            What gets flagged
-          </h2>
-          <p className="text-sm text-muted-foreground">The same limits apply to every service of the project.</p>
-        </div>
+        <h2 id="limits" className="text-base font-semibold">
+          What gets flagged
+        </h2>
         <Thresholds key={project.id} project={project} onSaved={onProject} />
       </section>
     </div>

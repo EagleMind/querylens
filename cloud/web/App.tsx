@@ -4,7 +4,7 @@ import type { Project } from '../bindings/Project'
 import { Sidebar, useSidebarCollapsed } from '@/components/Sidebar'
 import { ErrorNote } from '@/components/common'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { TooltipProvider } from '@/components/ui/tooltip'
@@ -36,7 +36,6 @@ function FirstProject({ onCreated }: { onCreated: (p: Project) => void }) {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-lg">Name your project</CardTitle>
-          <CardDescription>The project is your application. Next, you connect its services: each gets its own DSN to give the SDK.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="grid gap-4">

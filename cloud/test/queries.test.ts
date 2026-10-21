@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { isHousekeeping, summarizeSql } from '../web/lib/queries.ts'
+import { isHousekeeping, splitOrigin, summarizeSql } from '../web/lib/queries.ts'
 
 test('a select list folds to an ellipsis, up to the top-level FROM', () => {
   assert.equal(
@@ -33,4 +33,10 @@ test('other statements and whitespace', () => {
 test('transactions and session settings are housekeeping', () => {
   for (const sql of ["SET time_zone = '+00:00'", 'START TRANSACTION;', 'COMMIT;', 'SAVEPOINT `sp-1`', 'ROLLBACK']) assert.ok(isHousekeeping(sql), sql)
   for (const sql of ['SELECT 1', 'UPDATE t SET a = 1', 'select * from settings']) assert.ok(!isHousekeeping(sql), sql)
+})
+
+test('an origin splits into its directory and its file with the line', () => {
+  assert.deepEqual(splitOrigin('src/routes/orders.js:16'), { dir: 'src/routes/', file: 'orders.js:16' })
+  assert.deepEqual(splitOrigin('server.js:30'), { dir: '', file: 'server.js:30' })
+  assert.deepEqual(splitOrigin('src\\db\\pool.ts:8'), { dir: 'src\\db\\', file: 'pool.ts:8' })
 })

@@ -1,14 +1,13 @@
 // The Live page: the query history and its live tail, for the project, service and environment
 // chosen in the sidebar. Grouped by query shape (one row per fingerprint) or one row per run. A
 // selected query's report opens beside the list on wide screens, and in its place on narrow.
-import { BellOffIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon } from 'lucide-react'
+import { ArrowDownIcon, BellOffIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon } from 'lucide-react'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 import type { LiveFinding } from '../../bindings/LiveFinding'
 import type { Project } from '../../bindings/Project'
 import { FilterDialog } from '@/components/FilterDialog'
 import { Regressions } from '@/components/Regressions'
-import { Sql } from '@/components/Sql'
 import { ACTION_FILL, CodeBlock, ErrorNote, SeverityDot, SlowMark } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -37,13 +36,16 @@ import {
   type MutedMode,
   type QueryGroup,
   STATEMENT_ACTION,
+  type SortOrder,
   applyMuted,
   flatten,
   groupByShape,
   groupKey,
   isHousekeeping,
   mergeRequests,
-  summarizeSql,
+  slowestRuns,
+  slowestShapes,
+  splitOrigin,
 } from '@/lib/queries'
 import { type QueryRef, href, navigate, onLinkClick } from '@/lib/router'
 import { ALL, type Scope, scopedBackend } from '@/lib/scope'
@@ -65,14 +67,20 @@ interface View {
   filter: string
   mutedIssues: MutedMode
   grouping: Grouping
+  sort: SortOrder
 }
 
-const DEFAULT_VIEW: View = { filter: 'all', mutedIssues: 'hide', grouping: 'shape' }
+const DEFAULT_VIEW: View = { filter: 'all', mutedIssues: 'hide', grouping: 'shape', sort: 'recent' }
 
 function loadView(): View {
   try {
     const saved = JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}')
-    return { filter: saved.filter ?? DEFAULT_VIEW.filter, mutedIssues: saved.mutedIssues ?? DEFAULT_VIEW.mutedIssues, grouping: saved.grouping ?? DEFAULT_VIEW.grouping }
+    return {
+      filter: saved.filter ?? DEFAULT_VIEW.filter,
+      mutedIssues: saved.mutedIssues ?? DEFAULT_VIEW.mutedIssues,
+      grouping: saved.grouping ?? DEFAULT_VIEW.grouping,
+      sort: saved.sort === 'latency' ? 'latency' : 'recent',
+    }
   } catch {
     return DEFAULT_VIEW
   }
@@ -113,11 +121,11 @@ function justArrived(q: LiveQuery): boolean {
 }
 
 /**
- * The query, linked to its report, as verb and tables (the full statement is in its tooltip and
- * the report); under it, what's wrong with it and where it runs in your code. Transactions and
- * session settings are muted unless something's wrong with them.
+ * The line of your code that ran the query (`src/routes/orders.js:16`), linked to its report; the
+ * statement itself is in its tooltip and the report. Under it, what's wrong with it. Transactions
+ * and session settings are muted unless something's wrong with them.
  */
-function QueryCell({ q, findings, muted, failed }: { q: LiveQuery; findings: LiveFinding[]; muted: number[]; failed: string | null }) {
+function CodeCell({ q, findings, muted, failed }: { q: LiveQuery; findings: LiveFinding[]; muted: number[]; failed: string | null }) {
   const s = q.statement
   // One badge per kind of problem: a shape can carry two N+1 issues (under different parents).
   const kinds = findings.filter((f, i) => findings.findIndex((x) => x.kind === f.kind) === i)
@@ -132,13 +140,21 @@ function QueryCell({ q, findings, muted, failed }: { q: LiveQuery; findings: Liv
             e.stopPropagation()
             onLinkClick(e)
           }}
-          className={cn('truncate font-mono text-xs outline-none hover:underline focus-visible:underline', quiet && 'opacity-55')}
-          title={s.sql}
+          className={cn('flex min-w-0 font-mono text-xs outline-none hover:underline focus-visible:underline', quiet && 'opacity-55')}
+          title={s.origin ? `${s.origin}\n\n${s.sql}` : s.sql}
         >
-          <Sql sql={summarizeSql(s.sql)} />
+          {/* The directory gives way first: the file and line always show. */}
+          {s.origin ? (
+            <>
+              <span className="min-w-0 truncate text-muted-foreground">{splitOrigin(s.origin).dir}</span>
+              <span className="min-w-0 shrink-0 font-medium">{splitOrigin(s.origin).file}</span>
+            </>
+          ) : (
+            <span className="truncate text-muted-foreground italic">No line of your code</span>
+          )}
         </a>
       </div>
-      {(s.origin || kinds.length > 0 || failed) && (
+      {(kinds.length > 0 || failed) && (
         <div className="flex min-w-0 items-center gap-1.5 pl-4">
           {failed && (
             <Badge variant="outline" className="h-5 shrink-0 border-destructive/40 py-0 text-[11px] text-destructive">
@@ -157,11 +173,6 @@ function QueryCell({ q, findings, muted, failed }: { q: LiveQuery; findings: Liv
                 {FINDING_KINDS[f.kind]}
               </Badge>
             ),
-          )}
-          {s.origin && (
-            <span className="truncate font-mono text-[11px] text-muted-foreground" title={s.origin}>
-              {s.origin}
-            </span>
           )}
         </div>
       )}
@@ -194,7 +205,7 @@ function RunRow({ q, project, showBackend, selected }: RowProps & { q: LiveQuery
     >
       <TableCell className="font-mono text-xs text-muted-foreground tabular">{fmtTime(q.at)}</TableCell>
       <TableCell className="max-w-0">
-        <QueryCell q={q} findings={q.findings} muted={q.muted} failed={s.error ? 'Failed' : null} />
+        <CodeCell q={q} findings={q.findings} muted={q.muted} failed={s.error ? 'Failed' : null} />
       </TableCell>
       <TableCell className="hidden max-w-0 @3xl:table-cell">
         <span className="block truncate text-xs" title={q.request.name}>
@@ -227,7 +238,7 @@ function ShapeRow({ g, project, showBackend, selected }: RowProps & { g: QueryGr
         {fmtRelative(new Date(q.at).toISOString())}
       </TableCell>
       <TableCell className="max-w-0">
-        <QueryCell q={q} findings={g.findings} muted={g.muted} failed={g.failed === 0 ? null : g.failed === g.runs ? 'Failed' : `${fmtCount(g.failed)} failed`} />
+        <CodeCell q={q} findings={g.findings} muted={g.muted} failed={g.failed === 0 ? null : g.failed === g.runs ? 'Failed' : `${fmtCount(g.failed)} failed`} />
       </TableCell>
       <TableCell className="hidden max-w-0 @3xl:table-cell">
         <span className="block truncate text-xs" title={g.requests.join('\n')}>
@@ -237,7 +248,7 @@ function ShapeRow({ g, project, showBackend, selected }: RowProps & { g: QueryGr
         {showBackend && <BackendName project={project} id={q.request.backend} />}
       </TableCell>
       <TableCell className="text-right text-xs font-medium tabular">{fmtCount(g.runs)}</TableCell>
-      <TableCell className={cn('hidden text-right text-xs tabular @md:table-cell', slow && 'font-medium')}>
+      <TableCell className={cn('text-right text-xs tabular', slow && 'font-medium')}>
         <span className="inline-flex items-center justify-end gap-1.5">
           {slow && <SlowMark slowMs={project.settings.slowMs} />}
           {fmtMs(g.totalMs / g.runs)}
@@ -282,6 +293,26 @@ function Waiting({ project, backend }: { project: Project; backend: string }) {
         </div>
       ))}
     </div>
+  )
+}
+
+/** A column header that orders the list by it (slowest first); clicked again, newest first. */
+function SortHeader({ label, active, onSort, className }: { label: string; active: boolean; onSort: (on: boolean) => void; className?: string }) {
+  return (
+    <TableHead className={className} aria-sort={active ? 'descending' : 'none'}>
+      <button
+        type="button"
+        onClick={() => onSort(!active)}
+        title={active ? 'Sorted slowest first. Click for newest first' : 'Sort slowest first'}
+        className={cn(
+          'inline-flex items-center gap-1 rounded-sm outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50',
+          active && 'text-primary',
+        )}
+      >
+        {label}
+        <ArrowDownIcon className={cn('size-3.5', !active && 'opacity-35')} aria-hidden />
+      </button>
+    </TableHead>
   )
 }
 
@@ -353,7 +384,13 @@ export function LivePage({
     () => searched.filter((q) => (custom ? matchesFilter(q, custom) : matchesPreset(preset ?? 'all', q, slowMs))),
     [searched, custom, preset, slowMs],
   )
-  const groups = useMemo(() => (view.grouping === 'shape' ? groupByShape(shown) : []), [shown, view.grouping])
+  const groups = useMemo(() => {
+    if (view.grouping !== 'shape') return []
+    const all = groupByShape(shown)
+    return view.sort === 'latency' ? slowestShapes(all) : all
+  }, [shown, view.grouping, view.sort])
+  const runs = useMemo(() => (view.sort === 'latency' ? slowestRuns(shown) : shown), [shown, view.sort])
+  const sortBy = (on: boolean) => setView({ sort: on ? 'latency' : 'recent' })
   useEffect(() => {
     setLimit(PAGE)
   }, [view, search, scope])
@@ -446,10 +483,10 @@ export function LivePage({
             <TableHeader className="bg-muted/40">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-20">Last run</TableHead>
-                <TableHead>Query</TableHead>
+                <TableHead>Code</TableHead>
                 <TableHead className="hidden w-[22%] @3xl:table-cell">Requests</TableHead>
-                <TableHead className="w-16 text-right">Runs</TableHead>
-                <TableHead className="hidden w-24 text-right @md:table-cell">Average</TableHead>
+                <TableHead className="w-14 text-right @md:w-16">Runs</TableHead>
+                <SortHeader label="Average" active={view.sort === 'latency'} onSort={sortBy} className="w-24 text-right" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -463,14 +500,14 @@ export function LivePage({
             <TableHeader className="bg-muted/40">
               <TableRow className="hover:bg-transparent">
                 <TableHead className="w-24 @md:w-28">Time</TableHead>
-                <TableHead>Query</TableHead>
+                <TableHead>Code</TableHead>
                 <TableHead className="hidden w-[22%] @3xl:table-cell">Request</TableHead>
-                <TableHead className="w-24 text-right">Duration</TableHead>
+                <SortHeader label="Duration" active={view.sort === 'latency'} onSort={sortBy} className="w-24 text-right" />
                 <TableHead className="hidden w-16 text-right @md:table-cell">Rows</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {shown.slice(0, limit).map((q) => (
+              {runs.slice(0, limit).map((q) => (
                 <RunRow key={q.id} q={q} project={project} showBackend={showBackend} selected={`${q.ref.project}:${q.ref.request}:${q.ref.seq}` === selectedRun} />
               ))}
             </TableBody>

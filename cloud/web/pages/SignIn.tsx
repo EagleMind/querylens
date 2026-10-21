@@ -36,11 +36,9 @@ export function SignIn({ configured, onSignedIn }: { configured: boolean; onSign
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">Sign in</CardTitle>
-            <CardDescription>
-              {configured
-                ? 'Enter the admin token set on the Worker (the ADMIN_TOKEN secret).'
-                : 'This deployment has no admin token yet. Set the ADMIN_TOKEN secret on the Worker, then reload this page.'}
-            </CardDescription>
+            {!configured && (
+              <CardDescription>This deployment has no admin token yet. Set the ADMIN_TOKEN secret on the Worker, then reload this page.</CardDescription>
+            )}
           </CardHeader>
           <CardContent>
             <form onSubmit={submit} className="grid gap-4">

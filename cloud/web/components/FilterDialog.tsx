@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react'
 
 import { ErrorNote } from '@/components/common'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -151,7 +151,6 @@ function Describe({ releases, onDraft }: { releases: string[]; onDraft: (d: Omit
           {busy ? 'Filling in…' : 'Fill in'}
         </Button>
       </div>
-      <p className="text-xs text-muted-foreground">Workers AI writes the conditions below. Check them, and how many queries they match, before saving.</p>
       <ErrorNote error={error} />
     </div>
   )
@@ -200,11 +199,10 @@ export function FilterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-2xl" aria-describedby={undefined}>
         <form onSubmit={submit} className="grid gap-5">
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit filter' : 'New filter'}</DialogTitle>
-            <DialogDescription>Saved in this browser. It appears next to the built-in views on the Live page.</DialogDescription>
           </DialogHeader>
 
           {!editing && (
