@@ -106,9 +106,20 @@
   --sql-literal: oklch(0.78 0.13 350);
 }
 
+/* Native controls and scrollbars follow the theme (without this, dark mode gets light scrollbars). */
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
+    /* Thin scrollbars in the surface's own tone: no arrows, no bright track. In the base layer so a utility can still hide one. */
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--muted-foreground) 40%, transparent) transparent;
   }
   html {
     -webkit-font-smoothing: antialiased;

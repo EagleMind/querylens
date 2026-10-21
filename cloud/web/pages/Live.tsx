@@ -1,18 +1,23 @@
+// The Live page: the query history and its live tail, for the project and environment chosen
+// in the sidebar. Grouped by query shape (one row per fingerprint) or one row per run. A
+// selected query's report opens beside the list on wide screens, and in its place on narrow.
 import { BellOffIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
+import type { LiveFinding } from '../../bindings/LiveFinding'
 import type { Project } from '../../bindings/Project'
 import { FilterDialog } from '@/components/FilterDialog'
 import { Regressions } from '@/components/Regressions'
 import { Sql } from '@/components/Sql'
-import { CodeBlock, ConnectionStatus, ErrorNote, SeverityDot, SlowMark, StatementTypeLabel } from '@/components/common'
+import { ACTION_FILL, CodeBlock, ErrorNote, SeverityDot, SlowMark } from '@/components/common'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Toggle } from '@/components/ui/toggle'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
   type CustomFilter,
   PRESETS,
@@ -23,33 +28,51 @@ import {
   matchesSearch,
   saveFilters,
 } from '@/lib/filters'
-import { FINDING_KINDS, fmtCount, fmtMs, fmtTime } from '@/lib/format'
+import { FINDING_KINDS, fmtCount, fmtMs, fmtRelative, fmtTime } from '@/lib/format'
 import type { LiveFeed } from '@/lib/live'
 import type { Muted } from '@/lib/muted'
-import { type LiveQuery, type LiveRequest, type MutedMode, applyMuted, flatten, mergeRequests } from '@/lib/queries'
-import { href, navigate, onLinkClick } from '@/lib/router'
+import {
+  type LiveQuery,
+  type LiveRequest,
+  type MutedMode,
+  type QueryGroup,
+  STATEMENT_ACTION,
+  applyMuted,
+  flatten,
+  groupByShape,
+  groupKey,
+  isHousekeeping,
+  mergeRequests,
+  summarizeSql,
+} from '@/lib/queries'
+import { type QueryRef, href, navigate, onLinkClick } from '@/lib/router'
+import { ALL, type Scope, scopedProject } from '@/lib/scope'
 import { cn } from '@/lib/utils'
+import { QueryPage, QueryPanel } from '@/pages/Query'
 
 /** Rows rendered at once; the rest are a click away. */
 const PAGE = 300
-const ALL = 'all'
 const VIEW_KEY = 'querylens.live'
 /** The selected view wears the brand colour. */
 const ACTIVE_VIEW = 'data-[state=on]:bg-primary/10 data-[state=on]:text-primary dark:data-[state=on]:bg-primary/15'
+/** Where the report opens beside the list rather than in its place (Tailwind's `lg`). */
+const WIDE = '(min-width: 64rem)'
+
+type Grouping = 'shape' | 'runs'
 
 interface View {
-  project: string
-  environment: string
   /** A preset, or a custom filter's id. */
   filter: string
   mutedIssues: MutedMode
+  grouping: Grouping
 }
 
-const DEFAULT_VIEW: View = { project: ALL, environment: ALL, filter: 'all', mutedIssues: 'hide' }
+const DEFAULT_VIEW: View = { filter: 'all', mutedIssues: 'hide', grouping: 'shape' }
 
 function loadView(): View {
   try {
-    return { ...DEFAULT_VIEW, ...JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}') }
+    const saved = JSON.parse(localStorage.getItem(VIEW_KEY) ?? '{}')
+    return { filter: saved.filter ?? DEFAULT_VIEW.filter, mutedIssues: saved.mutedIssues ?? DEFAULT_VIEW.mutedIssues, grouping: saved.grouping ?? DEFAULT_VIEW.grouping }
   } catch {
     return DEFAULT_VIEW
   }
@@ -70,61 +93,99 @@ function useView(): [View, (patch: Partial<View>) => void] {
   return [view, update]
 }
 
+function useMediaQuery(query: string): boolean {
+  return useSyncExternalStore(
+    (onChange) => {
+      const m = window.matchMedia(query)
+      m.addEventListener('change', onChange)
+      return () => m.removeEventListener('change', onChange)
+    },
+    () => window.matchMedia(query).matches,
+  )
+}
+
 function open(q: LiveQuery) {
   navigate({ page: 'query', ...q.ref })
 }
 
-function QueryRow({ q, project, showProject }: { q: LiveQuery; project: Project | undefined; showProject: boolean }) {
+function justArrived(q: LiveQuery): boolean {
+  return q.request.arrivedAt !== undefined && Date.now() - q.request.arrivedAt < 1500
+}
+
+/**
+ * The query, linked to its report, as verb and tables (the full statement is in its tooltip and
+ * the report); under it, what's wrong with it and where it runs in your code. Transactions and
+ * session settings are muted unless something's wrong with them.
+ */
+function QueryCell({ q, findings, muted, failed }: { q: LiveQuery; findings: LiveFinding[]; muted: number[]; failed: string | null }) {
   const s = q.statement
-  const slow = project ? s.durationMs >= project.settings.slowMs : false
+  // One badge per kind of problem: a shape can carry two N+1 issues (under different parents).
+  const kinds = findings.filter((f, i) => findings.findIndex((x) => x.kind === f.kind) === i)
+  const quiet = isHousekeeping(s.sql) && kinds.length === 0 && !failed
   return (
-    <TableRow
-      className={cn('cursor-pointer', q.request.arrivedAt !== undefined && Date.now() - q.request.arrivedAt < 1500 && 'animate-arrive')}
-      onClick={() => open(q)}
-    >
-      <TableCell className="font-mono text-xs text-muted-foreground tabular">{fmtTime(q.at)}</TableCell>
-      <TableCell className="hidden sm:table-cell">
-        <StatementTypeLabel type={q.type} label={q.verb} />
-      </TableCell>
-      <TableCell className="max-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          <a
-            href={href({ page: 'query', ...q.ref })}
-            onClick={(e) => {
-              e.stopPropagation()
-              onLinkClick(e)
-            }}
-            className="truncate font-mono text-xs outline-none hover:underline focus-visible:underline"
-            title={s.sql}
-          >
-            <Sql sql={s.sql} />
-          </a>
-          {s.error && (
-            <Badge variant="outline" className="border-destructive/40 text-destructive">
-              Failed
+    <div className="grid min-w-0 gap-1">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={cn('size-2 shrink-0 rounded-[2px]', ACTION_FILL[STATEMENT_ACTION[q.type]])} aria-hidden />
+        <a
+          href={href({ page: 'query', ...q.ref })}
+          onClick={(e) => {
+            e.stopPropagation()
+            onLinkClick(e)
+          }}
+          className={cn('truncate font-mono text-xs outline-none hover:underline focus-visible:underline', quiet && 'opacity-55')}
+          title={s.sql}
+        >
+          <Sql sql={summarizeSql(s.sql)} />
+        </a>
+      </div>
+      {(s.origin || kinds.length > 0 || failed) && (
+        <div className="flex min-w-0 items-center gap-1.5 pl-4">
+          {failed && (
+            <Badge variant="outline" className="h-5 shrink-0 border-destructive/40 py-0 text-[11px] text-destructive">
+              {failed}
             </Badge>
           )}
-          {q.findings.map((f) =>
-            q.muted.includes(f.issueId) ? (
-              <Badge key={f.issueId} variant="outline" className="hidden text-muted-foreground md:inline-flex" title="Muted issue">
+          {kinds.map((f) =>
+            muted.includes(f.issueId) ? (
+              <Badge key={f.issueId} variant="outline" className="h-5 shrink-0 py-0 text-[11px] text-muted-foreground" title="Muted issue">
                 <BellOffIcon />
                 {FINDING_KINDS[f.kind]}
               </Badge>
             ) : (
-              <Badge key={f.issueId} variant="outline" className="hidden md:inline-flex">
+              <Badge key={f.issueId} variant="outline" className="h-5 shrink-0 py-0 text-[11px]">
                 <SeverityDot severity={f.severity} />
                 {FINDING_KINDS[f.kind]}
               </Badge>
             ),
           )}
+          {s.origin && (
+            <span className="truncate font-mono text-[11px] text-muted-foreground" title={s.origin}>
+              {s.origin}
+            </span>
+          )}
         </div>
+      )}
+    </div>
+  )
+}
+
+/** Selected: a bar of the brand colour at the row's start, and a wash. */
+const SELECTED_ROW = 'bg-primary/[0.07] shadow-[inset_2px_0_0_var(--primary)] hover:bg-primary/10'
+
+function RunRow({ q, project, showProject, selected }: { q: LiveQuery; project: Project | undefined; showProject: boolean; selected: boolean }) {
+  const s = q.statement
+  const slow = project ? s.durationMs >= project.settings.slowMs : false
+  return (
+    <TableRow
+      className={cn('cursor-pointer', justArrived(q) && 'animate-arrive', selected && SELECTED_ROW)}
+      aria-selected={selected}
+      onClick={() => open(q)}
+    >
+      <TableCell className="font-mono text-xs text-muted-foreground tabular">{fmtTime(q.at)}</TableCell>
+      <TableCell className="max-w-0">
+        <QueryCell q={q} findings={q.findings} muted={q.muted} failed={s.error ? 'Failed' : null} />
       </TableCell>
-      <TableCell className="hidden max-w-0 lg:table-cell">
-        <span className="block truncate font-mono text-xs text-muted-foreground" title={s.origin ?? undefined}>
-          {s.origin ?? '—'}
-        </span>
-      </TableCell>
-      <TableCell className="hidden max-w-0 md:table-cell">
+      <TableCell className="hidden max-w-0 @3xl:table-cell">
         <span className="block truncate text-xs" title={q.request.name}>
           {q.request.name}
         </span>
@@ -136,7 +197,41 @@ function QueryRow({ q, project, showProject }: { q: LiveQuery; project: Project 
           {fmtMs(s.durationMs)}
         </span>
       </TableCell>
-      <TableCell className="hidden w-20 text-right text-xs text-muted-foreground tabular sm:table-cell">{fmtCount(s.rows)}</TableCell>
+      <TableCell className="hidden text-right text-xs text-muted-foreground tabular @md:table-cell">{fmtCount(s.rows)}</TableCell>
+    </TableRow>
+  )
+}
+
+function ShapeRow({ g, project, showProject, selected }: { g: QueryGroup; project: Project | undefined; showProject: boolean; selected: boolean }) {
+  const q = g.latest
+  const slow = project ? g.maxMs >= project.settings.slowMs : false
+  const others = g.requests.length - 1
+  return (
+    <TableRow
+      className={cn('cursor-pointer', justArrived(q) && 'animate-arrive', selected && SELECTED_ROW)}
+      aria-selected={selected}
+      onClick={() => open(q)}
+    >
+      <TableCell className="text-xs text-muted-foreground tabular" title={fmtTime(q.at)}>
+        {fmtRelative(new Date(q.at).toISOString())}
+      </TableCell>
+      <TableCell className="max-w-0">
+        <QueryCell q={q} findings={g.findings} muted={g.muted} failed={g.failed === 0 ? null : g.failed === g.runs ? 'Failed' : `${fmtCount(g.failed)} failed`} />
+      </TableCell>
+      <TableCell className="hidden max-w-0 @3xl:table-cell">
+        <span className="block truncate text-xs" title={g.requests.join('\n')}>
+          {q.request.name}
+          {others > 0 && <span className="ml-1.5 rounded bg-muted px-1 py-px text-[11px] text-muted-foreground tabular">+{others}</span>}
+        </span>
+        {showProject && <span className="block truncate text-xs text-muted-foreground">{project?.name ?? 'Unknown project'}</span>}
+      </TableCell>
+      <TableCell className="text-right text-xs font-medium tabular">{fmtCount(g.runs)}</TableCell>
+      <TableCell className={cn('hidden text-right text-xs tabular @md:table-cell', slow && 'font-medium')}>
+        <span className="inline-flex items-center justify-end gap-1.5">
+          {slow && project && <SlowMark slowMs={project.settings.slowMs} />}
+          {fmtMs(g.totalMs / g.runs)}
+        </span>
+      </TableCell>
     </TableRow>
   )
 }
@@ -164,16 +259,52 @@ function Waiting({ projects }: { projects: Project[] }) {
   )
 }
 
-export function LivePage({ projects, feed, muted }: { projects: Project[]; feed: LiveFeed; muted: Muted }) {
+function IconAction({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button variant="ghost" size="icon" className="size-8" aria-label={label} onClick={onClick}>
+          {children}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+export function LivePage({
+  projects,
+  feed,
+  muted,
+  scope,
+  onScope,
+  selected,
+}: {
+  projects: Project[]
+  feed: LiveFeed
+  muted: Muted
+  scope: Scope
+  onScope: (patch: Partial<Scope>) => void
+  /** The query whose report is open. */
+  selected: QueryRef | null
+}) {
   const [view, setView] = useView()
   const [search, setSearch] = useState('')
   const [filters, setFilters] = useState<CustomFilter[]>(loadFilters)
   const [dialog, setDialog] = useState<{ open: boolean; editing: CustomFilter | null }>({ open: false, editing: null })
   const [frozen, setFrozen] = useState<LiveRequest[] | null>(null)
   const [limit, setLimit] = useState(PAGE)
+  const wide = useMediaQuery(WIDE)
+  // Re-render now and then so "Last run" (8m ago) stays true while nothing new arrives.
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const timer = setInterval(() => setTick((t) => t + 1), 30_000)
+    return () => clearInterval(timer)
+  }, [])
 
   const byId = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
-  const projectId = view.project !== ALL && byId.has(view.project) ? view.project : ALL
+  const projectId = scopedProject(scope, projects)
+  const environment = scope.environment
   const custom = filters.find((f) => f.id === view.filter) ?? null
   const preset: Preset | null = custom ? null : (PRESETS.find((p) => p.id === view.filter)?.id ?? 'all')
 
@@ -181,11 +312,10 @@ export function LivePage({ projects, feed, muted }: { projects: Project[]; feed:
   const scoped = useMemo(
     () =>
       flatten(requests)
-        .filter((q) => (projectId === ALL || q.request.projectId === projectId) && (view.environment === ALL || q.request.environment === view.environment))
+        .filter((q) => (projectId === ALL || q.request.projectId === projectId) && (environment === ALL || q.request.environment === environment))
         .map((q) => applyMuted(q, muted.isMuted, view.mutedIssues)),
-    [requests, projectId, view.environment, view.mutedIssues, muted.isMuted],
+    [requests, projectId, environment, view.mutedIssues, muted.isMuted],
   )
-  const environments = useMemo(() => [...new Set(feed.requests.map((r) => r.environment))].sort(), [feed.requests])
   /** Newest first: what "the last release" means when a filter is described. */
   const releases = useMemo(() => [...new Set(feed.requests.flatMap((r) => (r.release ? [r.release] : [])))], [feed.requests])
   const scopeProjects = useMemo(() => (projectId === ALL ? projects : projects.filter((p) => p.id === projectId)), [projects, projectId])
@@ -199,14 +329,15 @@ export function LivePage({ projects, feed, muted }: { projects: Project[]; feed:
     () => searched.filter((q) => (custom ? matchesFilter(q, custom) : matchesPreset(preset ?? 'all', q, slowMs(q)))),
     [searched, custom, preset, byId],
   )
+  const groups = useMemo(() => (view.grouping === 'shape' ? groupByShape(shown) : []), [shown, view.grouping])
   useEffect(() => {
     setLimit(PAGE)
-  }, [view, search])
+  }, [view, search, scope])
 
   const newWhilePaused = frozen ? feed.requests.findIndex((r) => r.id === frozen[0]?.id) : 0
   const pending = frozen ? (newWhilePaused === -1 ? feed.requests.length : newWhilePaused) : 0
   const showProject = projectId === ALL && projects.length > 1
-  const filtered = search.trim() !== '' || view.filter !== 'all' || view.environment !== ALL || projectId !== ALL
+  const filtered = search.trim() !== '' || view.filter !== 'all' || environment !== ALL || projectId !== ALL
 
   const scopeIds = projectId === ALL ? projects.map((p) => p.id) : [projectId]
   const older = feed.loaded && feed.hasOlder(scopeIds)
@@ -239,61 +370,137 @@ export function LivePage({ projects, feed, muted }: { projects: Project[]; feed:
     if (view.filter === id) setView({ filter: 'all' })
   }
 
+  const selectedRun = selected ? `${selected.project}:${selected.request}:${selected.seq}` : null
+  const selectedShape = useMemo(() => {
+    if (!selected) return null
+    const q = flatten(requests).find((x) => x.request.projectId === selected.project && x.request.id === selected.request && x.ref.seq === selected.seq)
+    return q ? groupKey(selected.project, q.statement.fingerprint) : null
+  }, [selected, requests])
+
+  // On a narrow screen the report takes the list's place; the list keeps its state meanwhile.
+  if (selected && !wide) return <QueryPage at={selected} projects={projects} requests={feed.requests} muted={muted} />
+  const rows = view.grouping === 'shape' ? groups.length : shown.length
+  const noun = view.grouping === 'shape' ? (rows === 1 ? 'query shape' : 'query shapes') : rows === 1 ? 'query' : 'queries'
+
+  const list = (
+    <div className="grid min-w-0 content-start gap-4">
+      <Regressions projects={scopeProjects} environment={environment === ALL ? null : environment} />
+
+      {/* One frame for the list and the selected query's report: the report is the row's detail, not a column of its own. */}
+      <div className={cn('overflow-clip rounded-lg border bg-card', selected && 'grid grid-cols-[minmax(0,1fr)_minmax(26rem,46%)] items-start')}>
+        <div className="@container min-w-0">
+        {!feed.loaded && feed.requests.length === 0 ? (
+          <div className="grid gap-3 p-4" aria-label="Loading queries">
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-5" />
+            ))}
+          </div>
+        ) : feed.requests.length === 0 && !frozen ? (
+          <Waiting projects={scopeProjects} />
+        ) : shown.length === 0 ? (
+          <div className="grid justify-items-center gap-3 px-6 py-14 text-center text-sm">
+            <p className="text-base font-medium">No queries match</p>
+            <p className="text-muted-foreground">
+              None of the {fmtCount(feed.size)} loaded queries match the current project, environment, search and view.
+            </p>
+            {filtered && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearch('')
+                  setView({ filter: 'all', mutedIssues: 'hide' })
+                  onScope({ project: ALL, environment: ALL })
+                }}
+              >
+                Clear filters
+              </Button>
+            )}
+          </div>
+        ) : view.grouping === 'shape' ? (
+          <Table className="table-fixed">
+            <TableHeader className="bg-muted/40">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-20">Last run</TableHead>
+                <TableHead>Query</TableHead>
+                <TableHead className="hidden w-[22%] @3xl:table-cell">Requests</TableHead>
+                <TableHead className="w-16 text-right">Runs</TableHead>
+                <TableHead className="hidden w-24 text-right @md:table-cell">Average</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groups.slice(0, limit).map((g) => (
+                <ShapeRow key={g.id} g={g} project={byId.get(g.latest.request.projectId)} showProject={showProject} selected={g.id === selectedShape} />
+              ))}
+            </TableBody>
+          </Table>
+        ) : (
+          <Table className="table-fixed">
+            <TableHeader className="bg-muted/40">
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-24 @md:w-28">Time</TableHead>
+                <TableHead>Query</TableHead>
+                <TableHead className="hidden w-[22%] @3xl:table-cell">Request</TableHead>
+                <TableHead className="w-24 text-right">Duration</TableHead>
+                <TableHead className="hidden w-16 text-right @md:table-cell">Rows</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {shown.slice(0, limit).map((q) => (
+                <RunRow key={q.id} q={q} project={byId.get(q.request.projectId)} showProject={showProject} selected={`${q.ref.project}:${q.ref.request}:${q.ref.seq}` === selectedRun} />
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        </div>
+        {selected && (
+          <div
+            key={selectedRun}
+            className="sticky top-0 max-h-dvh self-stretch overflow-y-auto border-l bg-muted/40 shadow-[-8px_0_16px_-12px_rgb(0_0_0/0.25)] dark:bg-muted/50"
+          >
+            <QueryPanel at={selected} projects={projects} requests={feed.requests} muted={muted} />
+          </div>
+        )}
+      </div>
+
+      {(rows > 0 || older) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="tabular">
+            {rows > limit
+              ? `Showing ${limit.toLocaleString()} of ${rows.toLocaleString()} matching ${noun}.`
+              : view.grouping === 'shape'
+                ? `${rows.toLocaleString()} ${noun} from ${shown.length.toLocaleString()} of ${feed.size.toLocaleString()} loaded queries.`
+                : `${rows.toLocaleString()} matching ${noun} of ${feed.size.toLocaleString()} loaded.`}
+          </span>
+          {rows > limit ? (
+            <Button variant="outline" size="sm" onClick={() => setLimit((l) => l + PAGE)}>
+              Show more
+            </Button>
+          ) : (
+            older && (
+              <Button variant="outline" size="sm" disabled={loadingOlder} onClick={loadOlder}>
+                {loadingOlder ? 'Loading…' : 'Load older queries'}
+              </Button>
+            )
+          )}
+        </div>
+      )}
+      <ErrorNote error={olderError} />
+    </div>
+  )
+
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="grid gap-1">
-          <h1 className="text-xl font-semibold tracking-tight">Live queries</h1>
-          <p className="text-sm text-muted-foreground">Every statement of the requests your apps send, newest first, kept for 7 days.</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <ConnectionStatus state={feed.connection} />
-          <Button variant="outline" size="sm" onClick={() => setFrozen(frozen ? null : feed.requests)}>
-            {frozen ? <PlayIcon /> : <PauseIcon />}
-            {frozen ? (pending > 0 ? `Resume (${fmtCount(pending)} new requests)` : 'Resume') : 'Pause'}
-          </Button>
-        </div>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-lg font-semibold tracking-tight">Live queries</h1>
+        <Button variant="outline" size="sm" onClick={() => setFrozen(frozen ? null : feed.requests)}>
+          {frozen ? <PlayIcon /> : <PauseIcon />}
+          {frozen ? (pending > 0 ? `Resume (${fmtCount(pending)} new requests)` : 'Resume') : 'Pause'}
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto">
-          <Select value={projectId} onValueChange={(v) => setView({ project: v })}>
-            <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Project">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All projects</SelectItem>
-              {projects.map((p) => (
-                <SelectItem key={p.id} value={p.id}>
-                  {p.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={view.environment} onValueChange={(v) => setView({ environment: v })}>
-            <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Environment">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={ALL}>All environments</SelectItem>
-              {[...new Set([...environments, ...(view.environment !== ALL ? [view.environment] : [])])].map((e) => (
-                <SelectItem key={e} value={e}>
-                  {e}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={view.mutedIssues} onValueChange={(v) => setView({ mutedIssues: v as MutedMode })}>
-            <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Muted issues">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="hide">Hide muted issues</SelectItem>
-              <SelectItem value="show">Show muted issues</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="relative min-w-52 flex-1 sm:max-w-80">
+        <div className="relative min-w-52 flex-1 basis-60">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
@@ -303,9 +510,6 @@ export function LivePage({ projects, feed, muted }: { projects: Project[]; feed:
             className="h-8 pl-8"
           />
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
         <ToggleGroup
           type="single"
           variant="outline"
@@ -327,89 +531,49 @@ export function LivePage({ projects, feed, muted }: { projects: Project[]; feed:
             </ToggleGroupItem>
           ))}
         </ToggleGroup>
-        {custom && (
-          <Button variant="ghost" size="sm" onClick={() => setDialog({ open: true, editing: custom })}>
-            <PencilIcon /> Edit filter
-          </Button>
-        )}
-        <Button variant="ghost" size="sm" onClick={() => setDialog({ open: true, editing: null })}>
-          <PlusIcon /> New filter
-        </Button>
-      </div>
-
-      <Regressions projects={scopeProjects} environment={view.environment === ALL ? null : view.environment} />
-
-      <div className="overflow-hidden rounded-lg border">
-        {!feed.loaded && feed.requests.length === 0 ? (
-          <div className="grid gap-3 p-4" aria-label="Loading queries">
-            {[0, 1, 2, 3, 4, 5].map((i) => (
-              <Skeleton key={i} className="h-5" />
-            ))}
-          </div>
-        ) : feed.requests.length === 0 && !frozen ? (
-          <Waiting projects={projectId === ALL ? projects : projects.filter((p) => p.id === projectId)} />
-        ) : shown.length === 0 ? (
-          <div className="grid justify-items-center gap-3 px-6 py-14 text-center text-sm">
-            <p className="text-base font-medium">No queries match</p>
-            <p className="text-muted-foreground">
-              None of the {fmtCount(feed.size)} loaded queries match the current project, environment, search and view.
-            </p>
-            {filtered && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setSearch('')
-                  setView({ project: ALL, environment: ALL, filter: 'all', mutedIssues: 'hide' })
-                }}
-              >
-                Clear filters
-              </Button>
-            )}
-          </div>
-        ) : (
-          <Table className="table-fixed">
-            <TableHeader className="bg-muted/40">
-              <TableRow className="hover:bg-transparent">
-                <TableHead className="w-24 sm:w-28">Time</TableHead>
-                <TableHead className="hidden w-24 sm:table-cell">Type</TableHead>
-                <TableHead>Query</TableHead>
-                <TableHead className="hidden w-[22%] lg:table-cell">Code location</TableHead>
-                <TableHead className="hidden w-[18%] md:table-cell">Request</TableHead>
-                <TableHead className="w-24 text-right">Duration</TableHead>
-                <TableHead className="hidden w-20 text-right sm:table-cell">Rows</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {shown.slice(0, limit).map((q) => (
-                <QueryRow key={q.id} q={q} project={byId.get(q.request.projectId)} showProject={showProject} />
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </div>
-
-      {(shown.length > 0 || older) && (
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-          <span className="tabular">
-            {shown.length > limit
-              ? `Showing ${limit.toLocaleString()} of ${shown.length.toLocaleString()} matching queries.`
-              : `${shown.length.toLocaleString()} matching ${shown.length === 1 ? 'query' : 'queries'} of ${feed.size.toLocaleString()} loaded.`}
-          </span>
-          {shown.length > limit ? (
-            <Button variant="outline" size="sm" onClick={() => setLimit((l) => l + PAGE)}>
-              Show more
-            </Button>
-          ) : (
-            older && (
-              <Button variant="outline" size="sm" disabled={loadingOlder} onClick={loadOlder}>
-                {loadingOlder ? 'Loading…' : 'Load older queries'}
-              </Button>
-            )
+        <div className="flex items-center">
+          {custom && (
+            <IconAction label="Edit filter" onClick={() => setDialog({ open: true, editing: custom })}>
+              <PencilIcon />
+            </IconAction>
           )}
+          <IconAction label="New filter" onClick={() => setDialog({ open: true, editing: null })}>
+            <PlusIcon />
+          </IconAction>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Toggle
+                size="sm"
+                className={cn('size-8 px-0', ACTIVE_VIEW)}
+                aria-label="Show muted issues"
+                pressed={view.mutedIssues === 'show'}
+                onPressedChange={(on) => setView({ mutedIssues: on ? 'show' : 'hide' })}
+              >
+                <BellOffIcon />
+              </Toggle>
+            </TooltipTrigger>
+            <TooltipContent>{view.mutedIssues === 'show' ? 'Showing muted issues' : 'Show muted issues'}</TooltipContent>
+          </Tooltip>
         </div>
-      )}
-      <ErrorNote error={olderError} />
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={view.grouping}
+          onValueChange={(v) => v && setView({ grouping: v as Grouping })}
+          aria-label="Rows"
+          className="ml-auto"
+        >
+          <ToggleGroupItem value="shape" className={cn('px-3', ACTIVE_VIEW)}>
+            Grouped
+          </ToggleGroupItem>
+          <ToggleGroupItem value="runs" className={cn('px-3', ACTIVE_VIEW)}>
+            Every run
+          </ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
+      {list}
 
       <FilterDialog
         open={dialog.open}

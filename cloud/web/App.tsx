@@ -1,7 +1,7 @@
-import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { Project } from '../bindings/Project'
-import { Logo } from '@/components/Logo'
+import { Sidebar, useSidebarCollapsed } from '@/components/Sidebar'
 import { ErrorNote } from '@/components/common'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -11,11 +11,11 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiError, api, getToken, setToken } from '@/lib/api'
 import { useLiveFeed } from '@/lib/live'
 import { useMuted } from '@/lib/muted'
-import { type Route, href, onLinkClick, useRoute } from '@/lib/router'
+import { useRoute } from '@/lib/router'
+import { ALL, scopedProject, useScope } from '@/lib/scope'
 import { cn } from '@/lib/utils'
 import { LivePage } from '@/pages/Live'
 import { DocsPage } from '@/pages/Docs'
-import { QueryPage } from '@/pages/Query'
 import { SettingsPage } from '@/pages/Settings'
 import { SignIn } from '@/pages/SignIn'
 
@@ -54,12 +54,6 @@ function FirstProject({ onCreated }: { onCreated: (p: Project) => void }) {
   )
 }
 
-const NAV: { label: string; route: Route; pages: Route['page'][] }[] = [
-  { label: 'Live', route: { page: 'live' }, pages: ['live', 'query'] },
-  { label: 'Settings', route: { page: 'settings' }, pages: ['settings'] },
-  { label: 'Docs', route: { page: 'docs' }, pages: ['docs'] },
-]
-
 function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const route = useRoute()
   const [projects, setProjects] = useState<Project[] | null>(null)
@@ -67,49 +61,46 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const projectIds = projects?.map((p) => p.id) ?? []
   const feed = useLiveFeed(projectIds)
   const muted = useMuted(projectIds)
+  const [scope, setScope] = useScope()
+  const [collapsed, setCollapsed] = useSidebarCollapsed()
 
   useEffect(() => {
     api.projects().then(setProjects, (e) => (e instanceof ApiError && e.status === 401 ? onSignOut() : setError(e)))
   }, [onSignOut])
 
+  const environments = useMemo(
+    () => [...new Set([...feed.requests.map((r) => r.environment), ...(scope.environment !== ALL ? [scope.environment] : [])])].sort(),
+    [feed.requests, scope.environment],
+  )
+
   let body
   if (error) body = <ErrorNote error={error} />
   else if (!projects) body = <p className="text-sm text-muted-foreground">Loading…</p>
   else if (projects.length === 0) body = <FirstProject onCreated={(p) => setProjects([p])} />
-  else if (route.page === 'query') body = <QueryPage at={route} projects={projects} requests={feed.requests} muted={muted} />
   else if (route.page === 'docs') body = <DocsPage projects={projects} />
   else if (route.page === 'settings') body = <SettingsPage projects={projects} connection={feed.connection} onProjects={setProjects} onSignOut={onSignOut} />
-  else body = <LivePage projects={projects} feed={feed} muted={muted} />
+  // One element for the list and a selected query, so pausing and paging survive opening a report.
+  else body = <LivePage projects={projects} feed={feed} muted={muted} scope={scope} onScope={setScope} selected={route.page === 'query' ? route : null} />
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1400px] items-center justify-between gap-4 px-4 sm:px-6">
-          <a href={href({ page: 'live' })} onClick={onLinkClick} aria-label="QueryLens, live queries">
-            <Logo />
-          </a>
-          <nav aria-label="Main" className="flex items-center gap-1">
-            {NAV.map((n) => {
-              const active = n.pages.includes(route.page)
-              return (
-                <a
-                  key={n.label}
-                  href={href(n.route)}
-                  onClick={onLinkClick}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                    active ? 'bg-primary/10 text-primary dark:bg-primary/15' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                  )}
-                >
-                  {n.label}
-                </a>
-              )
-            })}
-          </nav>
-        </div>
-      </header>
-      <main className="mx-auto max-w-[1400px] px-4 py-6 sm:px-6">{body}</main>
+    <div
+      className={cn(
+        'min-h-dvh lg:grid lg:transition-[grid-template-columns] lg:duration-200',
+        collapsed ? 'lg:grid-cols-[3.25rem_minmax(0,1fr)]' : 'lg:grid-cols-[15rem_minmax(0,1fr)]',
+      )}
+    >
+      <Sidebar
+        collapsed={collapsed}
+        onCollapsed={setCollapsed}
+        route={route}
+        projects={projects ?? []}
+        scope={{ ...scope, project: scopedProject(scope, projects ?? []) }}
+        onScope={setScope}
+        environments={environments}
+        connection={feed.connection}
+        size={feed.size}
+      />
+      <main className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">{body}</main>
     </div>
   )
 }

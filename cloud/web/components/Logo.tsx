@@ -1,12 +1,14 @@
 import { useId } from 'react'
 
+import { cn } from '@/lib/utils'
+
 /** The rounded "Q", with the corner cut out for the cursor. */
 const Q_PATH =
   'M11 2h10a9 9 0 0 1 9 9v10a9 9 0 0 1-9 9H11a9 9 0 0 1-9-9V11a9 9 0 0 1 9-9z' +
   'M12 9h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-8a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3z'
 
-/** The QueryLens mark (a rounded "Q" whose tail is a block cursor) and wordmark. */
-export function Logo() {
+/** The QueryLens mark (a rounded "Q" whose tail is a block cursor) and wordmark; `compact`: the mark alone. */
+export function Logo({ compact }: { compact?: boolean }) {
   const mask = useId()
   return (
     <span className="inline-flex items-center gap-2">
@@ -18,7 +20,7 @@ export function Logo() {
         <path d={Q_PATH} fill="currentColor" fillRule="evenodd" mask={`url(#${mask})`} />
         <rect x="20" y="20" width="10" height="10" rx="1.5" fill="var(--primary)" />
       </svg>
-      <span className="text-[15px] font-semibold tracking-tight">QueryLens</span>
+      <span className={cn('text-[15px] font-semibold tracking-tight', compact && 'sr-only')}>QueryLens</span>
     </span>
   )
 }

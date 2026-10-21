@@ -1,4 +1,5 @@
-// What the Live page lists: every statement of every request in the query history.
+// What the Live page lists: every statement of every request in the query history, one row
+// each or grouped by query shape.
 // Pure: no React, no I/O.
 import type { CapturedStatement } from '../../bindings/CapturedStatement'
 import type { LiveFinding } from '../../bindings/LiveFinding'
@@ -118,4 +119,87 @@ export function mergeRequests(a: LiveRequest[], b: LiveRequest[]): LiveRequest[]
 /** Without `sendValues`, the SDK sends one opaque value hash instead of the parameters. */
 export function valuesSent(statement: CapturedStatement): boolean {
   return !(statement.params.length === 1 && statement.params[0]?.startsWith('#'))
+}
+
+/** The runs of one query shape (one fingerprint, in one project): a row of the grouped Live list. */
+export interface QueryGroup {
+  /** `<project>:<fingerprint>`. */
+  id: string
+  /** The newest run: what the row shows and opens. */
+  latest: LiveQuery
+  runs: number
+  totalMs: number
+  maxMs: number
+  failed: number
+  /** Each issue once, across the runs. */
+  findings: LiveFinding[]
+  /** Issue ids among `findings` that are muted. */
+  muted: number[]
+  /** Request names, most recent first. */
+  requests: string[]
+}
+
+export function groupKey(projectId: string, fingerprint: string): string {
+  return `${projectId}:${fingerprint}`
+}
+
+/** Newest first in, newest first out: a shape is placed where its latest run was. */
+export function groupByShape(queries: LiveQuery[]): QueryGroup[] {
+  const groups = new Map<string, QueryGroup>()
+  for (const q of queries) {
+    const id = groupKey(q.request.projectId, q.statement.fingerprint)
+    let g = groups.get(id)
+    if (!g) {
+      g = { id, latest: q, runs: 0, totalMs: 0, maxMs: 0, failed: 0, findings: [], muted: [], requests: [] }
+      groups.set(id, g)
+    }
+    g.runs++
+    g.totalMs += q.statement.durationMs
+    g.maxMs = Math.max(g.maxMs, q.statement.durationMs)
+    if (q.statement.error) g.failed++
+    for (const f of q.findings) if (!g.findings.some((x) => x.issueId === f.issueId)) g.findings.push(f)
+    for (const id of q.muted) if (!g.muted.includes(id)) g.muted.push(id)
+    if (!g.requests.includes(q.request.name)) g.requests.push(q.request.name)
+  }
+  return [...groups.values()]
+}
+
+/** Where a word (`FROM`, `WHERE`) first appears outside brackets and quotes, from `start`; -1 if it doesn't. */
+function topLevel(sql: string, word: string, start: number): number {
+  const re = new RegExp(String.raw`^${word}\b`, 'i')
+  let depth = 0
+  let quote: string | null = null
+  for (let i = start; i < sql.length; i++) {
+    const c = sql[i]
+    if (quote) {
+      if (c === quote) quote = null
+    } else if (c === "'" || c === '"' || c === '`') quote = c
+    else if (c === '(') depth++
+    else if (c === ')') depth--
+    else if (depth === 0 && /\s/.test(sql[i - 1] ?? ' ') && re.test(sql.slice(i))) return i
+  }
+  return -1
+}
+
+/** What the Live list shows of a statement: its verb and tables, with column lists folded to `…`. */
+export function summarizeSql(sql: string): string {
+  const s = sql.trim().replace(/\s+/g, ' ')
+  const select = /^select\s+(?:distinct\s+)?/i.exec(s)
+  if (select) {
+    const from = topLevel(s, 'from', select[0].length)
+    return from > select[0].length + 1 ? `${select[0]}… ${s.slice(from)}` : s
+  }
+  const insert = /^(insert\s+(?:ignore\s+)?into\s+\S+)\s*\(/i.exec(s)
+  if (insert) return `${insert[1]} …`
+  const update = /^update\s+\S+\s+set\s+/i.exec(s)
+  if (update) {
+    const where = topLevel(s, 'where', update[0].length)
+    return `${update[0]}…${where === -1 ? '' : ` ${s.slice(where)}`}`
+  }
+  return s
+}
+
+/** Transactions and session settings: statements around the queries rather than queries. */
+export function isHousekeeping(sql: string): boolean {
+  return /^\s*(?:set|start|begin|commit|rollback|savepoint|release|show|use)\b/i.test(sql)
 }

@@ -20,7 +20,7 @@ const SECTIONS: { id: string; title: string }[] = [
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (
-    <section id={id} className="grid scroll-mt-20 gap-3 border-t pt-6 text-sm leading-relaxed target:[&>h2]:text-primary">
+    <section id={id} className="grid scroll-mt-20 lg:scroll-mt-6 gap-3 border-t pt-6 text-sm leading-relaxed target:[&>h2]:text-primary">
       <h2 className="text-base font-semibold tracking-tight">{title}</h2>
       {children}
     </section>
@@ -42,7 +42,7 @@ export function DocsPage({ projects }: { projects: Project[] }) {
 
   return (
     <div className="mx-auto grid w-full max-w-[60rem] gap-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
-      <nav aria-label="On this page" className="lg:sticky lg:top-20 lg:self-start">
+      <nav aria-label="On this page" className="lg:sticky lg:top-6 lg:self-start">
         <p className="mb-2 text-xs font-medium text-muted-foreground">On this page</p>
         <ul className="grid gap-1 text-sm">
           {SECTIONS.map((s) => (

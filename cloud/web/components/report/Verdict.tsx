@@ -14,12 +14,12 @@ import { cn } from '@/lib/utils'
 function NotShown({ missing }: { missing: Missing[] }) {
   if (missing.length === 0) return null
   return (
-    <div className="grid gap-2 rounded-lg border border-dashed px-3.5 py-3 text-sm">
-      <p className="flex items-center gap-2 font-medium">
-        <InfoIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-        Not shown on this page
+    <div className="grid gap-1.5 border-t pt-3 text-xs">
+      <p className="flex items-center gap-1.5 font-medium text-muted-foreground">
+        <InfoIcon className="size-3.5 shrink-0" aria-hidden />
+        Not shown here
       </p>
-      <ul className="grid gap-1.5 pl-6">
+      <ul className="grid gap-1 pl-5">
         {missing.map((m) => (
           <li key={m.key} className="leading-relaxed text-muted-foreground">
             <span className="text-foreground">{m.what}</span>: {m.why}{' '}
@@ -60,6 +60,7 @@ export function Verdict({
   return (
     <ReportCard
       label="Verdict"
+      panelLabel={false}
       tone={verdict.tone}
       details={
         <Pairs
@@ -82,7 +83,7 @@ export function Verdict({
         </p>
         <h1 className={cn('text-xl font-semibold tracking-tight', verdict.tone === 'danger' && 'text-destructive')}>{verdict.title}</h1>
       </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 @sm:grid-cols-4">
         <Figure
           label="Took"
           value={fmtMs(s.durationMs)}
