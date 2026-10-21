@@ -17,10 +17,6 @@ import { cn } from '@/lib/utils'
 const REFRESH_MS = 5 * 60_000
 const OPEN_KEY = 'querylens.regressions.open'
 
-interface ProjectReport extends RegressionReport {
-  project: Project
-}
-
 function since(r: RegressionReport): string {
   return r.baseline.kind === 'release'
     ? `since release ${r.baseline.release}, deployed ${fmtRelative(r.baseline.since)}`
@@ -70,15 +66,14 @@ function loadOpen(): boolean {
   }
 }
 
-/** For the projects (and environment, unless `null`) the Live page is showing. */
-export function Regressions({ projects, environment }: { projects: Project[]; environment: string | null }) {
-  const ids = projects.map((p) => p.id).join(',')
+/** For the project, backend and environment (each unless `null`) the Live page is showing. */
+export function Regressions({ project, backend, environment }: { project: Project; backend: string | null; environment: string | null }) {
   const reports = useAsync(
     () =>
-      Promise.all(
-        projects.map((p) => api.regressions(p.id, environment ?? undefined).then((rs) => rs.map((r): ProjectReport => ({ ...r, project: p })))),
-      ).then((all) => all.flat().filter((r) => r.regressions.length > 0)),
-    [ids, environment],
+      api
+        .regressions(project.id, { backend: backend ?? undefined, environment: environment ?? undefined })
+        .then((all) => all.filter((r) => r.regressions.length > 0)),
+    [project.id, backend, environment],
   )
   const { reload } = reports
   useEffect(() => {
@@ -122,16 +117,16 @@ export function Regressions({ projects, environment }: { projects: Project[]; en
       {open && (
         <div className="divide-y border-t bg-card">
           {found.map((r) => (
-            <div key={`${r.project.id}:${r.environment}`}>
-              {(found.length > 1 || projects.length > 1) && (
+            <div key={`${r.backend}:${r.environment}`}>
+              {(found.length > 1 || (!backend && project.backends.length > 1)) && (
                 <p className="bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
-                  {projects.length > 1 ? `${r.project.name}, ` : ''}
+                  {!backend && project.backends.length > 1 ? `${project.backends.find((b) => b.id === r.backend)?.name ?? 'Unknown backend'}, ` : ''}
                   {r.environment}, {since(r)}
                 </p>
               )}
               <div className="divide-y">
                 {r.regressions.map((g) => (
-                  <Row key={`${g.fingerprint}:${g.regression}`} g={g} project={r.project} />
+                  <Row key={`${g.fingerprint}:${g.regression}`} g={g} project={project} />
                 ))}
               </div>
             </div>

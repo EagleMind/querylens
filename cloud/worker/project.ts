@@ -1,16 +1,20 @@
-// One monitored application. Its Durable Object owns everything about it: the DSN key,
-// settings, issues with their latest events, the query history (every request the SDKs
-// send, one row each), hourly statement statistics (SQLite), and the dashboards watching it
-// live (hibernating WebSockets). The Worker only routes here.
+// One monitored application. Its Durable Object owns everything about it: its backends (the
+// services reporting to it, each with its own DSN key), settings, issues with their latest
+// events, the query history (every request the SDKs send, one row each), hourly statement
+// statistics (SQLite), and the dashboards watching it live (hibernating WebSockets). The
+// Worker only routes here.
 //
 // Evaluation (what's wrong in a request) is querylens-core's job (`digest`); this class
-// decides what to remember: issues are keyed by the finding's stable id per environment,
-// a resolved issue seen again comes back flagged as regressed, an ignored one stays ignored.
+// decides what to remember. Everything an SDK sends is kept under the backend whose key it
+// used: issues are keyed by the finding's stable id per backend and environment, a resolved
+// issue seen again comes back flagged as regressed, an ignored one stays ignored. Each backend
+// has its own ORM, releases and source code.
 // It also keeps what fixing an issue takes (`issueContext`: the code around it when the SDK
 // sends source context, the request it was last seen in), the releases each environment
 // reported (for `regressions`), and the latest AI suggestion per issue.
 import { DurableObject } from 'cloudflare:workers'
 
+import type { Backend } from '../bindings/Backend'
 import type { CaptureFinding } from '../bindings/CaptureFinding'
 import type { CapturedStatement } from '../bindings/CapturedStatement'
 import type { Digest } from '../bindings/Digest'
@@ -32,7 +36,7 @@ import type { StoredRequest } from '../bindings/StoredRequest'
 import type { IssueContext, Regression, RegressionReport, Suggestion } from '../shared/api'
 import { type ReleaseSeen, type ShapeTotals, comparison, judge } from './analysis/regressions'
 import { digest } from './core'
-import { sameSecret } from './http'
+import { randomHex, sameSecret } from './http'
 
 export const DEFAULT_SETTINGS: ProjectSettings = {
   slowMs: 100,
@@ -65,11 +69,22 @@ const SOURCES_PER_ISSUE = 3
 const REGRESSIONS = 20
 const REGRESSION_LINKS = 10
 const LINK_SEARCH_REQUESTS = 2000
+/** Backends per project, disconnected ones included. */
+export const MAX_BACKENDS = 50
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS backends (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    key TEXT UNIQUE,
+    orm TEXT,
+    created_at TEXT NOT NULL,
+    last_seen TEXT
+  );
   CREATE TABLE IF NOT EXISTS issues (
     id INTEGER PRIMARY KEY,
+    backend TEXT NOT NULL,
     environment TEXT NOT NULL,
     key TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -92,7 +107,7 @@ const SCHEMA = `
     first_release TEXT,
     last_release TEXT,
     resolved_at TEXT,
-    UNIQUE (environment, key)
+    UNIQUE (backend, environment, key)
   );
   CREATE INDEX IF NOT EXISTS issues_recent ON issues (status, last_seen DESC);
   CREATE TABLE IF NOT EXISTS issue_events (
@@ -108,6 +123,7 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS issue_events_latest ON issue_events (issue_id, id DESC);
   CREATE TABLE IF NOT EXISTS requests (
     id INTEGER PRIMARY KEY,
+    backend TEXT NOT NULL,
     environment TEXT NOT NULL,
     release TEXT,
     name TEXT NOT NULL,
@@ -118,25 +134,29 @@ const SCHEMA = `
     findings_json TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS query_shapes (
+    backend TEXT NOT NULL,
     environment TEXT NOT NULL,
     fingerprint TEXT NOT NULL,
     sample_sql TEXT NOT NULL,
     kind TEXT NOT NULL,
     tables_json TEXT NOT NULL,
     last_seen TEXT NOT NULL,
-    PRIMARY KEY (environment, fingerprint)
+    PRIMARY KEY (backend, environment, fingerprint)
   );
   CREATE TABLE IF NOT EXISTS sources (
-    origin TEXT PRIMARY KEY,
+    backend TEXT NOT NULL,
+    origin TEXT NOT NULL,
     first_line INTEGER NOT NULL,
     lines_json TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (backend, origin)
   );
   CREATE TABLE IF NOT EXISTS releases (
+    backend TEXT NOT NULL,
     environment TEXT NOT NULL,
     release TEXT NOT NULL,
     first_seen INTEGER NOT NULL,
-    PRIMARY KEY (environment, release)
+    PRIMARY KEY (backend, environment, release)
   );
   CREATE TABLE IF NOT EXISTS suggestions (
     issue_id INTEGER PRIMARY KEY,
@@ -144,6 +164,7 @@ const SCHEMA = `
     suggestion_json TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS query_stats (
+    backend TEXT NOT NULL,
     environment TEXT NOT NULL,
     fingerprint TEXT NOT NULL,
     hour INTEGER NOT NULL,
@@ -152,13 +173,47 @@ const SCHEMA = `
     max_ms REAL NOT NULL,
     errors INTEGER NOT NULL,
     rows REAL NOT NULL,
-    PRIMARY KEY (environment, fingerprint, hour)
+    PRIMARY KEY (backend, environment, fingerprint, hour)
   );
 `
+
+/**
+ * Before backends, a project had one DSN key and its rows no backend. These tables' keys
+ * gained `backend`, so they're rebuilt (the columns listed are copied); `requests` only
+ * gains a column. Everything goes to one backend made from the old key, so its DSN still works.
+ */
+const REKEYED: Record<string, string> = {
+  issues:
+    'id, environment, key, kind, severity, title, detail, fingerprint, sample_sql, parent_sql, transaction_name, origins_json, ' +
+    'fix_json, status, regressed, times_seen, occurrences, impact_ms, first_seen, last_seen, first_release, last_release, resolved_at',
+  query_shapes: 'environment, fingerprint, sample_sql, kind, tables_json, last_seen',
+  sources: 'origin, first_line, lines_json, updated_at',
+  releases: 'environment, release, first_seen',
+  query_stats: 'environment, fingerprint, hour, calls, total_ms, max_ms, errors, rows',
+}
+
+const BACKEND_ID = /^[0-9a-f]{8}$/
+
+export function isBackendId(id: string): boolean {
+  return BACKEND_ID.test(id)
+}
+
+interface BackendRow {
+  id: string
+  name: string
+  key: string | null
+  orm: Orm | null
+  createdAt: string
+  lastSeen: string | null
+}
+
+/** What changing a backend came to: its id, or why not. */
+export type BackendChange = { ok: true; id: string } | { ok: false; status: 404 | 409; message: string }
 
 export type IngestResult = { ok: true; config: ProjectSettings } | { ok: false; status: 401 | 400; message: string }
 
 export interface IssueQuery {
+  backend?: string
   environment?: string
   status?: IssueStatus
   sort?: 'last_seen' | 'first_seen' | 'times_seen' | 'impact'
@@ -197,6 +252,7 @@ function mergeOrigins(a: OriginCount[], b: OriginCount[]): OriginCount[] {
 function requestFromRow(r: Row): StoredRequest {
   return {
     id: Number(r.id),
+    backend: String(r.backend),
     environment: String(r.environment),
     release: (r.release as string | null) ?? null,
     name: String(r.name),
@@ -212,6 +268,7 @@ function issueFromRow(r: Row): Issue {
   const origins = JSON.parse(String(r.origins_json)) as OriginCount[]
   return {
     id: Number(r.id),
+    backend: String(r.backend),
     environment: String(r.environment),
     kind: r.kind as Issue['kind'],
     severity: r.severity as Issue['severity'],
@@ -233,17 +290,53 @@ function issueFromRow(r: Row): Issue {
 
 export class Project extends DurableObject<Env> {
   private readonly sql: SqlStorage
-  /** Environment and release pairs already recorded, so most envelopes skip the write. */
+  /** Backend, environment and release triples already recorded, so most envelopes skip the write. */
   private readonly knownReleases = new Set<string>()
+  /** The backends, oldest first: read on every envelope, so kept in memory. */
+  private backendRows: BackendRow[] = []
+  /** When each backend last sent anything; stored at most hourly (rows written are scarce). */
+  private readonly lastSeen = new Map<string, string>()
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
     this.sql = ctx.storage.sql
     ctx.blockConcurrencyWhile(async () => {
+      this.migrate()
       this.sql.exec(SCHEMA)
+      this.loadBackends()
     })
     // Keep-alive pings are answered without waking the object.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'))
+  }
+
+  /** A project from before backends: its key becomes its first backend (see `REKEYED`). */
+  private migrate() {
+    const columns = this.sql.exec<{ name: string }>('PRAGMA table_info(issues)').toArray()
+    if (columns.length === 0 || columns.some((c) => c.name === 'backend')) return
+    const id = randomHex(4)
+    this.ctx.storage.transactionSync(() => {
+      for (const table of Object.keys(REKEYED)) this.sql.exec(`ALTER TABLE ${table} RENAME TO ${table}_v1`)
+      this.sql.exec('DROP INDEX IF EXISTS issues_recent')
+      // A constant default adds the column without rewriting the rows; inserts always set it.
+      this.sql.exec(`ALTER TABLE requests ADD COLUMN backend TEXT NOT NULL DEFAULT '${id}'`)
+      this.sql.exec(SCHEMA)
+      for (const [table, columns] of Object.entries(REKEYED)) {
+        this.sql.exec(`INSERT INTO ${table} (backend, ${columns}) SELECT ?, ${columns} FROM ${table}_v1`, id)
+        this.sql.exec(`DROP TABLE ${table}_v1`)
+      }
+      const key = this.meta('key')
+      if (key) {
+        this.sql.exec(
+          'INSERT INTO backends (id, name, key, orm, created_at) VALUES (?, ?, ?, ?, ?)',
+          id,
+          this.meta('name') ?? 'Backend',
+          key,
+          this.meta('orm'),
+          this.meta('created_at') ?? new Date().toISOString(),
+        )
+      }
+      this.sql.exec("DELETE FROM meta WHERE key IN ('key', 'orm')")
+    })
   }
 
   // ───────────────────────────── identity and settings ─────────────────────────────
@@ -262,39 +355,39 @@ export class Project extends DurableObject<Env> {
     return { ...DEFAULT_SETTINGS, ...(raw ? (JSON.parse(raw) as Partial<ProjectSettings>) : {}) }
   }
 
-  /** Set up a new project. Fails if this object already is one. */
-  async create(id: string, name: string, key: string): Promise<void> {
+  /** Set up a new project, with no backend yet. Fails if this object already is one. */
+  async create(id: string, name: string): Promise<void> {
     if (this.meta('id')) throw new Error('Project already exists')
     this.ctx.storage.transactionSync(() => {
       this.setMeta('id', id)
       this.setMeta('name', name)
-      this.setMeta('key', key)
       this.setMeta('created_at', new Date().toISOString())
     })
     // Daily housekeeping (old statistics).
     await this.ctx.storage.setAlarm(Date.now() + 24 * HOUR_MS)
   }
 
-  /** `null` when this object isn't a project. `origin` is the backend's public URL, for the DSN. */
+  /** `null` when this object isn't a project. `origin` is the backend's public URL, for the DSNs. */
   async info(origin: string): Promise<ProjectInfo | null> {
     const id = this.meta('id')
-    const key = this.meta('key')
-    if (!id || !key) return null
+    if (!id) return null
     const url = new URL(origin)
     return {
       id,
       name: this.meta('name') ?? id,
-      dsn: `${url.protocol}//${key}@${url.host}/${id}`,
-      orm: (this.meta('orm') as Orm | null) ?? null,
+      backends: this.backendRows.map(
+        (b): Backend => ({
+          id: b.id,
+          name: b.name,
+          dsn: b.key ? `${url.protocol}//${b.key}@${url.host}/${id}` : null,
+          orm: b.orm,
+          createdAt: b.createdAt,
+          lastSeen: this.lastSeen.get(b.id) ?? b.lastSeen,
+        }),
+      ),
       settings: this.settings(),
       createdAt: this.meta('created_at') ?? '',
     }
-  }
-
-  /** Replace the DSN key: SDKs still using the old one are refused from now on. */
-  async setKey(key: string): Promise<void> {
-    if (!this.meta('id')) throw new Error('No such project')
-    this.setMeta('key', key)
   }
 
   async rename(name: string): Promise<void> {
@@ -316,33 +409,109 @@ export class Project extends DurableObject<Env> {
     return next
   }
 
+  // ───────────────────────────── backends ─────────────────────────────
+
+  private loadBackends() {
+    this.backendRows = this.sql
+      .exec('SELECT * FROM backends ORDER BY created_at, id')
+      .toArray()
+      .map((r) => ({
+        id: String(r.id),
+        name: String(r.name),
+        key: (r.key as string | null) ?? null,
+        orm: (r.orm as Orm | null) ?? null,
+        createdAt: String(r.created_at),
+        lastSeen: (r.last_seen as string | null) ?? null,
+      }))
+  }
+
+  private nameTaken(name: string, except?: string): boolean {
+    return this.backendRows.some((b) => b.id !== except && b.name.toLowerCase() === name.toLowerCase())
+  }
+
+  private keyTaken(key: string, except?: string): boolean {
+    return this.backendRows.some((b) => b.id !== except && b.key === key)
+  }
+
+  /** Connect a backend: it gets its own DSN key. */
+  async addBackend(name: string, key: string): Promise<BackendChange> {
+    if (!this.meta('id')) return { ok: false, status: 404, message: 'No such project.' }
+    if (this.backendRows.length >= MAX_BACKENDS) {
+      return { ok: false, status: 409, message: `A project has at most ${MAX_BACKENDS} backends.` }
+    }
+    if (this.nameTaken(name)) return { ok: false, status: 409, message: `There’s already a backend called “${name}”.` }
+    if (this.keyTaken(key)) return { ok: false, status: 409, message: 'Another backend uses that key.' }
+    const id = randomHex(4)
+    this.sql.exec('INSERT INTO backends (id, name, key, created_at) VALUES (?, ?, ?, ?)', id, name, key, new Date().toISOString())
+    this.loadBackends()
+    return { ok: true, id }
+  }
+
+  async renameBackend(id: string, name: string): Promise<BackendChange> {
+    if (!this.backendRows.some((b) => b.id === id)) return { ok: false, status: 404, message: 'No such backend.' }
+    if (this.nameTaken(name, id)) return { ok: false, status: 409, message: `There’s already a backend called “${name}”.` }
+    this.sql.exec('UPDATE backends SET name = ? WHERE id = ?', name, id)
+    this.loadBackends()
+    return { ok: true, id }
+  }
+
+  /**
+   * Replace a backend's DSN key (`null`: disconnect it). SDKs still using the old one are
+   * refused from now on; its history stays.
+   */
+  async setBackendKey(id: string, key: string | null): Promise<BackendChange> {
+    if (!this.backendRows.some((b) => b.id === id)) return { ok: false, status: 404, message: 'No such backend.' }
+    if (key && this.keyTaken(key, id)) return { ok: false, status: 409, message: 'Another backend uses that key.' }
+    this.sql.exec('UPDATE backends SET key = ? WHERE id = ?', key, id)
+    this.loadBackends()
+    return { ok: true, id }
+  }
+
+  /** The backend an SDK's key belongs to; every key is compared, in constant time. */
+  private backendFor(key: string): BackendRow | null {
+    let found: BackendRow | null = null
+    for (const b of this.backendRows) if (b.key && sameSecret(key, b.key)) found = b
+    return found
+  }
+
+  private seen(b: BackendRow) {
+    const now = new Date().toISOString()
+    this.lastSeen.set(b.id, now)
+    if (b.lastSeen && b.lastSeen > new Date(Date.now() - HOUR_MS).toISOString()) return
+    this.sql.exec('UPDATE backends SET last_seen = ? WHERE id = ?', now, b.id)
+    b.lastSeen = now
+  }
+
   // ───────────────────────────── ingest ─────────────────────────────
 
   /** One SDK envelope: evaluate, remember, broadcast. Answers with the settings the SDK filters by. */
   async ingest(key: string, body: string): Promise<IngestResult> {
-    const expected = this.meta('key')
-    if (!expected || !sameSecret(key, expected)) {
-      return { ok: false, status: 401, message: 'Unknown project or key: check the SDK’s DSN.' }
-    }
+    const backend = this.backendFor(key)
+    if (!backend) return { ok: false, status: 401, message: 'Unknown project or key: check the SDK’s DSN.' }
     const settings = this.settings()
     let d: Digest
     try {
-      d = digest(body, (this.meta('orm') as Orm | null) ?? null, settings)
+      d = digest(body, backend.orm, settings)
     } catch (e) {
       return { ok: false, status: 400, message: String(e) }
     }
-    if (d.orm) this.setMeta('orm', d.orm)
+    if (d.orm && d.orm !== backend.orm) {
+      this.sql.exec('UPDATE backends SET orm = ? WHERE id = ?', d.orm, backend.id)
+      backend.orm = d.orm
+    }
+    this.seen(backend)
 
+    const b = backend.id
     const live: LiveEvent[] = []
     this.ctx.storage.transactionSync(() => {
       for (const txn of d.transactions) {
         const at = iso(txn.start)
-        const findings = this.recordFindings(d, txn, at, live)
-        live.push({ type: 'transaction', ...this.recordRequest(d, txn, at, findings) })
+        const findings = this.recordFindings(b, d, txn, at, live)
+        live.push({ type: 'transaction', ...this.recordRequest(b, d, txn, at, findings) })
       }
-      this.recordStats(d)
-      this.recordRelease(d)
-      this.recordSources(d.sources)
+      this.recordStats(b, d)
+      this.recordRelease(b, d)
+      this.recordSources(b, d.sources)
     })
     // One throughput event per reported period (an envelope may carry several).
     const periods = new Map<number, typeof d.stats>()
@@ -350,6 +519,7 @@ export class Project extends DurableObject<Env> {
     for (const [start, rows] of periods) {
       live.push({
         type: 'throughput',
+        backend: b,
         environment: d.environment,
         at: iso(start),
         periodMs: rows[0].periodMs,
@@ -363,11 +533,11 @@ export class Project extends DurableObject<Env> {
   }
 
   /** Fold one request's findings into their issues; returns them for the live feed. */
-  private recordFindings(d: Digest, txn: DigestedTransaction, at: string, live: LiveEvent[]): LiveFinding[] {
+  private recordFindings(b: string, d: Digest, txn: DigestedTransaction, at: string, live: LiveEvent[]): LiveFinding[] {
     if (txn.findings.length === 0) return []
     const statements = JSON.stringify(trimStatements(txn.statements, EVENT_STATEMENTS, STORED_SQL))
     return txn.findings.map((f) => {
-      const { issue, isNew, regressed } = this.upsertIssue(d, txn, at, f)
+      const { issue, isNew, regressed } = this.upsertIssue(b, d, txn, at, f)
       this.sql.exec(
         `INSERT INTO issue_events (issue_id, at, release, transaction_name, duration_ms, finding_json, statements_json)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -390,20 +560,26 @@ export class Project extends DurableObject<Env> {
     })
   }
 
-  private upsertIssue(d: Digest, txn: DigestedTransaction, at: string, f: Found): { issue: Issue; isNew: boolean; regressed: boolean } {
+  private upsertIssue(b: string, d: Digest, txn: DigestedTransaction, at: string, f: Found): { issue: Issue; isNew: boolean; regressed: boolean } {
     const finding: CaptureFinding = f.finding
     const fix = finding.fix ? JSON.stringify(finding.fix) : null
     const current = this.sql
-      .exec('SELECT id, status, severity, origins_json FROM issues WHERE environment = ? AND key = ?', d.environment, finding.id)
+      .exec(
+        'SELECT id, status, severity, origins_json FROM issues WHERE backend = ? AND environment = ? AND key = ?',
+        b,
+        d.environment,
+        finding.id,
+      )
       .toArray()[0]
     if (!current) {
       const row = this.sql
         .exec(
-          `INSERT INTO issues (environment, key, kind, severity, title, detail, fingerprint, sample_sql, parent_sql,
+          `INSERT INTO issues (backend, environment, key, kind, severity, title, detail, fingerprint, sample_sql, parent_sql,
              transaction_name, origins_json, fix_json, status, regressed, times_seen, occurrences, impact_ms,
              first_seen, last_seen, first_release, last_release)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unresolved', 0, 1, ?, ?, ?, ?, ?, ?)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unresolved', 0, 1, ?, ?, ?, ?, ?, ?)
            RETURNING *`,
+          b,
           d.environment,
           finding.id,
           finding.kind,
@@ -460,12 +636,13 @@ export class Project extends DurableObject<Env> {
   }
 
   /** One row per request: the query history the dashboard lists and reports on. */
-  private recordRequest(d: Digest, txn: DigestedTransaction, at: string, findings: LiveFinding[]): StoredRequest {
+  private recordRequest(b: string, d: Digest, txn: DigestedTransaction, at: string, findings: LiveFinding[]): StoredRequest {
     const statements = trimStatements(txn.statements, HISTORY_STATEMENTS, HISTORY_SQL)
     const { id } = this.sql
       .exec<{ id: number }>(
-        `INSERT INTO requests (environment, release, name, at, duration_ms, db_ms, statements_json, findings_json)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        `INSERT INTO requests (backend, environment, release, name, at, duration_ms, db_ms, statements_json, findings_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+        b,
         d.environment,
         d.release,
         txn.name,
@@ -479,6 +656,7 @@ export class Project extends DurableObject<Env> {
     if (id % HISTORY_TRIM_EVERY === 0) this.sql.exec('DELETE FROM requests WHERE id <= ?', id - HISTORY_REQUESTS)
     return {
       id,
+      backend: b,
       environment: d.environment,
       release: d.release,
       name: txn.name,
@@ -490,16 +668,18 @@ export class Project extends DurableObject<Env> {
     }
   }
 
-  private recordStats(d: Digest) {
+  private recordStats(b: string, d: Digest) {
     const now = new Date().toISOString()
     // Rows written are the free plan's scarcest resource: a known shape's `last_seen`
     // is refreshed at most hourly (a skipped upsert writes nothing).
     const stale = new Date(Date.now() - HOUR_MS).toISOString()
     for (const s of d.stats) {
       this.sql.exec(
-        `INSERT INTO query_shapes (environment, fingerprint, sample_sql, kind, tables_json, last_seen) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (environment, fingerprint) DO UPDATE SET last_seen = excluded.last_seen
+        `INSERT INTO query_shapes (backend, environment, fingerprint, sample_sql, kind, tables_json, last_seen)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (backend, environment, fingerprint) DO UPDATE SET last_seen = excluded.last_seen
          WHERE query_shapes.last_seen < ?`,
+        b,
         d.environment,
         s.fingerprint,
         clip(s.sampleSql, STORED_SQL),
@@ -509,11 +689,12 @@ export class Project extends DurableObject<Env> {
         stale,
       )
       this.sql.exec(
-        `INSERT INTO query_stats (environment, fingerprint, hour, calls, total_ms, max_ms, errors, rows)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (environment, fingerprint, hour) DO UPDATE SET
+        `INSERT INTO query_stats (backend, environment, fingerprint, hour, calls, total_ms, max_ms, errors, rows)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (backend, environment, fingerprint, hour) DO UPDATE SET
            calls = calls + excluded.calls, total_ms = total_ms + excluded.total_ms,
            max_ms = MAX(max_ms, excluded.max_ms), errors = errors + excluded.errors, rows = rows + excluded.rows`,
+        b,
         d.environment,
         s.fingerprint,
         Math.floor(s.start / HOUR_MS),
@@ -526,24 +707,31 @@ export class Project extends DurableObject<Env> {
     }
   }
 
-  /** When each environment first reported each release: the baselines of `regressions`. */
-  private recordRelease(d: Digest) {
+  /** When each backend's environment first reported each release: the baselines of `regressions`. */
+  private recordRelease(b: string, d: Digest) {
     if (!d.release) return
-    const key = JSON.stringify([d.environment, d.release])
+    const key = JSON.stringify([b, d.environment, d.release])
     if (this.knownReleases.has(key)) return
-    this.sql.exec('INSERT OR IGNORE INTO releases (environment, release, first_seen) VALUES (?, ?, ?)', d.environment, d.release, Date.now())
+    this.sql.exec(
+      'INSERT OR IGNORE INTO releases (backend, environment, release, first_seen) VALUES (?, ?, ?, ?)',
+      b,
+      d.environment,
+      d.release,
+      Date.now(),
+    )
     this.knownReleases.add(key)
   }
 
   /** The latest code around each origin; unchanged code writes nothing. */
-  private recordSources(sources: SourceSnippet[]) {
+  private recordSources(b: string, sources: SourceSnippet[]) {
     const now = new Date().toISOString()
     for (const s of sources) {
       this.sql.exec(
-        `INSERT INTO sources (origin, first_line, lines_json, updated_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT (origin) DO UPDATE SET first_line = excluded.first_line, lines_json = excluded.lines_json,
+        `INSERT INTO sources (backend, origin, first_line, lines_json, updated_at) VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (backend, origin) DO UPDATE SET first_line = excluded.first_line, lines_json = excluded.lines_json,
            updated_at = excluded.updated_at
          WHERE sources.lines_json != excluded.lines_json OR sources.first_line != excluded.first_line`,
+        b,
         s.origin,
         s.firstLine,
         JSON.stringify(s.lines),
@@ -555,7 +743,7 @@ export class Project extends DurableObject<Env> {
   async alarm(): Promise<void> {
     const cutoff = Math.floor(Date.now() / HOUR_MS) - STATS_RETENTION_HOURS
     this.sql.exec('DELETE FROM query_stats WHERE hour < ?', cutoff)
-    this.sql.exec('DELETE FROM sources WHERE origin NOT IN (SELECT origin FROM sources ORDER BY updated_at DESC LIMIT ?)', SOURCES_KEPT)
+    this.sql.exec('DELETE FROM sources WHERE rowid NOT IN (SELECT rowid FROM sources ORDER BY updated_at DESC LIMIT ?)', SOURCES_KEPT)
     this.sql.exec('DELETE FROM requests WHERE at < ?', new Date(Date.now() - HISTORY_DAYS * 24 * HOUR_MS).toISOString())
     await this.ctx.storage.setAlarm(Date.now() + 24 * HOUR_MS)
   }
@@ -575,11 +763,13 @@ export class Project extends DurableObject<Env> {
         `SELECT * FROM issues
          WHERE (?1 IS NULL OR environment = ?1) AND (?2 IS NULL OR status = ?2)
            AND (?3 IS NULL OR title LIKE ?3 OR sample_sql LIKE ?3 OR origins_json LIKE ?3 OR transaction_name LIKE ?3)
+           AND (?5 IS NULL OR backend = ?5)
          ORDER BY ${order} LIMIT ?4`,
         q.environment ?? null,
         q.status ?? null,
         search,
         Math.min(Math.max(q.limit ?? 100, 1), 500),
+        q.backend ?? null,
       )
       .toArray()
       .map(issueFromRow)
@@ -639,27 +829,34 @@ export class Project extends DurableObject<Env> {
       }))
   }
 
-  /** Statement shapes by total time over the last `hours`, or one shape when `fingerprint` is set. */
-  async queries(environment: string | null, hours: number, limit = 50, fingerprint: string | null = null): Promise<QueryShape[]> {
+  /** Statement shapes (per backend) by total time over the last `hours`, or one shape when `fingerprint` is set. */
+  async queries(
+    q: { backend: string | null; environment: string | null; fingerprint: string | null },
+    hours: number,
+    limit = 50,
+  ): Promise<QueryShape[]> {
     const since = Math.floor(Date.now() / HOUR_MS) - Math.min(Math.max(hours, 1), STATS_RETENTION_HOURS) + 1
     return this.sql
       .exec(
-        `SELECT s.fingerprint, MIN(q.sample_sql) AS sample_sql, MIN(q.kind) AS kind, MIN(q.tables_json) AS tables_json,
+        `SELECT s.backend, s.fingerprint, MIN(q.sample_sql) AS sample_sql, MIN(q.kind) AS kind, MIN(q.tables_json) AS tables_json,
                 SUM(s.calls) AS calls, SUM(s.total_ms) AS total_ms, MAX(s.max_ms) AS max_ms, SUM(s.errors) AS errors,
                 SUM(s.rows) AS rows, MAX(q.last_seen) AS last_seen
-         FROM query_stats s JOIN query_shapes q USING (environment, fingerprint)
+         FROM query_stats s JOIN query_shapes q USING (backend, environment, fingerprint)
          WHERE (?1 IS NULL OR s.environment = ?1) AND s.hour >= ?2 AND (?4 IS NULL OR s.fingerprint = ?4)
-         GROUP BY s.fingerprint ORDER BY SUM(s.total_ms) DESC LIMIT ?3`,
-        environment,
+           AND (?5 IS NULL OR s.backend = ?5)
+         GROUP BY s.backend, s.fingerprint ORDER BY SUM(s.total_ms) DESC LIMIT ?3`,
+        q.environment,
         since,
         Math.min(Math.max(limit, 1), 500),
-        fingerprint,
+        q.fingerprint,
+        q.backend,
       )
       .toArray()
       .map((r) => {
         const calls = Number(r.calls)
         const totalMs = Number(r.total_ms)
         return {
+          backend: String(r.backend),
           fingerprint: String(r.fingerprint),
           sampleSql: String(r.sample_sql),
           kind: r.kind as QueryShape['kind'],
@@ -683,23 +880,25 @@ export class Project extends DurableObject<Env> {
     const projectId = this.meta('id')
     if (!detail || !projectId) return null
     const [latest] = await this.events(id, 1)
+    const backend = this.backendRows.find((b) => b.id === detail.issue.backend)
     return {
-      project: { id: projectId, name: this.meta('name') ?? projectId, orm: (this.meta('orm') as Orm | null) ?? null },
+      project: { id: projectId, name: this.meta('name') ?? projectId },
+      backend: backend ? { id: backend.id, name: backend.name, orm: backend.orm } : null,
       detail,
       latest: latest ?? null,
-      sources: this.sourcesFor(detail.origins.slice(0, SOURCES_PER_ISSUE).map((o) => o.origin)),
+      sources: this.sourcesFor(detail.issue.backend, detail.origins.slice(0, SOURCES_PER_ISSUE).map((o) => o.origin)),
     }
   }
 
-  /** The code around one line, when the SDK sent it. */
-  async source(origin: string): Promise<SourceSnippet | null> {
-    return this.sourcesFor([origin])[0] ?? null
+  /** The code around one line of a backend, when its SDK sent it. */
+  async source(backend: string, origin: string): Promise<SourceSnippet | null> {
+    return this.sourcesFor(backend, [origin])[0] ?? null
   }
 
-  private sourcesFor(origins: string[]): SourceSnippet[] {
+  private sourcesFor(backend: string, origins: string[]): SourceSnippet[] {
     if (origins.length === 0) return []
     return this.sql
-      .exec(`SELECT * FROM sources WHERE origin IN (${origins.map(() => '?').join(', ')})`, ...origins)
+      .exec(`SELECT * FROM sources WHERE backend = ? AND origin IN (${origins.map(() => '?').join(', ')})`, backend, ...origins)
       .toArray()
       .map((r) => ({ origin: String(r.origin), firstLine: Number(r.first_line), lines: JSON.parse(String(r.lines_json)) as string[] }))
       .sort((a, b) => origins.indexOf(a.origin) - origins.indexOf(b.origin))
@@ -722,10 +921,17 @@ export class Project extends DurableObject<Env> {
 
   // ───────────────────────────── regressions ─────────────────────────────
 
-  /** Statement shapes that got slower or started failing in `environment` (see analysis/regressions.ts). */
-  async regressions(environment: string, nowMs = Date.now()): Promise<RegressionReport> {
+  /**
+   * Statement shapes that got slower or started failing in one backend's `environment` (see
+   * analysis/regressions.ts). Backends deploy on their own, so each is judged against its own releases.
+   */
+  async regressions(backend: string, environment: string, nowMs = Date.now()): Promise<RegressionReport> {
     const releases = this.sql
-      .exec('SELECT release, first_seen FROM releases WHERE environment = ? ORDER BY first_seen DESC LIMIT 2', environment)
+      .exec(
+        'SELECT release, first_seen FROM releases WHERE backend = ? AND environment = ? ORDER BY first_seen DESC LIMIT 2',
+        backend,
+        environment,
+      )
       .toArray()
       .map((r): ReleaseSeen => ({ release: String(r.release), firstSeenMs: Number(r.first_seen) }))
     const c = comparison(releases, nowMs)
@@ -740,13 +946,14 @@ export class Project extends DurableObject<Env> {
            SUM(CASE WHEN s.hour >= ?4 THEN s.total_ms ELSE 0 END) AS a_ms,
            SUM(CASE WHEN s.hour >= ?4 THEN s.errors ELSE 0 END) AS a_errors,
            SUM(CASE WHEN s.hour >= ?4 THEN 1 ELSE 0 END) AS a_hours
-         FROM query_stats s JOIN query_shapes q USING (environment, fingerprint)
-         WHERE s.environment = ?1 AND s.hour >= ?2 AND (s.hour < ?3 OR s.hour >= ?4)
+         FROM query_stats s JOIN query_shapes q USING (backend, environment, fingerprint)
+         WHERE s.environment = ?1 AND s.hour >= ?2 AND (s.hour < ?3 OR s.hour >= ?4) AND s.backend = ?5
          GROUP BY s.fingerprint`,
         environment,
         c.beforeFrom,
         c.beforeTo,
         c.afterFrom,
+        backend,
       )
       .toArray()
       .map(
@@ -761,17 +968,19 @@ export class Project extends DurableObject<Env> {
       )
     const regressions: Regression[] = judge(shapes)
       .slice(0, REGRESSIONS)
-      .map((r, i) => ({ ...r, latest: i < REGRESSION_LINKS ? this.latestRun(environment, r.fingerprint) : null }))
-    return { environment, baseline: c.baseline, regressions }
+      .map((r, i) => ({ ...r, latest: i < REGRESSION_LINKS ? this.latestRun(backend, environment, r.fingerprint) : null }))
+    return { backend, environment, baseline: c.baseline, regressions }
   }
 
   /** The newest stored run of a statement shape among the latest requests, to link to. */
-  private latestRun(environment: string, fingerprint: string): { request: number; seq: number } | null {
+  private latestRun(backend: string, environment: string, fingerprint: string): { request: number; seq: number } | null {
     const r = this.sql
       .exec(
         `SELECT id, statements_json FROM requests
-         WHERE environment = ? AND id > (SELECT COALESCE(MAX(id), 0) - ? FROM requests) AND instr(statements_json, ?) > 0
+         WHERE backend = ? AND environment = ? AND id > (SELECT COALESCE(MAX(id), 0) - ? FROM requests)
+           AND instr(statements_json, ?) > 0
          ORDER BY id DESC LIMIT 1`,
+        backend,
         environment,
         LINK_SEARCH_REQUESTS,
         `"fingerprint":${JSON.stringify(fingerprint)}`,
@@ -790,6 +999,13 @@ export class Project extends DurableObject<Env> {
       )
       .toArray()
       .map((r) => r.environment)
+  }
+
+  /** Each backend and environment with statistics: what regressions are judged per. */
+  async streams(): Promise<{ backend: string; environment: string }[]> {
+    return this.sql
+      .exec<{ backend: string; environment: string }>('SELECT DISTINCT backend, environment FROM query_shapes ORDER BY 1, 2')
+      .toArray()
   }
 
   // ───────────────────────────── live feed ─────────────────────────────

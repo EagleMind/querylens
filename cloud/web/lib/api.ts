@@ -74,8 +74,15 @@ export const api = {
   savePublicUrl: (publicUrl: string | null) => call<BackendSettings>('PUT', 'settings', { publicUrl }),
 
   projects: () => call<Project[]>('GET', 'projects'),
-  /** A new DSN key: the one given, or a generated one. */
-  setKey: (id: string, key?: string) => call<Project>('PUT', `projects/${id}/key`, key ? { key } : {}),
+  renameProject: (id: string, name: string) => call<Project>('PATCH', `projects/${id}`, { name }),
+  /** Connect a backend to a project: it gets its own DSN. */
+  addBackend: (id: string, name: string) => call<Project>('POST', `projects/${id}/backends`, { name }),
+  renameBackend: (id: string, backend: string, name: string) => call<Project>('PATCH', `projects/${id}/backends/${backend}`, { name }),
+  /** A new DSN key for a backend: the one given, or a generated one. Reconnects a disconnected backend. */
+  setBackendKey: (id: string, backend: string, key?: string) =>
+    call<Project>('PUT', `projects/${id}/backends/${backend}/key`, key ? { key } : {}),
+  /** Refuse a backend's SDKs from now on; its history stays. */
+  disconnectBackend: (id: string, backend: string) => call<Project>('DELETE', `projects/${id}/backends/${backend}/key`),
   issues: (id: string, p: { status: IssueStatus; limit: number }) => call<Issue[]>('GET', `projects/${id}/issues${query(p)}`),
   setIssueStatus: (id: string, issue: number, status: IssueStatus) => call<IssueDetail>('PATCH', `projects/${id}/issues/${issue}`, { status }),
   createProject: (name: string) => call<Project>('POST', 'projects', { name }),
@@ -90,14 +97,16 @@ export const api = {
   /** Write the AI rewrite (reused while the issue and its code are unchanged, unless `refresh`). */
   suggest: (id: string, issue: number, refresh = false) =>
     call<SuggestionState>('POST', `projects/${id}/issues/${issue}/suggestion${query({ refresh: refresh ? 1 : undefined })}`),
-  /** Statements that got slower or started failing, per environment (or in one). */
-  regressions: (id: string, environment?: string) => call<RegressionReport[]>('GET', `projects/${id}/regressions${query({ environment })}`),
-  /** The code around `origin` (`file:line`) when the SDK sends source context; `null` otherwise. */
-  source: (id: string, origin: string) => call<SourceSnippet | null>('GET', `projects/${id}/source${query({ origin })}`),
+  /** Statements that got slower or started failing, per backend and environment (or in one). */
+  regressions: (id: string, p: { backend?: string; environment?: string }) =>
+    call<RegressionReport[]>('GET', `projects/${id}/regressions${query(p)}`),
+  /** The code around `origin` (`file:line`) when the backend's SDK sends source context; `null` otherwise. */
+  source: (id: string, backend: string, origin: string) =>
+    call<SourceSnippet | null>('GET', `projects/${id}/source${query({ backend, origin })}`),
   /** A Live filter drafted from a description. */
   draftFilter: (req: DraftFilterRequest) => call<DraftFilterReply>('POST', 'filters/draft', req),
-  /** One statement shape's totals over the last `hours`; `null` when it has none. */
-  shape: (id: string, p: { fingerprint: string; environment: string; hours: number }) =>
+  /** One statement shape's totals in one backend over the last `hours`; `null` when it has none. */
+  shape: (id: string, p: { backend: string; fingerprint: string; environment: string; hours: number }) =>
     call<QueryShape[]>('GET', `projects/${id}/queries${query({ ...p, limit: 1 })}`).then((rows) => rows[0] ?? null),
 }
 

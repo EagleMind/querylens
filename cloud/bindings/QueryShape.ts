@@ -4,4 +4,4 @@ import type { StatementKind } from "./StatementKind";
 /**
  * A statement shape's totals over a period, from the SDKs' statistics.
  */
-export type QueryShape = { fingerprint: string, sampleSql: string, kind: StatementKind, tables: Array<string>, calls: number, totalMs: number, meanMs: number, maxMs: number, errors: number, rows: number, lastSeen: string, };
+export type QueryShape = { backend: string, fingerprint: string, sampleSql: string, kind: StatementKind, tables: Array<string>, calls: number, totalMs: number, meanMs: number, maxMs: number, errors: number, rows: number, lastSeen: string, };

@@ -1,5 +1,5 @@
-// The Live page: the query history and its live tail, for the project and environment chosen
-// in the sidebar. Grouped by query shape (one row per fingerprint) or one row per run. A
+// The Live page: the query history and its live tail, for the project, backend and environment
+// chosen in the sidebar. Grouped by query shape (one row per fingerprint) or one row per run. A
 // selected query's report opens beside the list on wide screens, and in its place on narrow.
 import { BellOffIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon } from 'lucide-react'
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
@@ -46,7 +46,7 @@ import {
   summarizeSql,
 } from '@/lib/queries'
 import { type QueryRef, href, navigate, onLinkClick } from '@/lib/router'
-import { ALL, type Scope, scopedProject } from '@/lib/scope'
+import { ALL, type Scope, scopedBackend } from '@/lib/scope'
 import { cn } from '@/lib/utils'
 import { QueryPage, QueryPanel } from '@/pages/Query'
 
@@ -172,9 +172,20 @@ function QueryCell({ q, findings, muted, failed }: { q: LiveQuery; findings: Liv
 /** Selected: a bar of the brand colour at the row's start, and a wash. */
 const SELECTED_ROW = 'bg-primary/[0.07] shadow-[inset_2px_0_0_var(--primary)] hover:bg-primary/10'
 
-function RunRow({ q, project, showProject, selected }: { q: LiveQuery; project: Project | undefined; showProject: boolean; selected: boolean }) {
+interface RowProps {
+  project: Project
+  /** Which backend sent it, when the list shows several. */
+  showBackend: boolean
+  selected: boolean
+}
+
+function BackendName({ project, id }: { project: Project; id: string }) {
+  return <span className="block truncate text-xs text-muted-foreground">{project.backends.find((b) => b.id === id)?.name ?? 'Unknown backend'}</span>
+}
+
+function RunRow({ q, project, showBackend, selected }: RowProps & { q: LiveQuery }) {
   const s = q.statement
-  const slow = project ? s.durationMs >= project.settings.slowMs : false
+  const slow = s.durationMs >= project.settings.slowMs
   return (
     <TableRow
       className={cn('cursor-pointer', justArrived(q) && 'animate-arrive', selected && SELECTED_ROW)}
@@ -189,11 +200,11 @@ function RunRow({ q, project, showProject, selected }: { q: LiveQuery; project: 
         <span className="block truncate text-xs" title={q.request.name}>
           {q.request.name}
         </span>
-        {showProject && <span className="block truncate text-xs text-muted-foreground">{project?.name ?? 'Unknown project'}</span>}
+        {showBackend && <BackendName project={project} id={q.request.backend} />}
       </TableCell>
       <TableCell className={cn('text-right text-xs tabular', slow && 'font-medium')}>
         <span className="inline-flex items-center justify-end gap-1.5">
-          {slow && project && <SlowMark slowMs={project.settings.slowMs} />}
+          {slow && <SlowMark slowMs={project.settings.slowMs} />}
           {fmtMs(s.durationMs)}
         </span>
       </TableCell>
@@ -202,9 +213,9 @@ function RunRow({ q, project, showProject, selected }: { q: LiveQuery; project: 
   )
 }
 
-function ShapeRow({ g, project, showProject, selected }: { g: QueryGroup; project: Project | undefined; showProject: boolean; selected: boolean }) {
+function ShapeRow({ g, project, showBackend, selected }: RowProps & { g: QueryGroup }) {
   const q = g.latest
-  const slow = project ? g.maxMs >= project.settings.slowMs : false
+  const slow = g.maxMs >= project.settings.slowMs
   const others = g.requests.length - 1
   return (
     <TableRow
@@ -223,12 +234,12 @@ function ShapeRow({ g, project, showProject, selected }: { g: QueryGroup; projec
           {q.request.name}
           {others > 0 && <span className="ml-1.5 rounded bg-muted px-1 py-px text-[11px] text-muted-foreground tabular">+{others}</span>}
         </span>
-        {showProject && <span className="block truncate text-xs text-muted-foreground">{project?.name ?? 'Unknown project'}</span>}
+        {showBackend && <BackendName project={project} id={q.request.backend} />}
       </TableCell>
       <TableCell className="text-right text-xs font-medium tabular">{fmtCount(g.runs)}</TableCell>
       <TableCell className={cn('hidden text-right text-xs tabular @md:table-cell', slow && 'font-medium')}>
         <span className="inline-flex items-center justify-end gap-1.5">
-          {slow && project && <SlowMark slowMs={project.settings.slowMs} />}
+          {slow && <SlowMark slowMs={project.settings.slowMs} />}
           {fmtMs(g.totalMs / g.runs)}
         </span>
       </TableCell>
@@ -236,23 +247,38 @@ function ShapeRow({ g, project, showProject, selected }: { g: QueryGroup; projec
   )
 }
 
-function Waiting({ projects }: { projects: Project[] }) {
+function Waiting({ project, backend }: { project: Project; backend: string }) {
+  const connected = project.backends.filter((b) => b.dsn && (backend === ALL || b.id === backend))
+  if (project.backends.length === 0) {
+    return (
+      <div className="mx-auto grid max-w-md justify-items-center gap-3 px-6 py-14 text-center text-sm">
+        <p className="text-base font-medium">Connect a backend</p>
+        <p className="text-muted-foreground">
+          {project.name} has no backend yet. Connect each service of the app; each gets its own DSN to give the SDK.
+        </p>
+        <Button size="sm" asChild>
+          <a href={href({ page: 'settings' })} onClick={onLinkClick}>
+            <PlusIcon /> Connect a backend
+          </a>
+        </Button>
+      </div>
+    )
+  }
   return (
     <div className="mx-auto grid max-w-2xl gap-4 px-6 py-14 text-sm">
       <div className="grid gap-1.5 text-center">
         <p className="text-base font-medium">Waiting for queries</p>
         <p className="text-muted-foreground">
-          Queries appear here as your app sends them. The SDK always sends requests with a problem, and a sample of the
-          others ({Math.round((projects[0]?.settings.liveSampleRate ?? 0.05) * 100)}% in production, all of them in
-          development).
+          Queries appear here as your backends send them. The SDK always sends requests with a problem, and a sample of
+          the others ({Math.round(project.settings.liveSampleRate * 100)}% in production, all of them in development).
         </p>
       </div>
-      {projects.map((p) => (
-        <div key={p.id} className="grid gap-1.5">
+      {connected.map((b) => (
+        <div key={b.id} className="grid gap-1.5">
           <p className="text-muted-foreground">
-            DSN for <span className="font-medium text-foreground">{p.name}</span>
+            DSN for <span className="font-medium text-foreground">{b.name}</span>
           </p>
-          <CodeBlock code={p.dsn} />
+          <CodeBlock code={b.dsn!} />
         </div>
       ))}
     </div>
@@ -273,14 +299,14 @@ function IconAction({ label, onClick, children }: { label: string; onClick: () =
 }
 
 export function LivePage({
-  projects,
+  project,
   feed,
   muted,
   scope,
   onScope,
   selected,
 }: {
-  projects: Project[]
+  project: Project
   feed: LiveFeed
   muted: Muted
   scope: Scope
@@ -302,8 +328,7 @@ export function LivePage({
     return () => clearInterval(timer)
   }, [])
 
-  const byId = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects])
-  const projectId = scopedProject(scope, projects)
+  const backend = scopedBackend(scope, project)
   const environment = scope.environment
   const custom = filters.find((f) => f.id === view.filter) ?? null
   const preset: Preset | null = custom ? null : (PRESETS.find((p) => p.id === view.filter)?.id ?? 'all')
@@ -312,22 +337,21 @@ export function LivePage({
   const scoped = useMemo(
     () =>
       flatten(requests)
-        .filter((q) => (projectId === ALL || q.request.projectId === projectId) && (environment === ALL || q.request.environment === environment))
+        .filter((q) => (backend === ALL || q.request.backend === backend) && (environment === ALL || q.request.environment === environment))
         .map((q) => applyMuted(q, muted.isMuted, view.mutedIssues)),
-    [requests, projectId, environment, view.mutedIssues, muted.isMuted],
+    [requests, backend, environment, view.mutedIssues, muted.isMuted],
   )
   /** Newest first: what "the last release" means when a filter is described. */
   const releases = useMemo(() => [...new Set(feed.requests.flatMap((r) => (r.release ? [r.release] : [])))], [feed.requests])
-  const scopeProjects = useMemo(() => (projectId === ALL ? projects : projects.filter((p) => p.id === projectId)), [projects, projectId])
   const searched = useMemo(() => scoped.filter((q) => matchesSearch(q, search)), [scoped, search])
-  const slowMs = (q: LiveQuery) => byId.get(q.request.projectId)?.settings.slowMs ?? Infinity
+  const slowMs = project.settings.slowMs
   const counts = useMemo(
-    () => Object.fromEntries(PRESETS.map((p) => [p.id, searched.filter((q) => matchesPreset(p.id, q, slowMs(q))).length])),
-    [searched, byId],
+    () => Object.fromEntries(PRESETS.map((p) => [p.id, searched.filter((q) => matchesPreset(p.id, q, slowMs)).length])),
+    [searched, slowMs],
   )
   const shown = useMemo(
-    () => searched.filter((q) => (custom ? matchesFilter(q, custom) : matchesPreset(preset ?? 'all', q, slowMs(q)))),
-    [searched, custom, preset, byId],
+    () => searched.filter((q) => (custom ? matchesFilter(q, custom) : matchesPreset(preset ?? 'all', q, slowMs))),
+    [searched, custom, preset, slowMs],
   )
   const groups = useMemo(() => (view.grouping === 'shape' ? groupByShape(shown) : []), [shown, view.grouping])
   useEffect(() => {
@@ -336,10 +360,10 @@ export function LivePage({
 
   const newWhilePaused = frozen ? feed.requests.findIndex((r) => r.id === frozen[0]?.id) : 0
   const pending = frozen ? (newWhilePaused === -1 ? feed.requests.length : newWhilePaused) : 0
-  const showProject = projectId === ALL && projects.length > 1
-  const filtered = search.trim() !== '' || view.filter !== 'all' || environment !== ALL || projectId !== ALL
+  const showBackend = backend === ALL && project.backends.length > 1
+  const filtered = search.trim() !== '' || view.filter !== 'all' || environment !== ALL || backend !== ALL
 
-  const scopeIds = projectId === ALL ? projects.map((p) => p.id) : [projectId]
+  const scopeIds = [project.id]
   const older = feed.loaded && feed.hasOlder(scopeIds)
   const [loadingOlder, setLoadingOlder] = useState(false)
   const [olderError, setOlderError] = useState<unknown>(null)
@@ -374,17 +398,17 @@ export function LivePage({
   const selectedShape = useMemo(() => {
     if (!selected) return null
     const q = flatten(requests).find((x) => x.request.projectId === selected.project && x.request.id === selected.request && x.ref.seq === selected.seq)
-    return q ? groupKey(selected.project, q.statement.fingerprint) : null
+    return q ? groupKey(q.request, q.statement.fingerprint) : null
   }, [selected, requests])
 
   // On a narrow screen the report takes the list's place; the list keeps its state meanwhile.
-  if (selected && !wide) return <QueryPage at={selected} projects={projects} requests={feed.requests} muted={muted} />
+  if (selected && !wide) return <QueryPage at={selected} projects={[project]} requests={feed.requests} muted={muted} />
   const rows = view.grouping === 'shape' ? groups.length : shown.length
   const noun = view.grouping === 'shape' ? (rows === 1 ? 'query shape' : 'query shapes') : rows === 1 ? 'query' : 'queries'
 
   const list = (
     <div className="grid min-w-0 content-start gap-4">
-      <Regressions projects={scopeProjects} environment={environment === ALL ? null : environment} />
+      <Regressions project={project} backend={backend === ALL ? null : backend} environment={environment === ALL ? null : environment} />
 
       {/* One frame for the list and the selected query's report: the report is the row's detail, not a column of its own. */}
       <div className={cn('overflow-clip rounded-lg border bg-card', selected && 'grid grid-cols-[minmax(0,1fr)_minmax(26rem,46%)] items-start')}>
@@ -396,12 +420,12 @@ export function LivePage({
             ))}
           </div>
         ) : feed.requests.length === 0 && !frozen ? (
-          <Waiting projects={scopeProjects} />
+          <Waiting project={project} backend={backend} />
         ) : shown.length === 0 ? (
           <div className="grid justify-items-center gap-3 px-6 py-14 text-center text-sm">
             <p className="text-base font-medium">No queries match</p>
             <p className="text-muted-foreground">
-              None of the {fmtCount(feed.size)} loaded queries match the current project, environment, search and view.
+              None of the {fmtCount(feed.size)} loaded queries match the current backend, environment, search and view.
             </p>
             {filtered && (
               <Button
@@ -410,7 +434,7 @@ export function LivePage({
                 onClick={() => {
                   setSearch('')
                   setView({ filter: 'all', mutedIssues: 'hide' })
-                  onScope({ project: ALL, environment: ALL })
+                  onScope({ backend: ALL, environment: ALL })
                 }}
               >
                 Clear filters
@@ -430,7 +454,7 @@ export function LivePage({
             </TableHeader>
             <TableBody>
               {groups.slice(0, limit).map((g) => (
-                <ShapeRow key={g.id} g={g} project={byId.get(g.latest.request.projectId)} showProject={showProject} selected={g.id === selectedShape} />
+                <ShapeRow key={g.id} g={g} project={project} showBackend={showBackend} selected={g.id === selectedShape} />
               ))}
             </TableBody>
           </Table>
@@ -447,7 +471,7 @@ export function LivePage({
             </TableHeader>
             <TableBody>
               {shown.slice(0, limit).map((q) => (
-                <RunRow key={q.id} q={q} project={byId.get(q.request.projectId)} showProject={showProject} selected={`${q.ref.project}:${q.ref.request}:${q.ref.seq}` === selectedRun} />
+                <RunRow key={q.id} q={q} project={project} showBackend={showBackend} selected={`${q.ref.project}:${q.ref.request}:${q.ref.seq}` === selectedRun} />
               ))}
             </TableBody>
           </Table>
@@ -458,7 +482,7 @@ export function LivePage({
             key={selectedRun}
             className="sticky top-0 max-h-dvh self-stretch overflow-y-auto border-l bg-muted/40 shadow-[-8px_0_16px_-12px_rgb(0_0_0/0.25)] dark:bg-muted/50"
           >
-            <QueryPanel at={selected} projects={projects} requests={feed.requests} muted={muted} />
+            <QueryPanel at={selected} projects={[project]} requests={feed.requests} muted={muted} />
           </div>
         )}
       </div>

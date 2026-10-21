@@ -16,7 +16,8 @@ down to the line.
 npm install querylens-node
 ```
 
-Give the app your project's DSN (from the dashboard's Settings):
+Give the app its backend's DSN. In the dashboard's Settings, connect each service of your app
+to its project as a backend; each gets its own DSN:
 
 ```bash
 QUERYLENS_DSN=https://<key>@querylens.<you>.workers.dev/<project>

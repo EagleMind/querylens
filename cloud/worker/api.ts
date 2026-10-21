@@ -1,36 +1,47 @@
-// The dashboard's API, under /api/0. Every route but `info` takes the admin token.
+// The dashboard's API, under /api/0. Every route but `info` takes the admin token
+// (`Authorization: Bearer <ADMIN_TOKEN>`).
 //
-//   GET   /api/0/info                           version, whether the token is set (no auth)
-//   GET   /api/0/live?project=<id>&token=…      the live feed (WebSocket)
-//   GET   /api/0/settings                       ┐ the public URL (goes into DSNs)
-//   PUT   /api/0/settings          {publicUrl}  │
-//   POST  /api/0/filters/draft     {text}       │ a Live filter from a description (AI)
-//   GET   /api/0/projects                       │
-//   POST  /api/0/projects             {name}    │
-//   PATCH /api/0/projects/<id>        {name}    │
-//   PUT   /api/0/projects/<id>/key    {key?}    │ new DSN key (generated when absent)
-//   PUT   /api/0/projects/<id>/settings         │ `Authorization: Bearer <ADMIN_TOKEN>`
-//   GET   /api/0/projects/<id>/issues           │
-//   GET   /api/0/projects/<id>/issues/<n>       │
-//   PATCH /api/0/projects/<id>/issues/<n>       │
-//   GET   /api/0/projects/<id>/issues/<n>/events│
-//   GET   /api/0/projects/<id>/issues/<n>/prompt│ a fix brief for a coding agent
-//   GET   /api/0/projects/<id>/issues/<n>/suggestion   the stored AI rewrite
-//   POST  /api/0/projects/<id>/issues/<n>/suggestion   write one (?refresh=1: anew)
-//   GET   /api/0/projects/<id>/regressions?environment= │
-//   GET   /api/0/projects/<id>/source?origin=   │ code around a line (source context)
-//   GET   /api/0/projects/<id>/requests?before= │
-//   GET   /api/0/projects/<id>/requests/<n>     │
-//   GET   /api/0/projects/<id>/queries?fingerprint│
-//   GET   /api/0/projects/<id>/environments     ┘
+//   GET    /api/0/info                          version, whether the token is set (no auth)
+//   GET    /api/0/live?project=<id>&token=…     the live feed (WebSocket)
+//   GET    /api/0/settings                      the public URL (goes into DSNs)
+//   PUT    /api/0/settings  {publicUrl}
+//   POST   /api/0/filters/draft  {text}         a Live filter from a description (AI)
+//   GET    /api/0/projects
+//   POST   /api/0/projects  {name}
+//   PATCH  /api/0/projects/<id>  {name}
+//   PUT    /api/0/projects/<id>/settings
+//
+// A project's backends, each with its own DSN:
+//
+//   POST   …/<id>/backends  {name, key?}        connect one
+//   PATCH  …/<id>/backends/<b>  {name}
+//   PUT    …/<id>/backends/<b>/key  {key?}      new DSN key (generated when absent); reconnects
+//   DELETE …/<id>/backends/<b>/key              disconnect: its SDKs are refused, its history kept
+//
+// What the project's SDKs sent. `?backend=<b>` narrows issues, regressions and queries to one
+// backend; source context is per backend, so `source` needs it.
+//
+//   GET    …/<id>/issues?backend=&environment=&status=&sort=&query=
+//   GET    …/<id>/issues/<n>
+//   PATCH  …/<id>/issues/<n>  {status}
+//   GET    …/<id>/issues/<n>/events
+//   GET    …/<id>/issues/<n>/prompt             a fix brief for a coding agent
+//   GET    …/<id>/issues/<n>/suggestion         the stored AI rewrite
+//   POST   …/<id>/issues/<n>/suggestion         write one (?refresh=1: anew)
+//   GET    …/<id>/regressions?backend=&environment=
+//   GET    …/<id>/source?backend=&origin=       code around a line (source context)
+//   GET    …/<id>/requests?before=
+//   GET    …/<id>/requests/<n>
+//   GET    …/<id>/queries?backend=&environment=&fingerprint=&hours=
+//   GET    …/<id>/environments
 import type { IssueStatus } from '../bindings/IssueStatus'
 import type { DraftFilterRequest } from '../shared/api'
 import { type Exports, allProjects, info, project, publicOrigin, registry } from './backend'
 import { draft, issuePrompt, suggest, suggestionState } from './fixing'
 import { HttpError, authorized, fail, json, randomHex, readJson } from './http'
-import type { IssueQuery } from './project'
+import { type BackendChange, type IssueQuery, isBackendId } from './project'
 
-export const VERSION = '0.4.0'
+export const VERSION = '0.5.0'
 export const STATUSES: IssueStatus[] = ['unresolved', 'resolved', 'ignored']
 const DSN_KEY = /^[A-Za-z0-9_-]{16,64}$/
 
@@ -53,6 +64,31 @@ function projectName(name: string | undefined): string {
   const clean = (name ?? '').trim().slice(0, 100)
   if (!clean) throw new HttpError(400, 'A project needs a name.')
   return clean
+}
+
+function backendName(name: string | undefined): string {
+  const clean = (name ?? '').trim().slice(0, 64)
+  if (!clean) throw new HttpError(400, 'A backend needs a name, like "orders" or "api".')
+  return clean
+}
+
+/** A DSN key the user typed, or a new one. */
+function dsnKey(key: string | undefined): string {
+  const next = key?.trim() || randomHex(16)
+  if (!DSN_KEY.test(next)) throw new HttpError(400, 'A key is 16 to 64 letters, digits, - or _.')
+  return next
+}
+
+function changed(result: BackendChange) {
+  if (!result.ok) throw new HttpError(result.status, result.message)
+}
+
+/** `?backend=`, checked; `null` when absent. */
+function backendParam(q: URLSearchParams): string | null {
+  const b = q.get('backend')
+  if (b === null || b === '') return null
+  if (!isBackendId(b)) throw new HttpError(400, 'No such backend.')
+  return b
 }
 
 export async function api(request: Request, env: Env, ns: Exports, url: URL, path: string[]): Promise<Response> {
@@ -88,7 +124,7 @@ export async function api(request: Request, env: Env, ns: Exports, url: URL, pat
     if (method === 'POST') {
       const name = projectName((await readJson<{ name?: string }>(request)).name)
       const newId = randomHex(6)
-      await project(ns, newId).create(newId, name, randomHex(16))
+      await project(ns, newId).create(newId, name)
       await registry(ns).add(newId, name)
       return json(await info(ns, newId, origin), 201)
     }
@@ -115,22 +151,37 @@ export async function api(request: Request, env: Env, ns: Exports, url: URL, pat
       return json(await stub.updateSettings(await readJson(request)))
     case 'environments':
       return json(await stub.environments())
+    case 'backends': {
+      if (!sub) {
+        if (method !== 'POST') return fail(405, 'Method not allowed.')
+        const body = await readJson<{ name?: string; key?: string }>(request)
+        changed(await stub.addBackend(backendName(body.name), dsnKey(body.key)))
+      } else if (!isBackendId(sub)) {
+        return fail(404, 'No such backend.')
+      } else if (!tail) {
+        if (method !== 'PATCH') return fail(405, 'Method not allowed.')
+        changed(await stub.renameBackend(sub, backendName((await readJson<{ name?: string }>(request)).name)))
+      } else if (tail === 'key') {
+        if (method === 'PUT') changed(await stub.setBackendKey(sub, dsnKey((await readJson<{ key?: string }>(request)).key)))
+        else if (method === 'DELETE') changed(await stub.setBackendKey(sub, null))
+        else return fail(405, 'Method not allowed.')
+      } else {
+        return fail(404, 'No such endpoint.')
+      }
+      return json(await info(ns, id, origin))
+    }
     case 'regressions': {
       const environment = q.get('environment')
-      const environments = environment ? [environment] : await stub.environments()
-      return json(await Promise.all(environments.map((e) => stub.regressions(e))))
+      const backend = backendParam(q)
+      const streams = (await stub.streams()).filter(
+        (s) => (!environment || s.environment === environment) && (!backend || s.backend === backend),
+      )
+      return json(await Promise.all(streams.map((s) => stub.regressions(s.backend, s.environment))))
     }
     case 'source': {
       const origin = q.get('origin')
-      return json(origin ? await stub.source(origin) : null)
-    }
-    case 'key': {
-      if (method !== 'PUT') return fail(405, 'Method not allowed.')
-      const { key } = await readJson<{ key?: string }>(request)
-      const next = key?.trim() || randomHex(16)
-      if (!DSN_KEY.test(next)) return fail(400, 'A key is 16 to 64 letters, digits, - or _.')
-      await stub.setKey(next)
-      return json(await info(ns, id, origin))
+      const backend = backendParam(q)
+      return json(origin && backend ? await stub.source(backend, origin) : null)
     }
     case 'requests': {
       if (method !== 'GET') return fail(405, 'Method not allowed.')
@@ -144,7 +195,8 @@ export async function api(request: Request, env: Env, ns: Exports, url: URL, pat
     }
     case 'queries': {
       const hours = Number(q.get('hours') ?? 24) || 24
-      return json(await stub.queries(q.get('environment'), hours, Number(q.get('limit') ?? 50) || 50, q.get('fingerprint')))
+      const filter = { backend: backendParam(q), environment: q.get('environment'), fingerprint: q.get('fingerprint') }
+      return json(await stub.queries(filter, hours, Number(q.get('limit') ?? 50) || 50))
     }
     case 'issues':
       return issues(request, env, ns, id, sub, tail, q)
@@ -166,6 +218,7 @@ async function issues(
   if (!sub) {
     const status = q.get('status') as IssueStatus | null
     const query: IssueQuery = {
+      backend: backendParam(q) ?? undefined,
       environment: q.get('environment') ?? undefined,
       status: status && STATUSES.includes(status) ? status : undefined,
       sort: (q.get('sort') as IssueQuery['sort']) ?? undefined,

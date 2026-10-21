@@ -67,7 +67,7 @@ export function Verdict({
           items={[
             ['Started', fmtDateTime(q.at)],
             ['Request', <span className="font-mono text-xs">{q.request.name}</span>],
-            ['Project and environment', `${project?.name ?? 'Unknown project'}, ${q.request.environment}`],
+            ['Backend and environment', `${project?.backends.find((b) => b.id === q.request.backend)?.name ?? 'Unknown backend'}, ${q.request.environment}`],
             ['Release', q.request.release ? <span className="font-mono text-xs">{q.request.release}</span> : 'Not reported'],
             ['Connection', `#${s.conn}`],
             ['Values', valuesSent(s) ? 'Sent with the query' : 'Kept in your app (only a hash is sent)'],

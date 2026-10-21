@@ -36,10 +36,12 @@ export const SOURCE_LINES = [
 
 export function context(overrides: Partial<IssueContext> = {}): IssueContext {
   return {
-    project: { id: '0123456789ab', name: 'Shop API', orm: 'sequelize' },
+    project: { id: '0123456789ab', name: 'Shop API' },
+    backend: { id: '1a2b3c4d', name: 'orders', orm: 'sequelize' },
     detail: {
       issue: {
         id: 7,
+        backend: '1a2b3c4d',
         environment: 'production',
         kind: 'n_plus_one',
         severity: 'high',

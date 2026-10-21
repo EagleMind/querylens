@@ -6,19 +6,34 @@ use ts_rs::TS;
 
 use crate::model::{CaptureFinding, CapturedStatement, FindingKind, FixHint, OriginCount, Orm, StatementKind, SuggestionSeverity};
 
-/// An application reporting to the backend. SDKs find it through its DSN.
+/// An application: one or more backends (services) reporting to it, each with its own DSN.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct Project {
     pub id: String,
     pub name: String,
-    /// `https://<key>@<host>/<project id>`: what the SDK's `dsn` option takes.
-    pub dsn: String,
-    /// The ORM recognised from its traffic so far.
-    pub orm: Option<Orm>,
+    /// Oldest first, disconnected ones included (their history is kept).
+    pub backends: Vec<Backend>,
     pub settings: ProjectSettings,
     pub created_at: String,
+}
+
+/// One service of a project, connected through its own DSN.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct Backend {
+    pub id: String,
+    pub name: String,
+    /// `https://<key>@<host>/<project id>`: what the SDK's `dsn` option takes. `None` once
+    /// disconnected: its SDKs are refused, its history stays.
+    pub dsn: Option<String>,
+    /// The ORM recognised from its traffic so far.
+    pub orm: Option<Orm>,
+    pub created_at: String,
+    /// When it last sent anything; `None` until it does.
+    pub last_seen: Option<String>,
 }
 
 /// What a project flags and sends; SDKs receive it with every reply.
@@ -54,13 +69,15 @@ pub enum IssueStatus {
     Ignored,
 }
 
-/// One problem (a finding with a stable id) in one environment, across every request
+/// One problem (a finding with a stable id) in one backend and environment, across every request
 /// that showed it.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct Issue {
     pub id: i32,
+    /// The backend it was found in: the same problem in two backends is two issues.
+    pub backend: String,
     pub environment: String,
     pub kind: FindingKind,
     /// The highest seen.
@@ -122,6 +139,7 @@ pub struct IssueEvent {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct QueryShape {
+    pub backend: String,
     pub fingerprint: String,
     pub sample_sql: String,
     pub kind: StatementKind,
@@ -155,6 +173,8 @@ pub struct LiveFinding {
 pub struct StoredRequest {
     /// Increasing within the project: newer requests have larger ids.
     pub id: i32,
+    /// The backend that sent it.
+    pub backend: String,
     pub environment: String,
     pub release: Option<String>,
     /// The route (`GET /orders/:id`) or job name.
@@ -190,5 +210,5 @@ pub enum LiveEvent {
     Issue { issue: Issue, regressed: bool },
     /// Totals of an SDK's statistics report: every statement, not just sent requests.
     #[serde(rename_all = "camelCase")]
-    Throughput { environment: String, at: String, period_ms: f64, calls: u32, total_ms: f64, errors: u32 },
+    Throughput { backend: String, environment: String, at: String, period_ms: f64, calls: u32, total_ms: f64, errors: u32 },
 }

@@ -8,7 +8,16 @@ import { type McpBackend, SERVER_INFO, tools } from '../worker/mcp/tools.ts'
 import { context } from './fixtures.ts'
 
 const issue: Issue = context().detail.issue
-const project = (id: string, name: string): Project => ({ id, name, dsn: '', orm: 'sequelize', settings: {} as Project['settings'], createdAt: '' })
+const project = (id: string, name: string): Project => ({
+  id,
+  name,
+  backends: [
+    { id: '1a2b3c4d', name: 'orders', dsn: 'https://k@h/x', orm: 'sequelize', createdAt: '', lastSeen: null },
+    { id: '5e6f7a8b', name: 'billing', dsn: null, orm: 'prisma', createdAt: '', lastSeen: null },
+  ],
+  settings: {} as Project['settings'],
+  createdAt: '',
+})
 
 function backend(projects = [project('0123456789ab', 'Shop API')]): McpBackend & { calls: string[] } {
   const calls: string[] = []
@@ -16,7 +25,7 @@ function backend(projects = [project('0123456789ab', 'Shop API')]): McpBackend &
     calls,
     projects: async () => projects,
     issues: async (id, q) => {
-      calls.push(`issues ${id} ${q.status} ${q.sort} ${q.limit}`)
+      calls.push(`issues ${id} ${q.backend ?? 'all'} ${q.status} ${q.sort} ${q.limit}`)
       return [issue]
     },
     issuePrompt: async (id, n) => `brief for ${id} #${n}`,
@@ -57,9 +66,22 @@ test('tools are listed with schemas and hints', async () => {
 test('the only project is used when none is named', async () => {
   const b = backend()
   const r = await call('list_issues', {}, b)
-  assert.deepEqual(b.calls, ['issues 0123456789ab unresolved impact 20'])
+  assert.deepEqual(b.calls, ['issues 0123456789ab all unresolved impact 20'])
   const text = (r!.result as { content: { text: string }[] }).content[0].text
   assert.match(text, /#7 \[high\] N\+1 query: N\+1: order_items loaded once per order/)
+  assert.match(text, / · orders, production · /)
+})
+
+test('a backend is picked by name or id, and an unknown one is an error', async () => {
+  const b = backend()
+  await call('list_issues', { backend: 'Billing' }, b)
+  await call('list_issues', { backend: '1a2b3c4d' }, b)
+  assert.deepEqual(b.calls, ['issues 0123456789ab 5e6f7a8b unresolved impact 20', 'issues 0123456789ab 1a2b3c4d unresolved impact 20'])
+  const r = await call('list_issues', { backend: 'search' }, b)
+  assert.equal((r!.result as { isError: boolean }).isError, true)
+  assert.match((r!.result as { content: { text: string }[] }).content[0].text, /No backend "search" in Shop API\. Backends: orders, billing\./)
+  const listed = (await call('list_projects', {}, b))!.result as { content: { text: string }[] }
+  assert.match(listed.content[0].text, /- backend billing \(id 5e6f7a8b\), Prisma, disconnected/)
 })
 
 test('with several projects, one is picked by name or id', async () => {

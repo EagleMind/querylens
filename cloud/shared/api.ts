@@ -11,7 +11,9 @@ import type { FilterDraft } from './filters'
 
 /** Everything known about an issue that helps fix it: what a coding agent or a model is given. */
 export interface IssueContext {
-  project: { id: string; name: string; orm: Orm | null }
+  project: { id: string; name: string }
+  /** The backend it was found in; `null` when it's no longer known. */
+  backend: { id: string; name: string; orm: Orm | null } | null
   detail: IssueDetail
   /** The latest request that showed it, with every statement it ran. */
   latest: IssueEvent | null
@@ -59,7 +61,9 @@ export interface Regression {
   latest: { request: number; seq: number } | null
 }
 
+/** One backend's regressions in one environment (each deploys on its own). */
 export interface RegressionReport {
+  backend: string
   environment: string
   baseline: Baseline
   regressions: Regression[]

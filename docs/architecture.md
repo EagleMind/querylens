@@ -97,8 +97,13 @@ Everything fits the Workers Free plan, which sets the shape:
   A free-plan Worker gets 10 ms of CPU per request, so the evaluation runs in the Durable
   Object, which gets 30 s.
 - **`Project` Durable Object, one per app** (`project.ts`, SQLite storage):
-  - Checks the DSN key (constant-time comparison) and runs the digest.
-  - Upserts issues keyed by `(environment, finding id)`. Severity only rises and origins merge.
+  - Holds the project's backends: the services of the app, each with its own DSN key and the
+    ORM recognised in its traffic. An envelope's key (compared with every backend's, in
+    constant time) says which backend sent it; everything it leads to is stored under that
+    backend, and the digest runs with that backend's ORM. A disconnected backend has no key:
+    its SDKs get 401, its history stays.
+  - Upserts issues keyed by `(backend, environment, finding id)`: the same problem in two
+    services is two issues, since different code runs it. Severity only rises and origins merge.
     A resolved issue seen again reopens as regressed; an ignored one keeps counting.
   - Keeps the latest 10 events per issue (their statements, values scrubbed), the query
     history (one row per request sent: its first 100 statements and its findings; 7 days and
@@ -106,12 +111,14 @@ Everything fits the Workers Free plan, which sets the shape:
     statistics for 30 days, pruned by the same alarm.
   - Broadcasts `LiveEvent`s (`transaction`, `issue`, `throughput`) to dashboards on
     hibernating WebSockets (pings auto-answered).
-  - Records when each environment first reports each release, the code around origins the
-    SDK sends (source context, one row per line of code, rewritten only when it changes), and
+  - Records when each backend's environment first reports each release, the code around
+    origins each SDK sends (source context, one row per backend and line of code, rewritten
+    only when it changes), and
     the latest AI change per issue with a hash of what it was written from.
   - `issueContext(n)`: the issue, its latest event and the code around its top origins. It
     feeds the fix prompt (`issues/prompt.ts`), the MCP `get_issue` tool and AI rewrites.
-  - `regressions(env)`: hourly statistics summed before and after the latest release's deploy
+  - `regressions(backend, env)`: per backend, since each deploys on its own. Hourly statistics
+    summed before and after the latest release's deploy
     hour (or the last day against the week before, without releases), judged by the pure
     `analysis/regressions.ts`: enough calls on both sides, 1.5× slower and 2 ms more per call,
     or failing at least twice as often.
@@ -124,7 +131,12 @@ Everything fits the Workers Free plan, which sets the shape:
 - **MCP** (`mcp/`): a stateless Streamable HTTP server with JSON replies. `protocol.ts` is
   pure JSON-RPC (`initialize`, `ping`, `tools/list`, `tools/call`), `tools.ts` defines the tools
   over an `McpBackend` interface, `server.ts` adds auth and the Durable Objects.
-- **Auth**: SDKs use the DSN key; the dashboard and MCP clients use the `ADMIN_TOKEN` secret
+- **Migrating**: projects from before backends had one key and rows without a backend. On
+  first load their object rebuilds the tables whose keys gained `backend` (issues, shapes,
+  statistics, releases, sources), adds the column to `requests` without rewriting its rows,
+  and turns the old key into the first backend, named after the project, so its DSN keeps
+  working.
+- **Auth**: SDKs use their backend's DSN key; the dashboard and MCP clients use the `ADMIN_TOKEN` secret
   as a Bearer token (the live WebSocket takes it in the URL, which browsers require).
 
 Rows written are the free plan's scarcest resource (100,000 a day):
@@ -139,10 +151,10 @@ Rows written are the free plan's scarcest resource (100,000 a day):
 React, Tailwind and shadcn/ui (`web/components/ui`), served as static assets by the same
 Worker with a single-page-app fallback. Its own small router, with types from `cloud/bindings`.
 
-- **Live** (`/`): for each project, the latest page of the query history
+- **Live** (`/`): for the chosen project, the latest page of the query history
   (`GET …/requests`), then its WebSocket for new requests (the page is reloaded on every
   reconnect, so gaps fill), and older pages on demand (`?before=`). Every statement, newest
-  first. Built-in views, project / environment / search filters, and custom filters
+  first. Built-in views, backend / environment / search filters, and custom filters
   (`web/lib/filters.ts`: one small strategy per field) saved in `localStorage`.
 - **Query report** (`/queries/<project>/<request>/<seq>`): one column of cards in diagnosis
   order, each a summary with its evidence folded under "Details": the verdict (with what the
@@ -155,9 +167,14 @@ Worker with a single-page-app fallback. Its own small router, with types from `c
   (`GET …/issues/<n>`), the code (`GET …/source`), the shape's 24 hours and regressions.
 - **Docs** (`/docs`): what each "not shown" note links to (line of code, source context,
   values, releases, AI, MCP) and the project's thresholds.
-- **Settings** (`/settings`): the connected host (the public URL stored in the `Registry`,
-  `GET/PUT /api/0/settings`, used in every DSN; defaults to the address the dashboard was
-  reached at), each project's DSN with an editable key (`PUT …/key`), sign-out.
+- **Scope**: the sidebar picks one project, and within it a backend (or all) and an
+  environment (or all); remembered in the browser (`web/lib/scope.ts`). Only that project's
+  history is loaded and only its live feed is open. A link to another project's query
+  switches to it.
+- **Settings** (`/settings`): the project's backends (`POST …/backends`, rename, `PUT/DELETE
+  …/backends/<b>/key` to change the key or disconnect), the connected host (the public URL
+  stored in the `Registry`, `GET/PUT /api/0/settings`, used in every DSN; defaults to the
+  address the dashboard was reached at), sign-out.
 - **Muted issues**: an issue set to `ignored` (Mute on the report). Live drops muted findings
   from its views and filters unless the "Show muted issues" filter is on.
 - **Fixing**: each issue card copies its fix prompt (`GET …/issues/<n>/prompt`, loaded with
