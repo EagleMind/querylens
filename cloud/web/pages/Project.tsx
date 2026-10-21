@@ -1,6 +1,7 @@
-// The project page: its name, the services connected to it (each with its own DSN), and the
-// limits that decide what gets flagged. Opened from the sidebar's project menu.
-import { PencilIcon, PlugIcon, PlusIcon, RefreshCwIcon, UnplugIcon } from 'lucide-react'
+// The project page: its name, the services connected to it (each with its own DSN), the env
+// file to give a service, and the limits that decide what gets flagged. Opened from the
+// sidebar's project menu.
+import { PencilIcon, PlugIcon, PlusIcon, RefreshCwIcon, TriangleAlertIcon, UnplugIcon } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 
 import type { Backend } from '../../bindings/Backend'
@@ -9,9 +10,12 @@ import type { ProjectSettings } from '../../bindings/ProjectSettings'
 import { CodeBlock, ErrorNote } from '@/components/common'
 import { EditableValue, EditorActions, NameEditor, useChange } from '@/components/editing'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api } from '@/lib/api'
+import { ENV_VARS, type EnvChoice, type EnvName, envFile, initialChoice, problem } from '@/lib/env'
 import { ORMS, fmtRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -181,6 +185,99 @@ function ConnectService({ project, onSaved }: { project: Project; onSaved: (p: P
   )
 }
 
+/** Pick a service and the variables to turn on; get the env file to paste into its environment. */
+function EnvBuilder({ project }: { project: Project }) {
+  const connected = project.backends.filter((b): b is Backend & { dsn: string } => b.dsn !== null)
+  const [serviceId, setServiceId] = useState(connected[0]?.id ?? '')
+  const [choice, setChoice] = useState<EnvChoice>(initialChoice)
+  const service = connected.find((b) => b.id === serviceId) ?? connected[0]
+  if (!service) {
+    return (
+      <p className="rounded-lg border border-dashed px-4 py-6 text-center text-sm text-muted-foreground">
+        Connect a service above, and its environment variables appear here.
+      </p>
+    )
+  }
+  const set = (name: EnvName, patch: Partial<{ on: boolean; value: string }>) =>
+    setChoice((c) => ({ ...c, [name]: { on: false, value: '', ...c[name], ...patch } }))
+
+  return (
+    <div className="overflow-hidden rounded-lg border bg-card">
+      {connected.length > 1 && (
+        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3 sm:px-5">
+          <Label htmlFor="env-service" className="text-sm">
+            Service
+          </Label>
+          <Select value={service.id} onValueChange={setServiceId}>
+            <SelectTrigger id="env-service" size="sm" className="min-w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {connected.map((b) => (
+                <SelectItem key={b.id} value={b.id}>
+                  {b.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      <ul className="divide-y">
+        <li className="flex gap-3 px-4 py-3 sm:px-5">
+          <Checkbox checked disabled aria-label="QUERYLENS_DSN, always set" className="mt-0.5" />
+          <div className="grid gap-0.5">
+            <code className="font-mono text-[13px] font-medium">QUERYLENS_DSN</code>
+            <p className="text-xs text-muted-foreground">Where {service.name} reports. Always set: without it the SDK does nothing.</p>
+          </div>
+        </li>
+        {ENV_VARS.map((v) => {
+          const c = choice[v.name] ?? { on: false, value: '' }
+          const id = `env-${v.name}`
+          const why = c.on ? problem(v, c.value) : null
+          return (
+            <li key={v.name} className={cn('flex gap-3 px-4 py-3 sm:px-5', c.on && 'bg-primary/[0.03]')}>
+              <Checkbox id={id} checked={c.on} onCheckedChange={(on) => set(v.name, { on: on === true })} className="mt-0.5" />
+              <div className="grid min-w-0 flex-1 gap-1.5">
+                <div className="grid gap-0.5">
+                  <label htmlFor={id} className="w-fit cursor-pointer font-mono text-[13px] font-medium">
+                    {v.name}
+                  </label>
+                  <p className="text-xs text-muted-foreground">{v.help}</p>
+                  {v.caution && c.on && (
+                    <p className="flex items-center gap-1.5 text-xs">
+                      <TriangleAlertIcon className="size-3.5 shrink-0 text-warning" /> {v.caution}
+                    </p>
+                  )}
+                </div>
+                {c.on && v.kind !== 'flag' && (
+                  <div className="grid gap-1">
+                    <Input
+                      value={c.value}
+                      onChange={(e) => set(v.name, { value: e.target.value })}
+                      placeholder={v.placeholder}
+                      inputMode={v.kind === 'rate' ? 'decimal' : undefined}
+                      aria-label={`${v.name} value`}
+                      aria-invalid={why ? true : undefined}
+                      className="h-8 max-w-xs font-mono text-[13px]"
+                    />
+                    {why && <p className="text-xs text-destructive">{why} It’s left out of the file below.</p>}
+                  </div>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="grid gap-2 border-t bg-muted/30 px-4 py-4 sm:px-5">
+        <p className="text-sm">
+          Paste into <span className="font-medium">{service.name}</span>’s env file, or set each in its host’s environment settings:
+        </p>
+        <CodeBlock code={envFile(service, choice)} wrap={false} className="bg-card" />
+      </div>
+    </div>
+  )
+}
+
 type Draft = Record<keyof ProjectSettings, string>
 
 function draftOf(s: ProjectSettings): Draft {
@@ -329,6 +426,16 @@ export function ProjectPage({ project, onProject }: { project: Project; onProjec
           )}
           <ConnectService key={project.id} project={project} onSaved={onProject} />
         </div>
+      </section>
+
+      <section aria-labelledby="env" className="grid gap-3">
+        <div className="grid gap-1">
+          <h2 id="env" className="text-base font-semibold">
+            Environment variables
+          </h2>
+          <p className="text-sm text-muted-foreground">Choose what to turn on in a service; the SDK reads these when it starts.</p>
+        </div>
+        <EnvBuilder key={project.id} project={project} />
       </section>
 
       <section aria-labelledby="limits" className="grid gap-3">
