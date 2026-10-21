@@ -52,7 +52,7 @@ export function History({
       {error ? (
         <ErrorNote error={error} />
       ) : shape === undefined ? (
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-16" />
           ))}
@@ -60,7 +60,7 @@ export function History({
       ) : shape === null ? (
         <p className="text-sm text-muted-foreground">No statistics for this query yet. The SDK sends them every minute (every 5 in production).</p>
       ) : (
-        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 @xl:grid-cols-4">
           <Figure label="Runs" value={fmtCount(shape.calls)} />
           <Figure label="Average" value={fmtMs(shape.meanMs)} />
           <Figure label="Slowest" value={fmtMs(shape.maxMs)} />

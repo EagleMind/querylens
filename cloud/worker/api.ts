@@ -30,7 +30,7 @@ import { draft, issuePrompt, suggest, suggestionState } from './fixing'
 import { HttpError, authorized, fail, json, randomHex, readJson } from './http'
 import type { IssueQuery } from './project'
 
-export const VERSION = '0.3.0'
+export const VERSION = '0.4.0'
 export const STATUSES: IssueStatus[] = ['unresolved', 'resolved', 'ignored']
 const DSN_KEY = /^[A-Za-z0-9_-]{16,64}$/
 

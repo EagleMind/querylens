@@ -7,7 +7,6 @@ import { Sql } from '@/components/Sql'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SEVERITY } from '@/lib/format'
-import { STATEMENT_ACTION, STATEMENT_TYPES, type StatementType } from '@/lib/queries'
 import { cn } from '@/lib/utils'
 
 export function CopyButton({ value, label = 'Copy', className }: { value: string; label?: string; className?: string }) {
@@ -73,7 +72,8 @@ export function Prose({ text }: { text: string }) {
   )
 }
 
-export function ConnectionStatus({ state }: { state: 'connecting' | 'live' | 'offline' }) {
+/** `dotOnly`: the dot alone, where the label is given elsewhere (a tooltip). */
+export function ConnectionStatus({ state, dotOnly }: { state: 'connecting' | 'live' | 'offline'; dotOnly?: boolean }) {
   const label = { live: 'Live', connecting: 'Connecting', offline: 'Reconnecting' }[state]
   const dot = state === 'live' ? 'bg-success' : state === 'offline' ? 'bg-destructive' : 'bg-warning'
   return (
@@ -82,25 +82,12 @@ export function ConnectionStatus({ state }: { state: 'connecting' | 'live' | 'of
         {state === 'live' && <span className={cn('absolute inset-0 rounded-full animate-live-ring', dot)} />}
         <span className={cn('relative size-2 rounded-full', dot)} />
       </span>
-      {label}
+      {dotOnly ? <span className="sr-only">{label}</span> : label}
     </span>
   )
 }
 
-const ACTION_DOT = { read: 'bg-read', write: 'bg-write', other: 'bg-muted-foreground/60' } as const
-
-/** The statement type, with its read / write colour as a marker beside the text. */
-/** `label`: what to show instead of the type's name (a MongoDB command). */
-export function StatementTypeLabel({ type, label, className }: { type: StatementType; label?: string; className?: string }) {
-  return (
-    <span className={cn('inline-flex items-center gap-1.5 font-mono text-[11px] font-medium text-muted-foreground', className)}>
-      <span className={cn('size-2 shrink-0 rounded-[2px]', ACTION_DOT[STATEMENT_ACTION[type]])} aria-hidden />
-      {label ?? STATEMENT_TYPES[type]}
-    </span>
-  )
-}
-
-/** Bar fill for a statement in the request timeline. */
+/** A statement's read / write colour: the request timeline's bars, the Live list's markers. */
 export const ACTION_FILL = { read: 'bg-read', write: 'bg-write', other: 'bg-muted-foreground/50' } as const
 
 /** Marks a duration at or over the project's slow threshold: status colour on the icon only. */
