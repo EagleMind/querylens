@@ -1,5 +1,5 @@
-// What the dashboard is looking at: one project, and within it one backend or all of them, one
-// environment or all. Chosen in the sidebar, remembered in this browser; every page shows only
+// What the dashboard is looking at: the project, one of its services (backends) or all of them,
+// one environment or all. Chosen in the sidebar, remembered in this browser; every page shows only
 // the chosen project's data.
 import { useState } from 'react'
 

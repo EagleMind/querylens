@@ -3,6 +3,7 @@ import type { Issue } from '../../bindings/Issue'
 import type { IssueDetail } from '../../bindings/IssueDetail'
 import type { IssueStatus } from '../../bindings/IssueStatus'
 import type { Project } from '../../bindings/Project'
+import type { ProjectSettings } from '../../bindings/ProjectSettings'
 import type { QueryShape } from '../../bindings/QueryShape'
 import type { SourceSnippet } from '../../bindings/SourceSnippet'
 import type { StoredRequest } from '../../bindings/StoredRequest'
@@ -75,6 +76,8 @@ export const api = {
 
   projects: () => call<Project[]>('GET', 'projects'),
   renameProject: (id: string, name: string) => call<Project>('PATCH', `projects/${id}`, { name }),
+  /** The limits that decide what gets flagged; the backend clamps each to its range. */
+  updateSettings: (id: string, settings: Partial<ProjectSettings>) => call<ProjectSettings>('PUT', `projects/${id}/settings`, settings),
   /** Connect a backend to a project: it gets its own DSN. */
   addBackend: (id: string, name: string) => call<Project>('POST', `projects/${id}/backends`, { name }),
   renameBackend: (id: string, backend: string, name: string) => call<Project>('PATCH', `projects/${id}/backends/${backend}`, { name }),

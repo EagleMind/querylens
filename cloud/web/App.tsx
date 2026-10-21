@@ -1,7 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { Project } from '../bindings/Project'
-import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { Sidebar, useSidebarCollapsed } from '@/components/Sidebar'
 import { ErrorNote } from '@/components/common'
 import { Button } from '@/components/ui/button'
@@ -17,6 +16,7 @@ import { ALL, type Scope, scopedBackend, scopedProject, useScope } from '@/lib/s
 import { cn } from '@/lib/utils'
 import { LivePage } from '@/pages/Live'
 import { DocsPage } from '@/pages/Docs'
+import { ProjectPage } from '@/pages/Project'
 import { SettingsPage } from '@/pages/Settings'
 import { SignIn } from '@/pages/SignIn'
 
@@ -35,8 +35,8 @@ function FirstProject({ onCreated }: { onCreated: (p: Project) => void }) {
     <div className="grid min-h-[60vh] place-items-center">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-lg">Create your first project</CardTitle>
-          <CardDescription>A project is one application. Next, you connect its backends: each service gets its own DSN to give the SDK.</CardDescription>
+          <CardTitle className="text-lg">Name your project</CardTitle>
+          <CardDescription>The project is your application. Next, you connect its services: each gets its own DSN to give the SDK.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="grid gap-4">
@@ -66,7 +66,6 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const feed = useLiveFeed(projectIds)
   const muted = useMuted(projectIds)
   const [collapsed, setCollapsed] = useSidebarCollapsed()
-  const [creating, setCreating] = useState(false)
 
   const load = useCallback(() => {
     api.projects().then(setProjects, (e) => (e instanceof ApiError && e.status === 401 ? onSignOut() : setError(e)))
@@ -88,7 +87,7 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const created = (p: Project) => {
     setProjects((all) => [...(all ?? []), p])
     setScope({ project: p.id })
-    navigate({ page: 'settings' })
+    navigate({ page: 'project' })
   }
 
   const environments = useMemo(
@@ -101,9 +100,8 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   else if (!projects) body = <p className="text-sm text-muted-foreground">Loading…</p>
   else if (!project) body = <FirstProject onCreated={created} />
   else if (route.page === 'docs') body = <DocsPage projects={[project]} />
-  else if (route.page === 'settings') {
-    body = <SettingsPage project={project} projects={projects} connection={feed.connection} onProject={replace} onReload={load} onSignOut={onSignOut} />
-  }
+  else if (route.page === 'project') body = <ProjectPage project={project} onProject={replace} />
+  else if (route.page === 'settings') body = <SettingsPage connection={feed.connection} onReload={load} onSignOut={onSignOut} />
   // One element for the list and a selected query, so pausing and paging survive opening a report.
   else {
     body = (
@@ -134,13 +132,11 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         project={project}
         scope={{ ...scope, project: project?.id ?? '', backend: scopedBackend(scope, project) }}
         onScope={changeScope}
-        onNewProject={() => setCreating(true)}
         environments={environments}
         connection={feed.connection}
         size={feed.size}
       />
       <main className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">{body}</main>
-      <NewProjectDialog open={creating} onOpenChange={setCreating} onCreated={created} />
     </div>
   )
 }

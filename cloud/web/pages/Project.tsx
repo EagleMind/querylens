@@ -1,0 +1,345 @@
+// The project page: its name, the services connected to it (each with its own DSN), and the
+// limits that decide what gets flagged. Opened from the sidebar's project menu.
+import { PencilIcon, PlugIcon, PlusIcon, RefreshCwIcon, UnplugIcon } from 'lucide-react'
+import { type FormEvent, useState } from 'react'
+
+import type { Backend } from '../../bindings/Backend'
+import type { Project } from '../../bindings/Project'
+import type { ProjectSettings } from '../../bindings/ProjectSettings'
+import { CodeBlock, ErrorNote } from '@/components/common'
+import { EditableValue, EditorActions, NameEditor, useChange } from '@/components/editing'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { api } from '@/lib/api'
+import { ORMS, fmtRelative } from '@/lib/format'
+import { cn } from '@/lib/utils'
+
+/** A service that reported within this long reads as live. */
+const RECENT_MS = 15 * 60_000
+
+function KeyEditor({ project, service, onSaved, close }: { project: Project; service: Backend; onSaved: (p: Project) => void; close: () => void }) {
+  const current = service.dsn ? decodeURIComponent(new URL(service.dsn).username) : ''
+  const [value, setValue] = useState(current)
+  const { busy, error, run } = useChange()
+  const save = (key?: string) =>
+    run(async () => {
+      onSaved(await api.setBackendKey(project.id, service.id, key))
+      close()
+    })
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    if (value.trim() === current) close()
+    else void save(value.trim())
+  }
+  return (
+    <form onSubmit={submit} className="grid gap-3">
+      <div className="grid gap-2">
+        <Label htmlFor={`key-${service.id}`}>Key</Label>
+        <Input id={`key-${service.id}`} value={value} onChange={(e) => setValue(e.target.value)} className="font-mono" autoFocus />
+        <p className="text-xs text-muted-foreground">
+          16 to 64 letters, digits, - or _. {service.name} stops reporting until it’s given the new DSN.
+        </p>
+      </div>
+      <ErrorNote error={error} />
+      <EditorActions busy={busy} onCancel={close}>
+        <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => save()}>
+          <RefreshCwIcon /> Generate a new key
+        </Button>
+      </EditorActions>
+    </form>
+  )
+}
+
+/** Whether a service is reporting: a dot and a few words. */
+function ServiceStatus({ service }: { service: Backend }) {
+  const recent = service.lastSeen !== null && Date.now() - Date.parse(service.lastSeen) < RECENT_MS
+  const [dot, text] = !service.dsn
+    ? ['bg-muted-foreground/40', 'Disconnected']
+    : service.lastSeen === null
+      ? ['bg-warning', 'Waiting for its first event']
+      : [recent ? 'bg-primary' : 'bg-muted-foreground', `Last event ${fmtRelative(service.lastSeen)}`]
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className={cn('size-1.5 rounded-full', dot, recent && 'ring-3 ring-primary/20')} aria-hidden />
+      {text}
+    </span>
+  )
+}
+
+function ServiceRow({ project, service, onSaved }: { project: Project; service: Backend; onSaved: (p: Project) => void }) {
+  const [renaming, setRenaming] = useState(false)
+  const [confirming, setConfirming] = useState(false)
+  const { busy, error, run } = useChange()
+  const disconnect = () =>
+    run(async () => {
+      onSaved(await api.disconnectBackend(project.id, service.id))
+      setConfirming(false)
+    })
+  const reconnect = () => run(async () => onSaved(await api.setBackendKey(project.id, service.id)))
+
+  return (
+    <li className="grid gap-3 px-4 py-4 sm:px-5">
+      {renaming ? (
+        <NameEditor
+          id={`service-name-${service.id}`}
+          label="Service name"
+          current={service.name}
+          save={async (name) => onSaved(await api.renameBackend(project.id, service.id, name))}
+          close={() => setRenaming(false)}
+        />
+      ) : (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <p className={cn('text-[15px] font-semibold tracking-tight', !service.dsn && 'text-muted-foreground')}>{service.name}</p>
+          <p className="flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
+            <ServiceStatus service={service} />
+            {service.orm && <span className="rounded bg-muted px-1.5 py-px">{ORMS[service.orm]}</span>}
+          </p>
+          <span className="ml-auto flex items-center">
+            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setRenaming(true)}>
+              <PencilIcon /> Rename
+            </Button>
+            {service.dsn ? (
+              <Button size="sm" variant="ghost" className="text-muted-foreground" disabled={busy} onClick={() => setConfirming(true)}>
+                <UnplugIcon /> Disconnect
+              </Button>
+            ) : (
+              <Button size="sm" variant="ghost" className="text-primary" disabled={busy} onClick={reconnect}>
+                <PlugIcon /> Reconnect
+              </Button>
+            )}
+          </span>
+        </div>
+      )}
+      {service.dsn && (
+        <EditableValue
+          value={service.dsn}
+          label={`${service.name} DSN`}
+          editor={(close) => <KeyEditor project={project} service={service} onSaved={onSaved} close={close} />}
+        />
+      )}
+      {confirming && (
+        <div className="grid gap-2 rounded-md border border-destructive/30 bg-destructive/[0.04] p-3 text-sm">
+          <p>
+            Disconnect <span className="font-medium">{service.name}</span>? Its DSN stops working at once. Its queries and issues stay, and
+            reconnecting gives it a new DSN.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" variant="destructive" disabled={busy} onClick={disconnect}>
+              Disconnect
+            </Button>
+          </div>
+        </div>
+      )}
+      <ErrorNote error={error} />
+    </li>
+  )
+}
+
+/** The list's last row: connect a service, then show what to give it. */
+function ConnectService({ project, onSaved }: { project: Project; onSaved: (p: Project) => void }) {
+  const first = project.backends.length === 0
+  const [name, setName] = useState('')
+  const [added, setAdded] = useState<Backend | null>(null)
+  const { busy, error, run } = useChange()
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    const wanted = name.trim()
+    void run(async () => {
+      const next = await api.addBackend(project.id, wanted)
+      onSaved(next)
+      setAdded(next.backends.find((b) => b.name === wanted) ?? null)
+      setName('')
+    })
+  }
+  return (
+    <div className={cn('grid gap-3 px-4 py-4 sm:px-5', first ? 'bg-primary/[0.04]' : 'border-t bg-muted/30')}>
+      <form onSubmit={submit} className="grid gap-2">
+        <Label htmlFor="service-name">{first ? 'Connect your first service' : 'Connect another service'}</Label>
+        <div className="flex gap-2">
+          <Input id="service-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. orders, billing, api" autoFocus={first} />
+          <Button type="submit" disabled={busy || !name.trim()}>
+            <PlusIcon /> Connect
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground">Each service gets its own DSN, so you can disconnect one without touching the others.</p>
+      </form>
+      <ErrorNote error={error} />
+      {added?.dsn && (
+        <div className="grid gap-2 rounded-md border border-primary/25 bg-card p-3 text-sm">
+          <p>
+            <span className="font-medium">{added.name}</span> is connected. In that service, install the SDK, set its DSN and load the SDK
+            first:
+          </p>
+          <CodeBlock code={`npm install querylens-node\nQUERYLENS_DSN=${added.dsn}\n\nrequire('querylens-node/register') // first line of the entry file`} wrap={false} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+type Draft = Record<keyof ProjectSettings, string>
+
+function draftOf(s: ProjectSettings): Draft {
+  return {
+    slowMs: String(s.slowMs),
+    loopMin: String(s.loopMin),
+    largeRows: String(s.largeRows),
+    chatty: String(s.chatty),
+    liveSampleRate: String(Math.round(s.liveSampleRate * 1000) / 10),
+  }
+}
+
+/** A number field set inside a sentence. */
+function Inline({ id, value, onChange, label, step = 1 }: { id: keyof ProjectSettings; value: string; onChange: (v: string) => void; label: string; step?: number }) {
+  return (
+    <Input
+      id={`threshold-${id}`}
+      type="number"
+      inputMode="decimal"
+      min={0}
+      step={step}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label={label}
+      className="mx-1 inline-flex h-7 w-[5.5rem] px-2 text-right font-medium tabular text-primary"
+    />
+  )
+}
+
+/** The project's limits, as the sentences they decide. The SDKs pick them up with their next report. */
+function Thresholds({ project, onSaved }: { project: Project; onSaved: (p: Project) => void }) {
+  const [draft, setDraft] = useState(() => draftOf(project.settings))
+  const { busy, error, run } = useChange()
+  const [saved, setSaved] = useState(false)
+  const set = (key: keyof ProjectSettings) => (v: string) => {
+    setSaved(false)
+    setDraft((d) => ({ ...d, [key]: v }))
+  }
+  const dirty = JSON.stringify(draft) !== JSON.stringify(draftOf(project.settings))
+  const submit = (e: FormEvent) => {
+    e.preventDefault()
+    void run(async () => {
+      const settings = await api.updateSettings(project.id, {
+        slowMs: Number(draft.slowMs),
+        loopMin: Number(draft.loopMin),
+        largeRows: Number(draft.largeRows),
+        chatty: Number(draft.chatty),
+        liveSampleRate: Number(draft.liveSampleRate) / 100,
+      })
+      onSaved({ ...project, settings })
+      setDraft(draftOf(settings))
+      setSaved(true)
+    })
+  }
+  const line = 'leading-9 text-[15px]'
+  return (
+    <form onSubmit={submit} className="grid gap-4 rounded-lg border bg-card px-4 py-4 sm:px-5">
+      <div className="grid gap-1">
+        <p className={line}>
+          A statement is slow when it takes more than
+          <Inline id="slowMs" label="Slow statement limit, ms" value={draft.slowMs} onChange={set('slowMs')} />
+          ms.
+        </p>
+        <p className={line}>
+          The same statement running
+          <Inline id="loopMin" label="Runs in a row that make a loop" value={draft.loopMin} onChange={set('loopMin')} />
+          times in a row is an N+1, or a loop of writes.
+        </p>
+        <p className={line}>
+          A result is large from
+          <Inline id="largeRows" label="Rows that make a large result" value={draft.largeRows} onChange={set('largeRows')} />
+          rows.
+        </p>
+        <p className={line}>
+          A request is chatty from
+          <Inline id="chatty" label="Statements that make a request chatty" value={draft.chatty} onChange={set('chatty')} />
+          statements.
+        </p>
+        <p className={line}>
+          In production, the SDK also sends
+          <Inline id="liveSampleRate" label="Share of requests without problems sent, percent" value={draft.liveSampleRate} onChange={set('liveSampleRate')} step={0.1} />
+          % of the requests without a problem, for the live feed.
+        </p>
+      </div>
+      <ErrorNote error={error} />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+        <p className="text-xs text-muted-foreground">
+          {saved && !dirty ? 'Saved. Your services pick it up with their next report.' : 'Your services pick changes up with their next report, within seconds.'}
+        </p>
+        <span className="flex gap-2">
+          {dirty && (
+            <Button type="button" variant="outline" size="sm" onClick={() => setDraft(draftOf(project.settings))}>
+              Discard
+            </Button>
+          )}
+          <Button type="submit" size="sm" disabled={busy || !dirty}>
+            Save limits
+          </Button>
+        </span>
+      </div>
+    </form>
+  )
+}
+
+export function ProjectPage({ project, onProject }: { project: Project; onProject: (p: Project) => void }) {
+  const [renaming, setRenaming] = useState(false)
+  const connected = project.backends.filter((b) => b.dsn).length
+  const disconnected = project.backends.length - connected
+  return (
+    <div className="mx-auto grid max-w-3xl gap-8">
+      <header className="grid gap-1.5">
+        {renaming ? (
+          <NameEditor
+            id="project-name"
+            label="Project name"
+            current={project.name}
+            save={async (name) => onProject(await api.renameProject(project.id, name))}
+            close={() => setRenaming(false)}
+          />
+        ) : (
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
+            <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={() => setRenaming(true)}>
+              <PencilIcon /> Rename
+            </Button>
+          </div>
+        )}
+        <p className="text-sm text-muted-foreground">
+          {project.backends.length === 0
+            ? 'No service is connected yet. Connect each service of your app, and give each its own DSN.'
+            : `${connected} ${connected === 1 ? 'service' : 'services'} connected${disconnected ? `, ${disconnected} disconnected` : ''}. Each sends its queries with its own DSN, set as QUERYLENS_DSN in its environment.`}
+        </p>
+      </header>
+
+      <section aria-labelledby="services" className="grid gap-3">
+        <h2 id="services" className="text-base font-semibold">
+          Services
+        </h2>
+        <div className="overflow-hidden rounded-lg border bg-card">
+          {project.backends.length > 0 && (
+            <ul className="divide-y">
+              {project.backends.map((b) => (
+                <ServiceRow key={b.id} project={project} service={b} onSaved={onProject} />
+              ))}
+            </ul>
+          )}
+          <ConnectService key={project.id} project={project} onSaved={onProject} />
+        </div>
+      </section>
+
+      <section aria-labelledby="limits" className="grid gap-3">
+        <div className="grid gap-1">
+          <h2 id="limits" className="text-base font-semibold">
+            What gets flagged
+          </h2>
+          <p className="text-sm text-muted-foreground">The same limits apply to every service of the project.</p>
+        </div>
+        <Thresholds key={project.id} project={project} onSaved={onProject} />
+      </section>
+    </div>
+  )
+}

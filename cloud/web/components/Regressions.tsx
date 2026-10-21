@@ -66,7 +66,7 @@ function loadOpen(): boolean {
   }
 }
 
-/** For the project, backend and environment (each unless `null`) the Live page is showing. */
+/** For the project, service (`backend`) and environment (each unless `null`) the Live page is showing. */
 export function Regressions({ project, backend, environment }: { project: Project; backend: string | null; environment: string | null }) {
   const reports = useAsync(
     () =>
@@ -120,7 +120,7 @@ export function Regressions({ project, backend, environment }: { project: Projec
             <div key={`${r.backend}:${r.environment}`}>
               {(found.length > 1 || (!backend && project.backends.length > 1)) && (
                 <p className="bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
-                  {!backend && project.backends.length > 1 ? `${project.backends.find((b) => b.id === r.backend)?.name ?? 'Unknown backend'}, ` : ''}
+                  {!backend && project.backends.length > 1 ? `${project.backends.find((b) => b.id === r.backend)?.name ?? 'Unknown service'}, ` : ''}
                   {r.environment}, {since(r)}
                 </p>
               )}

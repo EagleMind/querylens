@@ -5,13 +5,13 @@ The backend and dashboard for always-on query monitoring (PostgreSQL, MySQL, SQL
 problematic, a sample of the others, and per-minute totals for every statement. This Worker
 evaluates them with QueryLens's Rust analysis and shows the results in a web dashboard.
 
-A **project** is one application; its **backends** are the services it's made of (one for a
-monolith, several for microservices). Each backend connects with its own DSN, so one can be
-revoked without the others, and each keeps its own issues, ORM, releases and code. The
-dashboard shows one project at a time, all of its backends or one:
+The dashboard monitors one **project**, your application, and its **services** (one for a
+monolith, several for microservices; the API calls them backends). Each service connects with
+its own DSN, so one can be disconnected without the others, and each keeps its own issues, ORM,
+releases and code. The dashboard shows all of the services or one:
 
-- **Live**: every statement of the requests the project's SDKs send, as they arrive.
-  Built-in views (all, slow, failed, with issues), backend and environment filters, search,
+- **Live**: every statement of the requests the services' SDKs send, as they arrive.
+  Built-in views (all, slow, failed, with issues), service and environment filters, search,
   and custom filters saved in the browser (written by hand, or drafted by Workers AI from a
   description). Above them, regressions: statements that got slower or started failing since
   the latest release.
@@ -24,14 +24,14 @@ dashboard shows one project at a time, all of its backends or one:
 - **Docs**: how to get everything onto the report (source context, values, releases, AI),
   and each project's thresholds.
 
-- **Settings**: the project's backends (connect one, rename it, change or regenerate its DSN
-  key, disconnect or reconnect it), the connected host (the public address that goes into
-  every DSN, editable for a custom domain or proxy), and sign-out. New projects are created
-  from the sidebar's project switcher.
+- **Project** ("Manage services" in the sidebar's project menu): the project's name, its
+  services (connect one, rename it, change or regenerate its DSN key, disconnect or reconnect
+  it) and what gets flagged (the slow, loop, large and chatty limits and live sampling).
+- **Settings**: the connected host (the public address that goes into every DSN, editable
+  for a custom domain or proxy), and sign-out.
 
 Muting an issue (from its query report) keeps it counted but out of the Live views; a filter
-on Live shows muted issues again. Thresholds and sampling are managed through the API
-(`PUT /api/0/projects/<id>/settings`) for now.
+on Live shows muted issues again.
 
 Coding agents reach the same issues through the MCP server at `/mcp` (see below).
 
@@ -81,8 +81,8 @@ pnpm dev
 ```
 
 Open http://localhost:5173 and sign in with the token from `.dev.vars`. Workers AI has no
-local simulation: the AI features call your account even in development (`cf auth login`). Create a project, connect
-a backend in Settings and copy its DSN, then either run an app with it or send sample traffic:
+local simulation: the AI features call your account even in development (`cf auth login`). Name the project, connect
+a service on the project page and copy its DSN, then either run an app with it or send sample traffic:
 
 ```bash
 node scripts/send-sample.mjs "<DSN>" 5

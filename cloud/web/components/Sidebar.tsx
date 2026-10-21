@@ -1,7 +1,7 @@
-// The dashboard's frame: what you're looking at (a project, and its backend and environment), where you can go,
+// The dashboard's frame: what you're looking at (the project, one of its services or all, an environment), where you can go,
 // and whether the live feed is connected. On wide screens a column that folds down to a rail
 // of icons (remembered in this browser); on narrow ones a fold-out menu.
-import { BookOpenIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, Rows3Icon, SettingsIcon, XIcon } from 'lucide-react'
+import { BookOpenIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, Rows3Icon, ServerCogIcon, SettingsIcon, XIcon } from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
 
 import type { Project } from '../../bindings/Project'
@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, Sele
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmtCount } from '@/lib/format'
 import type { Connection } from '@/lib/live'
-import { type Route, href, onLinkClick } from '@/lib/router'
+import { type Route, href, navigate, onLinkClick } from '@/lib/router'
 import { ALL, type Scope } from '@/lib/scope'
 import { cn } from '@/lib/utils'
 
@@ -21,10 +21,9 @@ interface Props {
   projects: Project[]
   /** The chosen project; `null` before there is one. */
   project: Project | null
-  /** With the backend checked against the project. */
+  /** With the service (`backend`) checked against the project. */
   scope: Scope
   onScope: (patch: Partial<Scope>) => void
-  onNewProject: () => void
   /** Environments seen in the loaded history, plus the chosen one. */
   environments: string[]
   connection: Connection
@@ -40,6 +39,9 @@ interface NavItem {
 }
 
 const MAIN: NavItem[] = [{ label: 'Live queries', icon: Rows3Icon, route: { page: 'live' }, pages: ['live', 'query'] }]
+/** The project page, opened from the project menu rather than the nav. */
+const PROJECT_PAGE: Route = { page: 'project' }
+
 const SECONDARY: NavItem[] = [
   { label: 'Docs', icon: BookOpenIcon, route: { page: 'docs' }, pages: ['docs'] },
   { label: 'Settings', icon: SettingsIcon, route: { page: 'settings' }, pages: ['settings'] },
@@ -69,35 +71,36 @@ export function useSidebarCollapsed(): [boolean, (collapsed: boolean) => void] {
 
 const SCOPE_TRIGGER = 'h-8 w-full border-0 bg-transparent px-2 shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted'
 
-/** The project select's item that opens the new project dialog instead of choosing. */
-const NEW_PROJECT = '__new'
+/** The project menu's item that opens the project page instead of choosing. */
+const MANAGE = '__manage'
 
-function ScopePicker({ projects, project, scope, onScope, onNewProject, environments }: Omit<Props, 'route' | 'connection' | 'size'>) {
+function ScopePicker({ projects, project, scope, onScope, environments }: Omit<Props, 'route' | 'connection' | 'size'>) {
   return (
     <div className="grid gap-px rounded-lg border bg-card p-1">
-      <Select value={project?.id ?? ''} onValueChange={(v) => (v === NEW_PROJECT ? onNewProject() : onScope({ project: v }))}>
+      <Select value={project?.id ?? ''} onValueChange={(v) => (v === MANAGE ? navigate(PROJECT_PAGE) : onScope({ project: v }))}>
         <SelectTrigger className={cn(SCOPE_TRIGGER, 'font-medium')} aria-label="Project">
           <SelectValue placeholder="No project" />
         </SelectTrigger>
         <SelectContent>
+          {/* One project per dashboard; more are listed only if an older version created them. */}
           {projects.map((p) => (
             <SelectItem key={p.id} value={p.id}>
               {p.name}
             </SelectItem>
           ))}
-          {projects.length > 0 && <SelectSeparator />}
-          <SelectItem value={NEW_PROJECT}>
-            <PlusIcon /> New project
+          <SelectSeparator />
+          <SelectItem value={MANAGE}>
+            <ServerCogIcon /> Manage services
           </SelectItem>
         </SelectContent>
       </Select>
       {project && project.backends.length > 1 && (
         <Select value={scope.backend} onValueChange={(v) => onScope({ backend: v })}>
-          <SelectTrigger className={cn(SCOPE_TRIGGER, 'text-muted-foreground')} aria-label="Backend">
+          <SelectTrigger className={cn(SCOPE_TRIGGER, 'text-muted-foreground')} aria-label="Service">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value={ALL}>All backends</SelectItem>
+            <SelectItem value={ALL}>All services</SelectItem>
             {project.backends.map((b) => (
               <SelectItem key={b.id} value={b.id}>
                 {b.name}
@@ -212,7 +215,7 @@ function Rail(props: Props & { onExpand: () => void }) {
           aria-label={`${name}. Expand the sidebar to change`}
           className="grid size-9 place-items-center rounded-md border bg-card text-xs font-semibold text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          {props.project ? initials(props.project.name) : <PlusIcon className="size-4 text-muted-foreground" aria-hidden />}
+          {props.project ? initials(props.project.name) : <ServerCogIcon className="size-4 text-muted-foreground" aria-hidden />}
         </button>
       </Hint>
       <nav aria-label="Main" className="grid gap-0.5">

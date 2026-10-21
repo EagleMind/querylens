@@ -167,14 +167,17 @@ Worker with a single-page-app fallback. Its own small router, with types from `c
   (`GET …/issues/<n>`), the code (`GET …/source`), the shape's 24 hours and regressions.
 - **Docs** (`/docs`): what each "not shown" note links to (line of code, source context,
   values, releases, AI, MCP) and the project's thresholds.
-- **Scope**: the sidebar picks one project, and within it a backend (or all) and an
-  environment (or all); remembered in the browser (`web/lib/scope.ts`). Only that project's
-  history is loaded and only its live feed is open. A link to another project's query
-  switches to it.
-- **Settings** (`/settings`): the project's backends (`POST …/backends`, rename, `PUT/DELETE
-  …/backends/<b>/key` to change the key or disconnect), the connected host (the public URL
-  stored in the `Registry`, `GET/PUT /api/0/settings`, used in every DSN; defaults to the
-  address the dashboard was reached at), sign-out.
+- **Scope**: the dashboard monitors one project; the sidebar picks one of its services
+  (backends) or all, and an environment or all, remembered in the browser
+  (`web/lib/scope.ts`). Only the project's history is loaded and only its live feed is open.
+  (Projects made by earlier versions still show in the project menu, and a link to one of
+  their queries switches to it; new ones aren't created past the first.)
+- **Project** (`/project`, "Manage services" in the project menu): the name, the services
+  (`POST …/backends`, rename, `PUT/DELETE …/backends/<b>/key` to change the key or
+  disconnect) and the limits, written as the sentences they decide (`PUT …/settings`).
+- **Settings** (`/settings`): global only. The connected host (the public URL stored in the
+  `Registry`, `GET/PUT /api/0/settings`, used in every DSN; defaults to the address the
+  dashboard was reached at), sign-out.
 - **Muted issues**: an issue set to `ignored` (Mute on the report). Live drops muted findings
   from its views and filters unless the "Show muted issues" filter is on.
 - **Fixing**: each issue card copies its fix prompt (`GET …/issues/<n>/prompt`, loaded with

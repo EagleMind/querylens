@@ -1,4 +1,4 @@
-// The Live page: the query history and its live tail, for the project, backend and environment
+// The Live page: the query history and its live tail, for the project, service and environment
 // chosen in the sidebar. Grouped by query shape (one row per fingerprint) or one row per run. A
 // selected query's report opens beside the list on wide screens, and in its place on narrow.
 import { BellOffIcon, PauseIcon, PencilIcon, PlayIcon, PlusIcon, SearchIcon } from 'lucide-react'
@@ -174,13 +174,13 @@ const SELECTED_ROW = 'bg-primary/[0.07] shadow-[inset_2px_0_0_var(--primary)] ho
 
 interface RowProps {
   project: Project
-  /** Which backend sent it, when the list shows several. */
+  /** Which service sent it, when the list shows several. */
   showBackend: boolean
   selected: boolean
 }
 
 function BackendName({ project, id }: { project: Project; id: string }) {
-  return <span className="block truncate text-xs text-muted-foreground">{project.backends.find((b) => b.id === id)?.name ?? 'Unknown backend'}</span>
+  return <span className="block truncate text-xs text-muted-foreground">{project.backends.find((b) => b.id === id)?.name ?? 'Unknown service'}</span>
 }
 
 function RunRow({ q, project, showBackend, selected }: RowProps & { q: LiveQuery }) {
@@ -252,13 +252,13 @@ function Waiting({ project, backend }: { project: Project; backend: string }) {
   if (project.backends.length === 0) {
     return (
       <div className="mx-auto grid max-w-md justify-items-center gap-3 px-6 py-14 text-center text-sm">
-        <p className="text-base font-medium">Connect a backend</p>
+        <p className="text-base font-medium">Connect a service</p>
         <p className="text-muted-foreground">
-          {project.name} has no backend yet. Connect each service of the app; each gets its own DSN to give the SDK.
+          {project.name} has no service connected yet. Connect each service of your app; each gets its own DSN to give the SDK.
         </p>
         <Button size="sm" asChild>
-          <a href={href({ page: 'settings' })} onClick={onLinkClick}>
-            <PlusIcon /> Connect a backend
+          <a href={href({ page: 'project' })} onClick={onLinkClick}>
+            <PlusIcon /> Connect a service
           </a>
         </Button>
       </div>
@@ -269,7 +269,7 @@ function Waiting({ project, backend }: { project: Project; backend: string }) {
       <div className="grid gap-1.5 text-center">
         <p className="text-base font-medium">Waiting for queries</p>
         <p className="text-muted-foreground">
-          Queries appear here as your backends send them. The SDK always sends requests with a problem, and a sample of
+          Queries appear here as your services send them. The SDK always sends requests with a problem, and a sample of
           the others ({Math.round(project.settings.liveSampleRate * 100)}% in production, all of them in development).
         </p>
       </div>
@@ -425,7 +425,7 @@ export function LivePage({
           <div className="grid justify-items-center gap-3 px-6 py-14 text-center text-sm">
             <p className="text-base font-medium">No queries match</p>
             <p className="text-muted-foreground">
-              None of the {fmtCount(feed.size)} loaded queries match the current backend, environment, search and view.
+              None of the {fmtCount(feed.size)} loaded queries match the current service, environment, search and view.
             </p>
             {filtered && (
               <Button

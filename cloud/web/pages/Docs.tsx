@@ -5,6 +5,7 @@ import { type ReactNode, useEffect } from 'react'
 import type { Project } from '../../bindings/Project'
 import { CodeBlock } from '@/components/common'
 import { fmtExact, fmtMs } from '@/lib/format'
+import { href, onLinkClick } from '@/lib/router'
 import { cn } from '@/lib/utils'
 
 const SECTIONS: { id: string; title: string }[] = [
@@ -142,7 +143,10 @@ export function DocsPage({ projects }: { projects: Project[] }) {
         </Section>
 
         <Section id="thresholds" title="What counts as a problem">
-          <p>Each project has its own limits. The SDKs receive them with every reply, so a change applies within seconds.</p>
+          <p>
+            The project’s limits apply to all of its services. The SDKs receive them with every reply, so a change applies within
+            seconds.
+          </p>
           <div className="overflow-x-auto rounded-md border">
             <table className="w-full text-sm">
               <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
@@ -167,8 +171,13 @@ export function DocsPage({ projects }: { projects: Project[] }) {
               </tbody>
             </table>
           </div>
-          <p className="text-muted-foreground">Change them through the API:</p>
-          <CodeBlock code={`curl -X PUT ${origin}/api/0/projects/<project id>/settings \\\n  -H "Authorization: Bearer <admin token>" \\\n  -d '{"slowMs": 200}'`} wrap={false} />
+          <p className="text-muted-foreground">
+            Change them under “What gets flagged” on the{' '}
+            <a href={href({ page: 'project' })} onClick={onLinkClick} className="text-primary underline-offset-4 hover:underline">
+              project page
+            </a>
+            .
+          </p>
         </Section>
       </div>
     </div>
