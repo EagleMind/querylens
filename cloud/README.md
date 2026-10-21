@@ -30,6 +30,11 @@ releases and code. The sidebar lists the services under "Live queries"; pick one
 - **Settings**: the connected host (the public address that goes into every DSN, editable
   for a custom domain or proxy), and sign-out.
 
+**Exports**: the Live list (every matching row, filtered and sorted as shown), a query's
+request, and the regressions download as CSV, TSV, Excel (.xlsx), JSON, NDJSON, Markdown or
+HTML; a request also as its raw JSON or a SQL script, and a service's environment as a `.env`
+file.
+
 Muting an issue (from its query report) keeps it counted but out of the Live views; a filter
 on Live shows muted issues again.
 

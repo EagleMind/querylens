@@ -181,6 +181,12 @@ Worker with a single-page-app fallback. Its own small router, with types from `c
 - **Settings** (`/settings`): global only. The connected host (the public URL stored in the
   `Registry`, `GET/PUT /api/0/settings`, used in every DSN; defaults to the address the
   dashboard was reached at), sign-out.
+- **Exports** (`web/lib/export/`): each screen builds a table (`tables.ts`: Live runs or
+  shapes, a request's statements, regressions) and `formats.ts` writes it as CSV or TSV
+  (formula-looking text defused, a BOM for Excel), JSON, NDJSON, Markdown or HTML. `xlsx.ts`
+  writes a one-sheet workbook with no library: the sheet's XML in a zip of stored entries
+  (CRC-32 included). `download.ts` saves the file; `ExportMenu` offers it. All but the download
+  are pure and tested.
 - **Muted issues**: an issue set to `ignored` (Mute on the report). Live drops muted findings
   from its views and filters unless the "Show muted issues" filter is on.
 - **Fixing**: each issue card copies its fix prompt (`GET …/issues/<n>/prompt`, loaded with

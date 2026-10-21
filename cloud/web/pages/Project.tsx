@@ -1,7 +1,7 @@
 // The project page: its name, the services connected to it (each with its own DSN), the env
 // file to give a service, and the limits that decide what gets flagged. Opened from the
 // sidebar ("Manage services", under the services).
-import { PencilIcon, PlugIcon, PlusIcon, RefreshCwIcon, TriangleAlertIcon, UnplugIcon } from 'lucide-react'
+import { DownloadIcon, PencilIcon, PlugIcon, PlusIcon, RefreshCwIcon, TriangleAlertIcon, UnplugIcon } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 
 import type { Backend } from '../../bindings/Backend'
@@ -16,6 +16,8 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { api } from '@/lib/api'
 import { ENV_VARS, type EnvChoice, type EnvName, envFile, initialChoice, problem } from '@/lib/env'
+import { download } from '@/lib/export/download'
+import { fileName } from '@/lib/export/formats'
 import { ORMS, fmtRelative } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
@@ -262,8 +264,16 @@ function EnvBuilder({ project }: { project: Project }) {
           )
         })}
       </ul>
-      <div className="grid grid-cols-1 border-t bg-muted/30 px-4 py-4 sm:px-5">
+      <div className="grid grid-cols-1 gap-3 border-t bg-muted/30 px-4 py-4 sm:px-5">
         <CodeBlock code={envFile(service, choice)} wrap={false} className="bg-card" />
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-fit"
+          onClick={() => download(fileName([service.name], 'env'), 'text/plain;charset=utf-8', `${envFile(service, choice)}\n`)}
+        >
+          <DownloadIcon /> Download .env
+        </Button>
       </div>
     </div>
   )

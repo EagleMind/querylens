@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from 'react'
 
 import type { LiveFinding } from '../../bindings/LiveFinding'
 import type { Project } from '../../bindings/Project'
+import { ExportMenu } from '@/components/ExportMenu'
 import { FilterDialog } from '@/components/FilterDialog'
 import { Regressions } from '@/components/Regressions'
 import { ACTION_FILL, CodeBlock, ErrorNote, SeverityDot, SlowMark } from '@/components/common'
@@ -27,6 +28,7 @@ import {
   matchesSearch,
   saveFilters,
 } from '@/lib/filters'
+import { runsTable, shapesTable } from '@/lib/export/tables'
 import { FINDING_KINDS, fmtCount, fmtMs, fmtRelative, fmtTime } from '@/lib/format'
 import type { LiveFeed } from '@/lib/live'
 import type { Muted } from '@/lib/muted'
@@ -53,7 +55,7 @@ import { cn } from '@/lib/utils'
 import { QueryPage, QueryPanel } from '@/pages/Query'
 
 /** Rows rendered at once; the rest are a click away. */
-const PAGE = 300
+const PAGE = 50
 const VIEW_KEY = 'querylens.live'
 /** The selected view wears the brand colour. */
 const ACTIVE_VIEW = 'data-[state=on]:bg-primary/10 data-[state=on]:text-primary dark:data-[state=on]:bg-primary/15'
@@ -554,10 +556,18 @@ export function LivePage({
     <div className="grid gap-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-lg font-semibold tracking-tight">Live queries</h1>
-        <Button variant="outline" size="sm" onClick={() => setFrozen(frozen ? null : feed.requests)}>
-          {frozen ? <PlayIcon /> : <PauseIcon />}
-          {frozen ? (pending > 0 ? `Resume (${fmtCount(pending)} new requests)` : 'Resume') : 'Pause'}
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Every matching row, filtered and sorted as shown: not just the rows on screen. */}
+          <ExportMenu
+            count={rows}
+            name={[project.name, view.grouping === 'shape' ? 'query shapes' : 'live queries']}
+            table={() => (view.grouping === 'shape' ? shapesTable(project, groups) : runsTable(project, runs))}
+          />
+          <Button variant="outline" size="sm" onClick={() => setFrozen(frozen ? null : feed.requests)}>
+            {frozen ? <PlayIcon /> : <PauseIcon />}
+            {frozen ? (pending > 0 ? `Resume (${fmtCount(pending)} new requests)` : 'Resume') : 'Pause'}
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

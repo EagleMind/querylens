@@ -15,6 +15,7 @@ import { type ReactNode, useEffect, useMemo, useState } from 'react'
 import type { IssueDetail } from '../../bindings/IssueDetail'
 import type { Project } from '../../bindings/Project'
 import type { SuggestionState } from '../../shared/api'
+import { ExportMenu } from '@/components/ExportMenu'
 import { ErrorNote } from '@/components/common'
 import { CodeCard, QueryCard } from '@/components/report/CodeAndQuery'
 import { Fix } from '@/components/report/Fix'
@@ -27,6 +28,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ApiError, api } from '@/lib/api'
+import { requestSql, requestTable } from '@/lib/export/tables'
 import type { Muted } from '@/lib/muted'
 import { type LiveQuery, type LiveRequest, queriesOf, withProject } from '@/lib/queries'
 import { eventLog, missingParts, primaryFix, problemsOf, verdict } from '@/lib/report'
@@ -40,6 +42,32 @@ function BackLink() {
         <ArrowLeftIcon /> Live queries
       </a>
     </Button>
+  )
+}
+
+/** The request a query ran in: its statements as a table, the whole request as JSON, or as SQL. */
+function RequestExport({ project, request, iconOnly }: { project: Project | undefined; request: LiveRequest; iconOnly?: boolean }) {
+  if (!project) return null
+  const name = [project.name, request.name, `request ${request.id}`]
+  return (
+    <ExportMenu
+      iconOnly={iconOnly}
+      count={request.statements.length}
+      name={name}
+      table={() => requestTable(project, request)}
+      extras={[
+        {
+          label: 'Full request (JSON)',
+          extension: 'request.json',
+          mime: 'application/json',
+          write: () => {
+            const { projectId: _p, key: _k, arrivedAt: _a, ...stored } = request
+            return `${JSON.stringify(stored, null, 2)}\n`
+          },
+        },
+        { label: 'SQL script', extension: 'sql', mime: 'application/sql', write: () => requestSql(project, request) },
+      ]}
+    />
   )
 }
 
@@ -241,11 +269,14 @@ export function QueryPanel({ at, projects, requests, muted }: { at: QueryRef; pr
             'Query report'
           )}
         </p>
-        <Button variant="ghost" size="icon" className="-my-1 size-7 shrink-0" aria-label="Close the report" asChild>
-          <a href={href({ page: 'live' })} onClick={onLinkClick}>
-            <XIcon />
-          </a>
-        </Button>
+        <span className="flex shrink-0 items-center gap-1">
+          {request && <RequestExport iconOnly project={projects.find((p) => p.id === request.projectId)} request={request} />}
+          <Button variant="ghost" size="icon" className="-my-1 size-7 shrink-0" aria-label="Close the report" asChild>
+            <a href={href({ page: 'live' })} onClick={onLinkClick}>
+              <XIcon />
+            </a>
+          </Button>
+        </span>
       </div>
       {body}
     </aside>
@@ -284,7 +315,10 @@ export function QueryPage({ at, projects, requests, muted }: { at: QueryRef; pro
 
   return (
     <div className="mx-auto grid w-full max-w-[60rem] gap-4">
-      <BackLink />
+      <div className="flex items-center justify-between gap-2">
+        <BackLink />
+        <RequestExport project={projects.find((p) => p.id === request.projectId)} request={request} />
+      </div>
       <Report key={q.id} q={q} project={projects.find((p) => p.id === q.request.projectId)} muted={muted} />
     </div>
   )

@@ -5,9 +5,11 @@ import { useEffect, useState } from 'react'
 
 import type { Project } from '../../bindings/Project'
 import type { Regression, RegressionReport } from '../../shared/api'
+import { ExportMenu } from '@/components/ExportMenu'
 import { Sql } from '@/components/Sql'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
+import { regressionsTable } from '@/lib/export/tables'
 import { fmtCount, fmtMs, fmtRelative } from '@/lib/format'
 import { href, onLinkClick } from '@/lib/router'
 import { useAsync } from '@/lib/useAsync'
@@ -109,10 +111,13 @@ export function Regressions({ project, backend, environment }: { project: Projec
           <span className="font-medium">{summary}</span>
           <span className="text-muted-foreground">{found.length === 1 ? ` ${since(found[0])}` : ' since their latest release'}.</span>
         </p>
-        <Button variant="ghost" size="sm" onClick={toggle} aria-expanded={open}>
-          {open ? 'Hide' : 'Show'}
-          <ChevronDownIcon className={cn('transition-transform', open && 'rotate-180')} />
-        </Button>
+        <span className="flex shrink-0 items-center gap-1">
+          <ExportMenu iconOnly count={all.length} name={[project.name, 'regressions']} table={() => regressionsTable(project, found)} />
+          <Button variant="ghost" size="sm" onClick={toggle} aria-expanded={open}>
+            {open ? 'Hide' : 'Show'}
+            <ChevronDownIcon className={cn('transition-transform', open && 'rotate-180')} />
+          </Button>
+        </span>
       </div>
       {open && (
         <div className="divide-y border-t bg-card">
