@@ -57,22 +57,35 @@ threshold would.
 
 ## The dashboard
 
-- **Live**: every statement of the requests your apps send, newest first, across projects,
-  with the history of the last 7 days a click away. Filter by project, environment, search
-  (SQL, file or route) and the built-in views (all, slow, failed, with issues), hide or show
-  muted issues, and save your own filters, built from conditions on SQL, code location,
-  request, statement type, duration, rows, outcome, issue and release. Or describe one ("slow
-  writes on checkout since the last release") and check the conditions it fills in. Above the
-  list, the statements that got slower or started failing since the latest release.
+![Live queries: each query shape by the line of code that ran it, slowest first, with the statement that got slower since the last release above](docs/screenshots/live-queries.jpg)
+
+- **Live queries**: every statement your services send, as they arrive, with the last 7 days
+  a click away. Each row is the line of your code that ran it (`file.js:30`, the SQL in its
+  tooltip), grouped by query shape or one row per run, newest first or slowest first. Pick a
+  service in the sidebar or see them all; filter by environment, search (SQL, file or route)
+  and the built-in views (all, slow, failed, with issues), hide or show muted issues, and save
+  your own filters, or describe one ("slow writes on checkout since the last release") and
+  check the conditions it fills in. Above the list, the statements that got slower or started
+  failing since the latest release.
+
+![A query report: the verdict and its numbers, then what's wrong, most serious first](docs/screenshots/query-report.jpg)
+
 - **Query report**: ordered for diagnosis. First the verdict and the numbers behind it, then
   what's wrong (most serious first, in plain words), the fix that covers it, where in your
   code, the query, its request as an event log, and its last 24 hours. Every card opens to the
   evidence behind it, and anything the page can't show says why and links to the **Docs**
   page. Mute a problem, copy it as a prompt for your coding agent, or have the change written
   for your code.
-- **Settings**: each project's DSN (its key can be changed or regenerated), the connected
-  host that goes into every DSN (editable when the backend runs behind your own domain or a
-  proxy), and sign-out.
+
+![The project page: a service with its DSN (key hidden here), and the environment variables to give it](docs/screenshots/project.jpg)
+
+- **Project** ("Manage services" in the sidebar): connect each service of your app with its
+  own DSN (rename it, change its key, disconnect it), build the environment variables to give
+  it (tick what to turn on, copy the env file or download it), and set what gets flagged.
+- **Export** anything you see: the Live list, a query's request (also as a SQL script or its
+  raw JSON) or the regressions, as CSV, TSV, Excel, JSON, NDJSON, Markdown or HTML.
+- **Settings**: the connected host that goes into every DSN (editable when the backend runs
+  behind your own domain or a proxy), and sign-out.
 
 ## Requirements
 
