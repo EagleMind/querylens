@@ -256,7 +256,7 @@ export function QueryPanel({ at, projects, requests, muted }: { at: QueryRef; pr
   body = <div className="px-5">{body}</div>
 
   return (
-    <aside aria-label="Query report" className="grid content-start gap-4 pb-5">
+    <aside aria-label="Query report" className="grid grid-cols-1 content-start gap-4 pb-5">
       {/* The selected row's wash and brand bar, carried over: this is that row, opened. */}
       <div className="sticky top-0 z-10 flex items-center justify-between gap-2 border-b bg-card px-5 py-2.5 shadow-[inset_2px_0_0_var(--primary)] [background-image:linear-gradient(color-mix(in_oklab,var(--primary)_7%,transparent),color-mix(in_oklab,var(--primary)_7%,transparent))]">
         <p className="min-w-0 truncate font-mono text-xs text-muted-foreground">
