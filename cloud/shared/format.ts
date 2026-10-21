@@ -9,6 +9,11 @@ export function fmtMs(ms: number): string {
   return `${(ms / 60_000).toFixed(1)} min`
 }
 
+/** Every digit, grouped: for one run's own numbers ("1,100 rows"), where rounding would hide them. */
+export function fmtExact(n: number): string {
+  return Math.round(n).toLocaleString('en-US')
+}
+
 export function fmtCount(n: number): string {
   if (n < 1000) return String(Math.round(n))
   if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}K`

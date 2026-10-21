@@ -64,11 +64,12 @@ threshold would.
   request, statement type, duration, rows, outcome, issue and release. Or describe one ("slow
   writes on checkout since the last release") and check the conditions it fills in. Above the
   list, the statements that got slower or started failing since the latest release.
-- **Query report**: the statement and its parameters (when the SDK sends them), where it
-  came from in your code (and the code itself, with source context on), the issue it belongs
-  to with the fix and the other lines where it happens, every statement of its request on a
-  timeline, and its totals over 24 hours. Mute an issue from here, copy it as a prompt for your
-  coding agent, or have the change written for your code.
+- **Query report**: ordered for diagnosis. First the verdict and the numbers behind it, then
+  what's wrong (most serious first, in plain words), the fix that covers it, where in your
+  code, the query, its request as an event log, and its last 24 hours. Every card opens to the
+  evidence behind it, and anything the page can't show says why and links to the **Docs**
+  page. Mute a problem, copy it as a prompt for your coding agent, or have the change written
+  for your code.
 - **Settings**: each project's DSN (its key can be changed or regenerated), the connected
   host that goes into every DSN (editable when the backend runs behind your own domain or a
   proxy), and sign-out.

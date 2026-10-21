@@ -151,6 +151,23 @@ mod tests {
         assert!(fix.code.as_deref().unwrap_or_default().contains("populate('orderItems')"), "{fix:?}");
     }
 
+    /// What an SDK sends has no result sizes: the explanation mustn't invent "0 B", and a
+    /// slow statement says how long it took against the limit.
+    #[test]
+    fn large_and_slow_results_are_explained_without_made_up_numbers() {
+        let body = serde_json::json!({ "type": "transaction", "name": "GET /events", "start": 0, "queries": [
+            { "at": 0, "durationMs": 132, "sql": "SELECT \"id\", \"kind\" FROM \"events\" WHERE \"user_id\" = ?", "vh": "a", "rows": 1100 },
+        ]})
+        .to_string();
+        let statements = envelope::parse(&body).transactions[0].statements();
+        let out = evaluate(&statements, None, &Thresholds::default());
+        let detail = |kind| out.findings.iter().find(|f| f.finding.kind == kind).map(|f| f.finding.detail.clone()).unwrap();
+        let large = detail(FindingKind::LargeResult);
+        assert!(large.starts_with("It returned up to 1.1k rows at once, with no LIMIT."), "{large}");
+        assert!(!large.contains(" B"), "{large}");
+        assert_eq!(detail(FindingKind::SlowQuery), "It took 132 ms (the limit is 100 ms).");
+    }
+
     #[test]
     fn identical_values_are_a_duplicate_not_an_n_plus_one() {
         let statements: Vec<CapturedStatement> = (0..6)

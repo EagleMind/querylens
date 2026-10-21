@@ -22,19 +22,30 @@ pub fn slow(stat: &FingerprintStat, t: &Thresholds) -> Option<CaptureFinding> {
     } else {
         SuggestionSeverity::Low
     };
-    let what = if stat.calls >= 20 { "95% of calls finish within" } else { "slowest call took" };
+    // Said of the request (or capture) it was found in: the issue's own totals say the rest.
+    let detail = match stat.calls {
+        1 => format!("It took {} (the limit is {}).", fmt_ms(typical), fmt_ms(t.slow_ms)),
+        n if n >= 20 => format!(
+            "It ran {} times here; 95% of runs finished within {}, half within {} (the limit is {}).",
+            fmt_count(n as f64),
+            fmt_ms(typical),
+            fmt_ms(stat.p50_ms),
+            fmt_ms(t.slow_ms)
+        ),
+        n => format!(
+            "It ran {} times here; the slowest took {}, half took under {} (the limit is {}).",
+            fmt_count(n as f64),
+            fmt_ms(typical),
+            fmt_ms(stat.p50_ms),
+            fmt_ms(t.slow_ms)
+        ),
+    };
     Some(finding(
         FindingKind::SlowQuery,
         stat,
         severity,
         format!("Slow {}", subject(stat)),
-        format!(
-            "{} calls, {what} {} (median {}). {} of all captured statement time.",
-            fmt_count(stat.calls as f64),
-            fmt_ms(typical),
-            fmt_ms(stat.p50_ms),
-            crate::format::fmt_pct(stat.share)
-        ),
+        detail,
         stat.total_ms,
         stat.calls,
     ))
@@ -49,12 +60,13 @@ pub fn large_result(stat: &FingerprintStat, t: &Thresholds) -> Option<CaptureFin
     if !unbounded && bytes_per_call < t.large_bytes {
         return None;
     }
+    // Result sizes are only known from captures; the SDKs don't measure them (0).
+    let size = if bytes_per_call > 0.0 { format!(", about {} each time", crate::format::fmt_bytes(bytes_per_call)) } else { String::new() };
     let detail = if unbounded {
         format!(
-            "Returns up to {} rows with no LIMIT ({} per call on average). The application receives and \
-             builds an object for every row.",
+            "It returned up to {} rows at once, with no LIMIT{size}. The app receives every row and builds an \
+             object for each, however few it uses.",
             fmt_count(stat.max_rows),
-            crate::format::fmt_bytes(bytes_per_call)
         )
     } else {
         format!("Returns {} per call on average.", crate::format::fmt_bytes(bytes_per_call))

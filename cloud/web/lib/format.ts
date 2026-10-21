@@ -1,7 +1,7 @@
 import type { SuggestionSeverity } from '../../bindings/SuggestionSeverity'
 
 export { FINDING_KINDS, ORMS } from '../../shared/labels'
-export { fmtCount, fmtMs } from '../../shared/format'
+export { fmtCount, fmtExact, fmtMs } from '../../shared/format'
 
 export function fmtRelative(iso: string, now = Date.now()): string {
   const s = Math.max(0, (now - new Date(iso).getTime()) / 1000)
