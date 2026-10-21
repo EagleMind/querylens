@@ -1,14 +1,14 @@
-// The dashboard's frame: what you're looking at (project and environment), where you can go,
+// The dashboard's frame: what you're looking at (a project, and its backend and environment), where you can go,
 // and whether the live feed is connected. On wide screens a column that folds down to a rail
 // of icons (remembered in this browser); on narrow ones a fold-out menu.
-import { BookOpenIcon, LayersIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, Rows3Icon, SettingsIcon, XIcon } from 'lucide-react'
+import { BookOpenIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, Rows3Icon, SettingsIcon, XIcon } from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
 
 import type { Project } from '../../bindings/Project'
 import { Logo } from '@/components/Logo'
 import { ConnectionStatus } from '@/components/common'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmtCount } from '@/lib/format'
 import type { Connection } from '@/lib/live'
@@ -19,12 +19,16 @@ import { cn } from '@/lib/utils'
 interface Props {
   route: Route
   projects: Project[]
+  /** The chosen project; `null` before there is one. */
+  project: Project | null
+  /** With the backend checked against the project. */
   scope: Scope
   onScope: (patch: Partial<Scope>) => void
+  onNewProject: () => void
   /** Environments seen in the loaded history, plus the chosen one. */
   environments: string[]
   connection: Connection
-  /** Statements loaded, across projects. */
+  /** Statements loaded for the project. */
   size: number
 }
 
@@ -65,22 +69,44 @@ export function useSidebarCollapsed(): [boolean, (collapsed: boolean) => void] {
 
 const SCOPE_TRIGGER = 'h-8 w-full border-0 bg-transparent px-2 shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted'
 
-function ScopePicker({ projects, scope, onScope, environments }: Pick<Props, 'projects' | 'scope' | 'onScope' | 'environments'>) {
+/** The project select's item that opens the new project dialog instead of choosing. */
+const NEW_PROJECT = '__new'
+
+function ScopePicker({ projects, project, scope, onScope, onNewProject, environments }: Omit<Props, 'route' | 'connection' | 'size'>) {
   return (
     <div className="grid gap-px rounded-lg border bg-card p-1">
-      <Select value={scope.project} onValueChange={(v) => onScope({ project: v })}>
+      <Select value={project?.id ?? ''} onValueChange={(v) => (v === NEW_PROJECT ? onNewProject() : onScope({ project: v }))}>
         <SelectTrigger className={cn(SCOPE_TRIGGER, 'font-medium')} aria-label="Project">
-          <SelectValue />
+          <SelectValue placeholder="No project" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value={ALL}>All projects</SelectItem>
           {projects.map((p) => (
             <SelectItem key={p.id} value={p.id}>
               {p.name}
             </SelectItem>
           ))}
+          {projects.length > 0 && <SelectSeparator />}
+          <SelectItem value={NEW_PROJECT}>
+            <PlusIcon /> New project
+          </SelectItem>
         </SelectContent>
       </Select>
+      {project && project.backends.length > 1 && (
+        <Select value={scope.backend} onValueChange={(v) => onScope({ backend: v })}>
+          <SelectTrigger className={cn(SCOPE_TRIGGER, 'text-muted-foreground')} aria-label="Backend">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>All backends</SelectItem>
+            {project.backends.map((b) => (
+              <SelectItem key={b.id} value={b.id}>
+                {b.name}
+                {!b.dsn && <span className="text-muted-foreground">(disconnected)</span>}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
       <Select value={scope.environment} onValueChange={(v) => onScope({ environment: v })}>
         <SelectTrigger className={cn(SCOPE_TRIGGER, 'text-muted-foreground')} aria-label="Environment">
           <SelectValue />
@@ -99,9 +125,10 @@ function ScopePicker({ projects, scope, onScope, environments }: Pick<Props, 'pr
 }
 
 /** What the scope reads as, for the rail's tooltip. */
-function scopeName({ projects, scope }: Pick<Props, 'projects' | 'scope'>): string {
-  const project = scope.project === ALL ? 'All projects' : (projects.find((p) => p.id === scope.project)?.name ?? 'All projects')
-  return `${project}, ${scope.environment === ALL ? 'all environments' : scope.environment}`
+function scopeName({ project, scope }: Pick<Props, 'project' | 'scope'>): string {
+  if (!project) return 'No project'
+  const backend = scope.backend === ALL ? null : project.backends.find((b) => b.id === scope.backend)?.name
+  return [project.name, backend, scope.environment === ALL ? 'all environments' : scope.environment].filter(Boolean).join(', ')
 }
 
 /** "Shop API" → "SA": the chosen project, on the rail. */
@@ -176,7 +203,6 @@ function Contents(props: Props) {
 /** The folded sidebar: the mark, the scope as initials, the pages as icons. */
 function Rail(props: Props & { onExpand: () => void }) {
   const name = scopeName(props)
-  const project = props.projects.find((p) => p.id === props.scope.project)
   return (
     <>
       <Hint label={`${name}. Expand to change`}>
@@ -186,7 +212,7 @@ function Rail(props: Props & { onExpand: () => void }) {
           aria-label={`${name}. Expand the sidebar to change`}
           className="grid size-9 place-items-center rounded-md border bg-card text-xs font-semibold text-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50"
         >
-          {project ? initials(project.name) : <LayersIcon className="size-4 text-muted-foreground" aria-hidden />}
+          {props.project ? initials(props.project.name) : <PlusIcon className="size-4 text-muted-foreground" aria-hidden />}
         </button>
       </Hint>
       <nav aria-label="Main" className="grid gap-0.5">

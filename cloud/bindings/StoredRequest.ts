@@ -9,7 +9,11 @@ export type StoredRequest = {
 /**
  * Increasing within the project: newer requests have larger ids.
  */
-id: number, environment: string, release: string | null, 
+id: number, 
+/**
+ * The backend that sent it.
+ */
+backend: string, environment: string, release: string | null, 
 /**
  * The route (`GET /orders/:id`) or job name.
  */

@@ -30,11 +30,13 @@ function backendFor(ns: Exports, origin: string): McpBackend {
         if (!detail) throw new ToolError(`No issue #${n}.`)
         return detail.issue
       }),
-    regressions: (id, environment) =>
+    regressions: (id, q) =>
       guarded(async () => {
         const stub = project(ns, id)
-        const environments = environment ? [environment] : await stub.environments()
-        return Promise.all(environments.map((e) => stub.regressions(e)))
+        const streams = (await stub.streams()).filter(
+          (s) => (!q.environment || s.environment === q.environment) && (!q.backend || s.backend === q.backend),
+        )
+        return Promise.all(streams.map((s) => stub.regressions(s.backend, s.environment)))
       }),
   }
 }

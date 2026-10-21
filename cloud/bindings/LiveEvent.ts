@@ -5,4 +5,4 @@ import type { StoredRequest } from "./StoredRequest";
 /**
  * What the dashboard's live view receives over its WebSocket.
  */
-export type LiveEvent = { "type": "transaction" } & StoredRequest | { "type": "issue", issue: Issue, regressed: boolean, } | { "type": "throughput", environment: string, at: string, periodMs: number, calls: number, totalMs: number, errors: number, };
+export type LiveEvent = { "type": "transaction" } & StoredRequest | { "type": "issue", issue: Issue, regressed: boolean, } | { "type": "throughput", backend: string, environment: string, at: string, periodMs: number, calls: number, totalMs: number, errors: number, };

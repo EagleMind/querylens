@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react'
 
 import type { Project } from '../bindings/Project'
+import { NewProjectDialog } from '@/components/NewProjectDialog'
 import { Sidebar, useSidebarCollapsed } from '@/components/Sidebar'
 import { ErrorNote } from '@/components/common'
 import { Button } from '@/components/ui/button'
@@ -11,8 +12,8 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { ApiError, api, getToken, setToken } from '@/lib/api'
 import { useLiveFeed } from '@/lib/live'
 import { useMuted } from '@/lib/muted'
-import { useRoute } from '@/lib/router'
-import { ALL, scopedProject, useScope } from '@/lib/scope'
+import { navigate, useRoute } from '@/lib/router'
+import { ALL, type Scope, scopedBackend, scopedProject, useScope } from '@/lib/scope'
 import { cn } from '@/lib/utils'
 import { LivePage } from '@/pages/Live'
 import { DocsPage } from '@/pages/Docs'
@@ -35,7 +36,7 @@ function FirstProject({ onCreated }: { onCreated: (p: Project) => void }) {
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-lg">Create your first project</CardTitle>
-          <CardDescription>A project is one application. It gets a DSN to give the SDK.</CardDescription>
+          <CardDescription>A project is one application. Next, you connect its backends: each service gets its own DSN to give the SDK.</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={submit} className="grid gap-4">
@@ -58,15 +59,37 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   const route = useRoute()
   const [projects, setProjects] = useState<Project[] | null>(null)
   const [error, setError] = useState<unknown>(null)
-  const projectIds = projects?.map((p) => p.id) ?? []
+  const [scope, setScope] = useScope()
+  // Every page shows one project's data: only its history is loaded and only its feed is open.
+  const project = scopedProject(scope, projects ?? [])
+  const projectIds = project ? [project.id] : []
   const feed = useLiveFeed(projectIds)
   const muted = useMuted(projectIds)
-  const [scope, setScope] = useScope()
   const [collapsed, setCollapsed] = useSidebarCollapsed()
+  const [creating, setCreating] = useState(false)
 
-  useEffect(() => {
+  const load = useCallback(() => {
     api.projects().then(setProjects, (e) => (e instanceof ApiError && e.status === 401 ? onSignOut() : setError(e)))
   }, [onSignOut])
+  useEffect(load, [load])
+
+  // A link to a query of another project switches to that project.
+  const routeProject = route.page === 'query' ? route.project : null
+  useEffect(() => {
+    if (routeProject && routeProject !== project?.id && projects?.some((p) => p.id === routeProject)) setScope({ project: routeProject })
+  }, [routeProject, projects])
+
+  /** Choosing another project leaves the query open in this one. */
+  const changeScope = (patch: Partial<Scope>) => {
+    if (patch.project && patch.project !== project?.id && route.page === 'query') navigate({ page: 'live' })
+    setScope(patch)
+  }
+  const replace = (next: Project) => setProjects((all) => all && all.map((p) => (p.id === next.id ? next : p)))
+  const created = (p: Project) => {
+    setProjects((all) => [...(all ?? []), p])
+    setScope({ project: p.id })
+    navigate({ page: 'settings' })
+  }
 
   const environments = useMemo(
     () => [...new Set([...feed.requests.map((r) => r.environment), ...(scope.environment !== ALL ? [scope.environment] : [])])].sort(),
@@ -76,11 +99,25 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
   let body
   if (error) body = <ErrorNote error={error} />
   else if (!projects) body = <p className="text-sm text-muted-foreground">Loading…</p>
-  else if (projects.length === 0) body = <FirstProject onCreated={(p) => setProjects([p])} />
-  else if (route.page === 'docs') body = <DocsPage projects={projects} />
-  else if (route.page === 'settings') body = <SettingsPage projects={projects} connection={feed.connection} onProjects={setProjects} onSignOut={onSignOut} />
+  else if (!project) body = <FirstProject onCreated={created} />
+  else if (route.page === 'docs') body = <DocsPage projects={[project]} />
+  else if (route.page === 'settings') {
+    body = <SettingsPage project={project} projects={projects} connection={feed.connection} onProject={replace} onReload={load} onSignOut={onSignOut} />
+  }
   // One element for the list and a selected query, so pausing and paging survive opening a report.
-  else body = <LivePage projects={projects} feed={feed} muted={muted} scope={scope} onScope={setScope} selected={route.page === 'query' ? route : null} />
+  else {
+    body = (
+      <LivePage
+        key={project.id}
+        project={project}
+        feed={feed}
+        muted={muted}
+        scope={scope}
+        onScope={changeScope}
+        selected={route.page === 'query' && route.project === project.id ? route : null}
+      />
+    )
+  }
 
   return (
     <div
@@ -94,13 +131,16 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         onCollapsed={setCollapsed}
         route={route}
         projects={projects ?? []}
-        scope={{ ...scope, project: scopedProject(scope, projects ?? []) }}
-        onScope={setScope}
+        project={project}
+        scope={{ ...scope, project: project?.id ?? '', backend: scopedBackend(scope, project) }}
+        onScope={changeScope}
+        onNewProject={() => setCreating(true)}
         environments={environments}
         connection={feed.connection}
         size={feed.size}
       />
       <main className="min-w-0 px-4 py-5 sm:px-6 lg:px-8 lg:py-6">{body}</main>
+      <NewProjectDialog open={creating} onOpenChange={setCreating} onCreated={created} />
     </div>
   )
 }

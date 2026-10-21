@@ -74,12 +74,13 @@ function useReport(q: LiveQuery) {
     [projectId, ids.join(',')],
   )
   const origin = q.statement.origin
-  const source = useAsync(() => (origin ? api.source(projectId, origin) : Promise.resolve(null)), [projectId, origin])
+  const { backend, environment } = q.request
+  const source = useAsync(() => (origin ? api.source(projectId, backend, origin) : Promise.resolve(null)), [projectId, backend, origin])
   const shape = useAsync(
-    () => api.shape(projectId, { fingerprint: q.statement.fingerprint, environment: q.request.environment, hours: 24 }),
-    [projectId, q.statement.fingerprint, q.request.environment],
+    () => api.shape(projectId, { backend, fingerprint: q.statement.fingerprint, environment, hours: 24 }),
+    [projectId, backend, q.statement.fingerprint, environment],
   )
-  const regressions = useAsync(() => api.regressions(projectId, q.request.environment), [projectId, q.request.environment])
+  const regressions = useAsync(() => api.regressions(projectId, { backend, environment }), [projectId, backend, environment])
   return { issues, source, shape, regressions }
 }
 

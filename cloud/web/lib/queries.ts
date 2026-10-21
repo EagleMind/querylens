@@ -121,9 +121,9 @@ export function valuesSent(statement: CapturedStatement): boolean {
   return !(statement.params.length === 1 && statement.params[0]?.startsWith('#'))
 }
 
-/** The runs of one query shape (one fingerprint, in one project): a row of the grouped Live list. */
+/** The runs of one query shape (one fingerprint, in one backend): a row of the grouped Live list. */
 export interface QueryGroup {
-  /** `<project>:<fingerprint>`. */
+  /** `<project>:<backend>:<fingerprint>`. */
   id: string
   /** The newest run: what the row shows and opens. */
   latest: LiveQuery
@@ -139,15 +139,16 @@ export interface QueryGroup {
   requests: string[]
 }
 
-export function groupKey(projectId: string, fingerprint: string): string {
-  return `${projectId}:${fingerprint}`
+/** The same SQL in two backends is two shapes: different code runs it. */
+export function groupKey(request: LiveRequest, fingerprint: string): string {
+  return `${request.projectId}:${request.backend}:${fingerprint}`
 }
 
 /** Newest first in, newest first out: a shape is placed where its latest run was. */
 export function groupByShape(queries: LiveQuery[]): QueryGroup[] {
   const groups = new Map<string, QueryGroup>()
   for (const q of queries) {
-    const id = groupKey(q.request.projectId, q.statement.fingerprint)
+    const id = groupKey(q.request, q.statement.fingerprint)
     let g = groups.get(id)
     if (!g) {
       g = { id, latest: q, runs: 0, totalMs: 0, maxMs: 0, failed: 0, findings: [], muted: [], requests: [] }

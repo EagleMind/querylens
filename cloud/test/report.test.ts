@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import type { IssueDetail } from '../bindings/IssueDetail'
 import type { LiveFinding } from '../bindings/LiveFinding'
 import type { ProjectSettings } from '../bindings/ProjectSettings'
-import { type LiveRequest, queriesOf, withProject } from '../web/lib/queries.ts'
+import { type LiveRequest, flatten, groupByShape, queriesOf, withProject } from '../web/lib/queries.ts'
 import { eventLog, missingParts, primaryFix, problemsOf, verdict } from '../web/lib/report.ts'
 import { context, statement } from './fixtures.ts'
 
@@ -13,7 +13,7 @@ const SETTINGS: ProjectSettings = { slowMs: 100, loopMin: 5, chatty: 50, largeRo
 const EVENTS = 'SELECT "id", "kind" FROM "events" WHERE "user_id" = ?'
 
 function request(findings: LiveFinding[], statements = [statement(1, 'SELECT "id" FROM "users" WHERE "id" = ?', { atMs: 0.4, durationMs: 1.1 }), statement(2, EVENTS, { atMs: 5.4, durationMs: 132, rows: 1100, fingerprint: 'fp-events' })]): LiveRequest {
-  return withProject('0123456789ab', { id: 9, environment: 'production', release: 'r2', name: 'GET /events', at: '2026-10-21T10:00:00.000Z', durationMs: 161.1, dbMs: 133.1, statements, findings })
+  return withProject('0123456789ab', { id: 9, backend: '1a2b3c4d', environment: 'production', release: 'r2', name: 'GET /events', at: '2026-10-21T10:00:00.000Z', durationMs: 161.1, dbMs: 133.1, statements, findings })
 }
 
 const finding = (issueId: number, kind: LiveFinding['kind'], severity: LiveFinding['severity']): LiveFinding => ({ issueId, fingerprint: 'fp-events', kind, severity, title: '' })
@@ -67,4 +67,18 @@ test('what the page can’t show, and why', () => {
   const bare = withProject('0123456789ab', { ...sent, release: null, statements: [statement(1, EVENTS, { origin: null, params: ['42'] })] })
   const ai = { suggestion: null, stale: false, unavailable: 'ai_unavailable' as const }
   assert.deepEqual(missingParts(queriesOf(bare)[0], null, ai).map((m) => m.key), ['line-of-code', 'releases', 'ai'])
+})
+
+test('the same SQL in two backends is two shapes', () => {
+  const orders = request([])
+  const billing: LiveRequest = withProject('0123456789ab', { ...orders, id: 10, backend: '5e6f7a8b' })
+  const groups = groupByShape(flatten([billing, orders]))
+  assert.equal(groups.length, 4)
+  assert.deepEqual(
+    groups.filter((g) => g.latest.statement.fingerprint === 'fp-events').map((g) => [g.id, g.runs]),
+    [
+      ['0123456789ab:5e6f7a8b:fp-events', 1],
+      ['0123456789ab:1a2b3c4d:fp-events', 1],
+    ],
+  )
 })

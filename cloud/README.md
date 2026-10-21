@@ -3,10 +3,15 @@
 The backend and dashboard for always-on query monitoring (PostgreSQL, MySQL, SQLite and MongoDB apps). Your app runs the
 [`querylens-node`](../integrations/node) SDK with a DSN. The SDK sends requests that look
 problematic, a sample of the others, and per-minute totals for every statement. This Worker
-evaluates them with QueryLens's Rust analysis and shows the results in a web dashboard:
+evaluates them with QueryLens's Rust analysis and shows the results in a web dashboard.
 
-- **Live**: every statement of the requests the SDKs send, as they arrive, across projects.
-  Built-in views (all, slow, failed, with issues), project and environment filters, search,
+A **project** is one application; its **backends** are the services it's made of (one for a
+monolith, several for microservices). Each backend connects with its own DSN, so one can be
+revoked without the others, and each keeps its own issues, ORM, releases and code. The
+dashboard shows one project at a time, all of its backends or one:
+
+- **Live**: every statement of the requests the project's SDKs send, as they arrive.
+  Built-in views (all, slow, failed, with issues), backend and environment filters, search,
   and custom filters saved in the browser (written by hand, or drafted by Workers AI from a
   description). Above them, regressions: statements that got slower or started failing since
   the latest release.
@@ -19,13 +24,14 @@ evaluates them with QueryLens's Rust analysis and shows the results in a web das
 - **Docs**: how to get everything onto the report (source context, values, releases, AI),
   and each project's thresholds.
 
-- **Settings**: the connected host (the public address that goes into every DSN, editable
-  for a custom domain or proxy), each project's DSN (its key can be changed or regenerated),
-  and sign-out.
+- **Settings**: the project's backends (connect one, rename it, change or regenerate its DSN
+  key, disconnect or reconnect it), the connected host (the public address that goes into
+  every DSN, editable for a custom domain or proxy), and sign-out. New projects are created
+  from the sidebar's project switcher.
 
 Muting an issue (from its query report) keeps it counted but out of the Live views; a filter
-on Live shows muted issues again. Creating more projects, thresholds and sampling are managed
-through the API (`/api/0/projects`) for now.
+on Live shows muted issues again. Thresholds and sampling are managed through the API
+(`PUT /api/0/projects/<id>/settings`) for now.
 
 Coding agents reach the same issues through the MCP server at `/mcp` (see below).
 
@@ -45,15 +51,16 @@ coding agents ──POST /mcp (JSON-RPC)─────────────�
 
 - **The Worker** (`worker/index.ts`) only routes requests. A Worker on the free plan gets 10 ms
   of CPU per request; waiting on Workers AI doesn't count.
-- **One `Project` Durable Object per app** (`worker/project.ts`) does the work. It checks the
-  DSN key, runs `querylens-core` compiled to WebAssembly on each envelope, folds findings into
-  issues (keyed by the finding's stable id per environment), keeps the latest 10 requests per
+- **One `Project` Durable Object per app** (`worker/project.ts`) does the work. It finds the
+  backend the DSN key belongs to, runs `querylens-core` compiled to WebAssembly on each
+  envelope, folds findings into issues (keyed by the finding's stable id per backend and
+  environment), keeps the latest 10 requests per
   issue, the query history (every request the SDKs send, 7 days, the latest 20,000) and
   hourly per-shape statistics (30 days), and pushes everything to open dashboards
   over hibernating WebSockets. A resolved issue that shows up again comes back as *regressed*.
-  It also records when each environment first reported each release (the baseline for
-  regressions), the code around origins when the SDK sends source context, and the latest AI
-  change per issue.
+  It also records when each backend's environment first reported each release (the baseline
+  for regressions), each backend's ORM and the code around its origins when its SDK sends
+  source context, and the latest AI change per issue.
 - **`querylens-core`** (`../crates/core`) is the Rust analysis: SQL fingerprints, pattern
   detection, ORM advice. It's built as `core/querylens_core.wasm` by `../crates/wasm`, a small
   C ABI with no generated glue.
@@ -74,8 +81,8 @@ pnpm dev
 ```
 
 Open http://localhost:5173 and sign in with the token from `.dev.vars`. Workers AI has no
-local simulation: the AI features call your account even in development (`cf auth login`). Create a project, copy
-its DSN from Settings, then either run an app with it or send sample traffic:
+local simulation: the AI features call your account even in development (`cf auth login`). Create a project, connect
+a backend in Settings and copy its DSN, then either run an app with it or send sample traffic:
 
 ```bash
 node scripts/send-sample.mjs "<DSN>" 5
@@ -111,7 +118,7 @@ claude mcp add --transport http querylens https://querylens.<your-subdomain>.wor
 
 | Tool | What it does |
 |---|---|
-| `list_projects` | The monitored apps and their ORM |
+| `list_projects` | The monitored apps, their backends and each backend's ORM |
 | `list_issues` | Issues by time lost (or recency), filtered by status and environment |
 | `get_issue` | One issue as a fix brief: the code, the SQL, its request, the fix for the ORM |
 | `list_regressions` | Statements slower or failing since the latest release |

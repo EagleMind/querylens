@@ -4,10 +4,14 @@ import type { IssueStatus } from "./IssueStatus";
 import type { SuggestionSeverity } from "./SuggestionSeverity";
 
 /**
- * One problem (a finding with a stable id) in one environment, across every request
+ * One problem (a finding with a stable id) in one backend and environment, across every request
  * that showed it.
  */
-export type Issue = { id: number, environment: string, kind: FindingKind, 
+export type Issue = { id: number, 
+/**
+ * The backend it was found in: the same problem in two backends is two issues.
+ */
+backend: string, environment: string, kind: FindingKind, 
 /**
  * The highest seen.
  */

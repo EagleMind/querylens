@@ -86,13 +86,13 @@ function block(lang: string, code: string): string {
 export function fixPrompt(ctx: IssueContext): string {
   const { detail: d, latest, sources } = ctx
   const issue = d.issue
-  const orm = d.fix?.orm ?? ctx.project.orm
+  const orm = d.fix?.orm ?? ctx.backend?.orm ?? null
   const out: string[] = []
 
   out.push(`# Fix a database issue QueryLens found: ${issue.title}`)
   out.push(
     [
-      `${FINDING_KINDS[issue.kind]}, ${issue.severity} severity, in ${issue.environment}`,
+      `${FINDING_KINDS[issue.kind]}, ${issue.severity} severity, in ${ctx.backend ? `the ${ctx.backend.name} backend’s ` : ''}${issue.environment}`,
       `seen in ${fmtCount(issue.timesSeen)} ${issue.timesSeen === 1 ? 'request' : 'requests'} (first ${issue.firstSeen}, last ${issue.lastSeen})`,
       `${fmtMs(issue.impactMs)} of statement time so far`,
       orm ? `ORM: ${ORMS[orm]}` : null,
