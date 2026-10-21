@@ -1,6 +1,6 @@
 // The project page: its name, the services connected to it (each with its own DSN), the env
 // file to give a service, and the limits that decide what gets flagged. Opened from the
-// sidebar's project menu.
+// sidebar ("Manage services", under the services).
 import { PencilIcon, PlugIcon, PlusIcon, RefreshCwIcon, TriangleAlertIcon, UnplugIcon } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 
@@ -37,8 +37,8 @@ function KeyEditor({ project, service, onSaved, close }: { project: Project; ser
     else void save(value.trim())
   }
   return (
-    <form onSubmit={submit} className="grid gap-3">
-      <div className="grid gap-2">
+    <form onSubmit={submit} className="grid grid-cols-1 gap-3">
+      <div className="grid grid-cols-1 gap-2">
         <Label htmlFor={`key-${service.id}`}>Key</Label>
         <Input id={`key-${service.id}`} value={value} onChange={(e) => setValue(e.target.value)} className="font-mono" autoFocus />
         <p className="text-xs text-muted-foreground">
@@ -83,7 +83,7 @@ function ServiceRow({ project, service, onSaved }: { project: Project; service: 
   const reconnect = () => run(async () => onSaved(await api.setBackendKey(project.id, service.id)))
 
   return (
-    <li className="grid gap-3 px-4 py-4 sm:px-5">
+    <li className="grid grid-cols-1 gap-3 px-4 py-4 sm:px-5">
       {renaming ? (
         <NameEditor
           id={`service-name-${service.id}`}
@@ -123,7 +123,7 @@ function ServiceRow({ project, service, onSaved }: { project: Project; service: 
         />
       )}
       {confirming && (
-        <div className="grid gap-2 rounded-md border border-destructive/30 bg-destructive/[0.04] p-3 text-sm">
+        <div className="grid grid-cols-1 gap-2 rounded-md border border-destructive/30 bg-destructive/[0.04] p-3 text-sm">
           <p>
             Disconnect <span className="font-medium">{service.name}</span>? Its DSN stops working at once. Its queries and issues stay, and
             reconnecting gives it a new DSN.
@@ -160,8 +160,8 @@ function ConnectService({ project, onSaved }: { project: Project; onSaved: (p: P
     })
   }
   return (
-    <div className={cn('grid gap-3 px-4 py-4 sm:px-5', first ? 'bg-primary/[0.04]' : 'border-t bg-muted/30')}>
-      <form onSubmit={submit} className="grid gap-2">
+    <div className={cn('grid grid-cols-1 gap-3 px-4 py-4 sm:px-5', first ? 'bg-primary/[0.04]' : 'border-t bg-muted/30')}>
+      <form onSubmit={submit} className="grid grid-cols-1 gap-2">
         <Label htmlFor="service-name">{first ? 'Connect your first service' : 'Connect another service'}</Label>
         <div className="flex gap-2">
           <Input id="service-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. orders, billing, api" autoFocus={first} />
@@ -173,7 +173,7 @@ function ConnectService({ project, onSaved }: { project: Project; onSaved: (p: P
       </form>
       <ErrorNote error={error} />
       {added?.dsn && (
-        <div className="grid gap-2 rounded-md border border-primary/25 bg-card p-3 text-sm">
+        <div className="grid grid-cols-1 gap-2 rounded-md border border-primary/25 bg-card p-3 text-sm">
           <p>
             <span className="font-medium">{added.name}</span> is connected. In that service, install the SDK, set its DSN and load the SDK
             first:
@@ -225,7 +225,7 @@ function EnvBuilder({ project }: { project: Project }) {
       <ul className="divide-y">
         <li className="flex gap-3 px-4 py-3 sm:px-5">
           <Checkbox checked disabled aria-label="QUERYLENS_DSN, always set" className="mt-0.5" />
-          <div className="grid gap-0.5">
+          <div className="grid grid-cols-1 gap-0.5">
             <code className="font-mono text-[13px] font-medium">QUERYLENS_DSN</code>
             <p className="text-xs text-muted-foreground">Where {service.name} reports. Always set: without it the SDK does nothing.</p>
           </div>
@@ -237,8 +237,8 @@ function EnvBuilder({ project }: { project: Project }) {
           return (
             <li key={v.name} className={cn('flex gap-3 px-4 py-3 sm:px-5', c.on && 'bg-primary/[0.03]')}>
               <Checkbox id={id} checked={c.on} onCheckedChange={(on) => set(v.name, { on: on === true })} className="mt-0.5" />
-              <div className="grid min-w-0 flex-1 gap-1.5">
-                <div className="grid gap-0.5">
+              <div className="grid grid-cols-1 min-w-0 flex-1 gap-1.5">
+                <div className="grid grid-cols-1 gap-0.5">
                   <label htmlFor={id} className="w-fit cursor-pointer font-mono text-[13px] font-medium">
                     {v.name}
                   </label>
@@ -250,7 +250,7 @@ function EnvBuilder({ project }: { project: Project }) {
                   )}
                 </div>
                 {c.on && v.kind !== 'flag' && (
-                  <div className="grid gap-1">
+                  <div className="grid grid-cols-1 gap-1">
                     <Input
                       value={c.value}
                       onChange={(e) => set(v.name, { value: e.target.value })}
@@ -268,7 +268,7 @@ function EnvBuilder({ project }: { project: Project }) {
           )
         })}
       </ul>
-      <div className="grid gap-2 border-t bg-muted/30 px-4 py-4 sm:px-5">
+      <div className="grid grid-cols-1 gap-2 border-t bg-muted/30 px-4 py-4 sm:px-5">
         <p className="text-sm">
           Paste into <span className="font-medium">{service.name}</span>’s env file, or set each in its host’s environment settings:
         </p>
@@ -334,8 +334,8 @@ function Thresholds({ project, onSaved }: { project: Project; onSaved: (p: Proje
   }
   const line = 'leading-9 text-[15px]'
   return (
-    <form onSubmit={submit} className="grid gap-4 rounded-lg border bg-card px-4 py-4 sm:px-5">
-      <div className="grid gap-1">
+    <form onSubmit={submit} className="grid grid-cols-1 gap-4 rounded-lg border bg-card px-4 py-4 sm:px-5">
+      <div className="grid grid-cols-1 gap-1">
         <p className={line}>
           A statement is slow when it takes more than
           <Inline id="slowMs" label="Slow statement limit, ms" value={draft.slowMs} onChange={set('slowMs')} />
@@ -387,8 +387,8 @@ export function ProjectPage({ project, onProject }: { project: Project; onProjec
   const connected = project.backends.filter((b) => b.dsn).length
   const disconnected = project.backends.length - connected
   return (
-    <div className="mx-auto grid max-w-3xl gap-8">
-      <header className="grid gap-1.5">
+    <div className="mx-auto grid max-w-3xl grid-cols-1 gap-8">
+      <header className="grid grid-cols-1 gap-1.5">
         {renaming ? (
           <NameEditor
             id="project-name"
@@ -412,7 +412,7 @@ export function ProjectPage({ project, onProject }: { project: Project; onProjec
         </p>
       </header>
 
-      <section aria-labelledby="services" className="grid gap-3">
+      <section aria-labelledby="services" className="grid grid-cols-1 gap-3">
         <h2 id="services" className="text-base font-semibold">
           Services
         </h2>
@@ -428,8 +428,8 @@ export function ProjectPage({ project, onProject }: { project: Project; onProjec
         </div>
       </section>
 
-      <section aria-labelledby="env" className="grid gap-3">
-        <div className="grid gap-1">
+      <section aria-labelledby="env" className="grid grid-cols-1 gap-3">
+        <div className="grid grid-cols-1 gap-1">
           <h2 id="env" className="text-base font-semibold">
             Environment variables
           </h2>
@@ -438,8 +438,8 @@ export function ProjectPage({ project, onProject }: { project: Project; onProjec
         <EnvBuilder key={project.id} project={project} />
       </section>
 
-      <section aria-labelledby="limits" className="grid gap-3">
-        <div className="grid gap-1">
+      <section aria-labelledby="limits" className="grid grid-cols-1 gap-3">
+        <div className="grid grid-cols-1 gap-1">
           <h2 id="limits" className="text-base font-semibold">
             What gets flagged
           </h2>

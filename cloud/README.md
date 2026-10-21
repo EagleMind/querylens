@@ -8,7 +8,7 @@ evaluates them with QueryLens's Rust analysis and shows the results in a web das
 The dashboard monitors one **project**, your application, and its **services** (one for a
 monolith, several for microservices; the API calls them backends). Each service connects with
 its own DSN, so one can be disconnected without the others, and each keeps its own issues, ORM,
-releases and code. The dashboard shows all of the services or one:
+releases and code. The sidebar lists the services under "Live queries"; pick one, or all:
 
 - **Live**: every statement of the requests the services' SDKs send, as they arrive.
   Built-in views (all, slow, failed, with issues), service and environment filters, search,
@@ -24,7 +24,7 @@ releases and code. The dashboard shows all of the services or one:
 - **Docs**: how to get everything onto the report (source context, values, releases, AI),
   and each project's thresholds.
 
-- **Project** ("Manage services" in the sidebar's project menu): the project's name, its
+- **Project** ("Manage services" in the sidebar, under the services): the project's name, its
   services (connect one, rename it, change or regenerate its DSN key, disconnect or reconnect
   it) and what gets flagged (the slow, loop, large and chatty limits and live sampling).
 - **Settings**: the connected host (the public address that goes into every DSN, editable

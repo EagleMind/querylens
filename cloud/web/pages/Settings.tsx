@@ -63,7 +63,7 @@ export function SettingsPage({
   }
 
   return (
-    <div className="mx-auto grid max-w-3xl gap-6">
+    <div className="mx-auto grid max-w-3xl grid-cols-1 gap-6">
       <div className="grid gap-1">
         <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">Where your services reach this QueryLens server, and this browser’s session.</p>
@@ -77,7 +77,7 @@ export function SettingsPage({
             your own domain or proxy.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-4">
+        <CardContent className="grid grid-cols-1 gap-4">
           <ErrorNote error={settings.error} />
           <EditableValue
             value={host}

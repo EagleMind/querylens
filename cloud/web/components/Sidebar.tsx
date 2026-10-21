@@ -1,14 +1,16 @@
-// The dashboard's frame: what you're looking at (the project, one of its services or all, an environment), where you can go,
+// The dashboard's frame: the project and environment you're looking at, the project's services
+// (each opens its live queries), where else you can go,
 // and whether the live feed is connected. On wide screens a column that folds down to a rail
 // of icons (remembered in this browser); on narrow ones a fold-out menu.
-import { BookOpenIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, Rows3Icon, ServerCogIcon, SettingsIcon, XIcon } from 'lucide-react'
+import { BookOpenIcon, MenuIcon, PanelLeftCloseIcon, PanelLeftOpenIcon, PlusIcon, Rows3Icon, ServerCogIcon, SettingsIcon, XIcon } from 'lucide-react'
 import { type ComponentType, useEffect, useState } from 'react'
 
+import type { Backend } from '../../bindings/Backend'
 import type { Project } from '../../bindings/Project'
 import { Logo } from '@/components/Logo'
 import { ConnectionStatus } from '@/components/common'
 import { Button } from '@/components/ui/button'
-import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { fmtCount } from '@/lib/format'
 import type { Connection } from '@/lib/live'
@@ -18,8 +20,7 @@ import { cn } from '@/lib/utils'
 
 interface Props {
   route: Route
-  projects: Project[]
-  /** The chosen project; `null` before there is one. */
+  /** The project; `null` before there is one. */
   project: Project | null
   /** With the service (`backend`) checked against the project. */
   scope: Scope
@@ -37,10 +38,6 @@ interface NavItem {
   route: Route
   pages: Route['page'][]
 }
-
-const MAIN: NavItem[] = [{ label: 'Live queries', icon: Rows3Icon, route: { page: 'live' }, pages: ['live', 'query'] }]
-/** The project page, opened from the project menu rather than the nav. */
-const PROJECT_PAGE: Route = { page: 'project' }
 
 const SECONDARY: NavItem[] = [
   { label: 'Docs', icon: BookOpenIcon, route: { page: 'docs' }, pages: ['docs'] },
@@ -71,45 +68,13 @@ export function useSidebarCollapsed(): [boolean, (collapsed: boolean) => void] {
 
 const SCOPE_TRIGGER = 'h-8 w-full border-0 bg-transparent px-2 shadow-none hover:bg-muted dark:bg-transparent dark:hover:bg-muted'
 
-/** The project menu's item that opens the project page instead of choosing. */
-const MANAGE = '__manage'
-
-function ScopePicker({ projects, project, scope, onScope, environments }: Omit<Props, 'route' | 'connection' | 'size'>) {
+/** The project's name, and the environment shown (one, or all). */
+function ScopePicker({ project, scope, onScope, environments }: Pick<Props, 'project' | 'scope' | 'onScope' | 'environments'>) {
   return (
     <div className="grid gap-px rounded-lg border bg-card p-1">
-      <Select value={project?.id ?? ''} onValueChange={(v) => (v === MANAGE ? navigate(PROJECT_PAGE) : onScope({ project: v }))}>
-        <SelectTrigger className={cn(SCOPE_TRIGGER, 'font-medium')} aria-label="Project">
-          <SelectValue placeholder="No project" />
-        </SelectTrigger>
-        <SelectContent>
-          {/* One project per dashboard; more are listed only if an older version created them. */}
-          {projects.map((p) => (
-            <SelectItem key={p.id} value={p.id}>
-              {p.name}
-            </SelectItem>
-          ))}
-          <SelectSeparator />
-          <SelectItem value={MANAGE}>
-            <ServerCogIcon /> Manage services
-          </SelectItem>
-        </SelectContent>
-      </Select>
-      {project && project.backends.length > 1 && (
-        <Select value={scope.backend} onValueChange={(v) => onScope({ backend: v })}>
-          <SelectTrigger className={cn(SCOPE_TRIGGER, 'text-muted-foreground')} aria-label="Service">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL}>All services</SelectItem>
-            {project.backends.map((b) => (
-              <SelectItem key={b.id} value={b.id}>
-                {b.name}
-                {!b.dsn && <span className="text-muted-foreground">(disconnected)</span>}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
+      <p className="truncate px-2 py-1.5 text-sm font-semibold" title={project?.name}>
+        {project?.name ?? 'No project'}
+      </p>
       <Select value={scope.environment} onValueChange={(v) => onScope({ environment: v })}>
         <SelectTrigger className={cn(SCOPE_TRIGGER, 'text-muted-foreground')} aria-label="Environment">
           <SelectValue />
@@ -154,6 +119,106 @@ function Hint({ label, children }: { label: string; children: React.ReactElement
   )
 }
 
+const NAV_LINK =
+  'flex items-center gap-2.5 rounded-md py-1.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50'
+const NAV_ACTIVE = 'bg-primary/10 text-primary dark:bg-primary/15'
+const NAV_IDLE = 'text-muted-foreground hover:bg-muted hover:text-foreground'
+
+/** Reporting within this long reads as live in the services list. */
+const RECENT_MS = 15 * 60_000
+
+function serviceDot(b: Backend): string {
+  if (!b.dsn) return 'bg-muted-foreground/30'
+  if (b.lastSeen === null) return 'bg-warning'
+  return Date.now() - Date.parse(b.lastSeen) < RECENT_MS ? 'bg-primary' : 'bg-muted-foreground/60'
+}
+
+function serviceState(b: Backend): string {
+  if (!b.dsn) return 'disconnected'
+  return b.lastSeen === null ? 'waiting for its first event' : 'connected'
+}
+
+/** The project page: "Manage services" under the list, "Connect a service" in place of an empty one. */
+function ManageLink({ route, empty, rail }: { route: Route; empty: boolean; rail?: boolean }) {
+  const label = empty ? 'Connect a service' : 'Manage services'
+  const Icon = empty ? PlusIcon : ServerCogIcon
+  const link = (
+    <a
+      href={href({ page: 'project' })}
+      onClick={onLinkClick}
+      aria-current={route.page === 'project' ? 'page' : undefined}
+      aria-label={rail ? label : undefined}
+      className={cn(NAV_LINK, rail ? 'size-9 justify-center' : 'px-2.5', route.page === 'project' ? NAV_ACTIVE : NAV_IDLE)}
+    >
+      <Icon className="size-4 shrink-0" />
+      {!rail && label}
+    </a>
+  )
+  return rail ? <Hint label={label}>{link}</Hint> : link
+}
+
+/**
+ * The project's services, each opening its live queries ("All services" first when there are
+ * several), then the link to manage them.
+ */
+function ServiceLinks({ project, scope, route, onScope, rail }: Pick<Props, 'project' | 'scope' | 'route' | 'onScope'> & { rail?: boolean }) {
+  const onLive = route.page === 'live' || route.page === 'query'
+  if (!project || project.backends.length === 0) return <ManageLink route={route} empty rail={rail} />
+  const several = project.backends.length > 1
+  const items: { id: string; name: string; service: Backend | null }[] = [
+    ...(several ? [{ id: ALL, name: 'All services', service: null }] : []),
+    ...project.backends.map((b) => ({ id: b.id, name: b.name, service: b })),
+  ]
+  return (
+    <>
+      {items.map(({ id, name, service }) => {
+        const active = onLive && (!several || scope.backend === id)
+        const label = service ? `${name}, ${serviceState(service)}` : name
+        const link = (
+          <a
+            key={id}
+            href={href({ page: 'live' })}
+            onClick={(e) => {
+              if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+              e.preventDefault()
+              onScope({ backend: id })
+              navigate({ page: 'live' })
+            }}
+            aria-current={active ? 'page' : undefined}
+            aria-label={rail ? label : undefined}
+            title={rail ? undefined : label}
+            className={cn(NAV_LINK, rail ? 'size-9 justify-center' : 'px-2.5', active ? NAV_ACTIVE : NAV_IDLE)}
+          >
+            {service ? (
+              rail ? (
+                <span className="relative text-xs font-semibold">
+                  {initials(name)}
+                  <span className={cn('absolute -top-0.5 -right-1.5 size-1.5 rounded-full', serviceDot(service))} aria-hidden />
+                </span>
+              ) : (
+                <span className="grid size-4 shrink-0 place-items-center" aria-hidden>
+                  <span className={cn('size-1.5 rounded-full', serviceDot(service))} />
+                </span>
+              )
+            ) : (
+              <Rows3Icon className="size-4 shrink-0" />
+            )}
+            {!rail && <span className={cn('truncate', service && !service.dsn && 'line-through decoration-muted-foreground/40')}>{name}</span>}
+          </a>
+        )
+        return rail ? (
+          <Hint key={id} label={label}>
+            {link}
+          </Hint>
+        ) : (
+          link
+        )
+      })}
+      <ManageLink route={route} empty={false} rail={rail} />
+    </>
+  )
+}
+
 function NavLinks({ items, route, rail }: { items: NavItem[]; route: Route; rail?: boolean }) {
   return (
     <>
@@ -166,11 +231,7 @@ function NavLinks({ items, route, rail }: { items: NavItem[]; route: Route; rail
             onClick={onLinkClick}
             aria-current={active ? 'page' : undefined}
             aria-label={rail ? n.label : undefined}
-            className={cn(
-              'flex items-center gap-2.5 rounded-md py-1.5 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50',
-              rail ? 'size-9 justify-center' : 'px-2.5',
-              active ? 'bg-primary/10 text-primary dark:bg-primary/15' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )}
+            className={cn(NAV_LINK, rail ? 'size-9 justify-center' : 'px-2.5', active ? NAV_ACTIVE : NAV_IDLE)}
           >
             <n.icon className="size-4 shrink-0" />
             {!rail && n.label}
@@ -192,8 +253,11 @@ function Contents(props: Props) {
   return (
     <>
       <ScopePicker {...props} />
-      <nav aria-label="Main" className="grid gap-0.5">
-        <NavLinks items={MAIN} route={props.route} />
+      <nav aria-labelledby="nav-live" className="grid min-h-0 gap-0.5 overflow-y-auto">
+        <p id="nav-live" className="px-2.5 pb-1 text-xs font-medium text-muted-foreground">
+          Live queries
+        </p>
+        <ServiceLinks {...props} />
       </nav>
       <div className="flex-1" />
       <nav aria-label="More" className="grid gap-0.5">
@@ -218,8 +282,8 @@ function Rail(props: Props & { onExpand: () => void }) {
           {props.project ? initials(props.project.name) : <ServerCogIcon className="size-4 text-muted-foreground" aria-hidden />}
         </button>
       </Hint>
-      <nav aria-label="Main" className="grid gap-0.5">
-        <NavLinks items={MAIN} route={props.route} rail />
+      <nav aria-label="Live queries" className="grid gap-0.5">
+        <ServiceLinks {...props} rail />
       </nav>
       <div className="flex-1" />
       <nav aria-label="More" className="grid gap-0.5">

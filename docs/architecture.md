@@ -167,12 +167,14 @@ Worker with a single-page-app fallback. Its own small router, with types from `c
   (`GET …/issues/<n>`), the code (`GET …/source`), the shape's 24 hours and regressions.
 - **Docs** (`/docs`): what each "not shown" note links to (line of code, source context,
   values, releases, AI, MCP) and the project's thresholds.
-- **Scope**: the dashboard monitors one project; the sidebar picks one of its services
-  (backends) or all, and an environment or all, remembered in the browser
-  (`web/lib/scope.ts`). Only the project's history is loaded and only its live feed is open.
-  (Projects made by earlier versions still show in the project menu, and a link to one of
-  their queries switches to it; new ones aren't created past the first.)
-- **Project** (`/project`, "Manage services" in the project menu): the name, the services
+- **Scope**: the dashboard monitors one project. The sidebar shows its name, an environment
+  picker, and under "Live queries" its services (backends): "All services" (when there are
+  several), then each with a status dot, each opening the live queries of that service, then
+  "Manage services". The choice is remembered in the browser (`web/lib/scope.ts`). Only the
+  project's history is loaded and only its live feed is open. (A deployment with projects
+  from earlier versions shows the remembered or first one; a link to another one's query
+  switches to it. New ones aren't created past the first.)
+- **Project** (`/project`, "Manage services" in the sidebar): the name, the services
   (`POST …/backends`, rename, `PUT/DELETE …/backends/<b>/key` to change the key or
   disconnect) and the limits, written as the sentences they decide (`PUT …/settings`).
 - **Settings** (`/settings`): global only. The connected host (the public URL stored in the

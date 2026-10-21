@@ -128,7 +128,6 @@ function Dashboard({ onSignOut }: { onSignOut: () => void }) {
         collapsed={collapsed}
         onCollapsed={setCollapsed}
         route={route}
-        projects={projects ?? []}
         project={project}
         scope={{ ...scope, project: project?.id ?? '', backend: scopedBackend(scope, project) }}
         onScope={changeScope}

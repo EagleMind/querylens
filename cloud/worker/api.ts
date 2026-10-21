@@ -41,7 +41,7 @@ import { draft, issuePrompt, suggest, suggestionState } from './fixing'
 import { HttpError, authorized, fail, json, randomHex, readJson } from './http'
 import { type BackendChange, type IssueQuery, isBackendId } from './project'
 
-export const VERSION = '0.5.1'
+export const VERSION = '0.5.2'
 export const STATUSES: IssueStatus[] = ['unresolved', 'resolved', 'ignored']
 const DSN_KEY = /^[A-Za-z0-9_-]{16,64}$/
 
