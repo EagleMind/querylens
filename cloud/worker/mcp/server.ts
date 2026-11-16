@@ -50,7 +50,7 @@ export async function mcp(request: Request, env: Env, ns: Exports, url: URL): Pr
   const origin = request.headers.get('origin')
   if (origin && origin !== url.origin) return rpcError(403, 'Cross-origin requests are not allowed.')
   if (!env.ADMIN_TOKEN) return rpcError(503, 'Set the ADMIN_TOKEN secret on the Worker to use the MCP server.')
-  if (!authorized(request, env, url)) {
+  if (!authorized(request, env)) {
     return json({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Send the admin token: Authorization: Bearer <token>.' } }, 401, {
       'www-authenticate': 'Bearer realm="querylens"',
     })

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import type { LiveEvent } from '../../bindings/LiveEvent'
-import { api, liveUrl } from './api'
+import { api, getToken, liveUrl } from './api'
 import { type LiveRequest, mergeRequests, withProject } from './queries'
 
 export type Connection = 'connecting' | 'live' | 'offline'
@@ -59,7 +59,8 @@ function openFeed(projectId: string, cb: Callbacks): () => void {
 
   const connect = () => {
     cb.onState('connecting')
-    ws = new WebSocket(liveUrl(projectId))
+    const token = getToken()
+    ws = new WebSocket(liveUrl(projectId), token ? [token] : [])
     ws.onopen = () => {
       retry = 0
       cb.onState('live')

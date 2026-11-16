@@ -113,8 +113,8 @@ export const api = {
     call<QueryShape[]>('GET', `projects/${id}/queries${query({ ...p, limit: 1 })}`).then((rows) => rows[0] ?? null),
 }
 
-/** The live feed's WebSocket URL (browsers can't send headers on a WebSocket). */
+/** The live feed's WebSocket URL; the token goes in the subprotocol, not the URL. */
 export function liveUrl(projectId: string): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${location.host}/api/0/live${query({ project: projectId, token: getToken() })}`
+  return `${proto}//${location.host}/api/0/live${query({ project: projectId })}`
 }

@@ -2,7 +2,7 @@
 // (`Authorization: Bearer <ADMIN_TOKEN>`).
 //
 //   GET    /api/0/info                          version, whether the token is set (no auth)
-//   GET    /api/0/live?project=<id>&token=…     the live feed (WebSocket)
+//   GET    /api/0/live?project=<id>             the live feed (WebSocket; token in the subprotocol)
 //   GET    /api/0/settings                      the public URL (goes into DSNs)
 //   PUT    /api/0/settings  {publicUrl}
 //   POST   /api/0/filters/draft  {text}         a Live filter from a description (AI)
@@ -97,8 +97,9 @@ export async function api(request: Request, env: Env, ns: Exports, url: URL, pat
     return json({ version: VERSION, configured: Boolean(env.ADMIN_TOKEN) })
   }
   if (!env.ADMIN_TOKEN) return fail(503, 'Set the ADMIN_TOKEN secret on the Worker to use the dashboard.')
-  // Browsers can't set headers on a WebSocket, so the live feed takes the token in the URL.
-  if (!authorized(request, env, url, path[0] === 'live')) return fail(401, 'Sign in with the admin token.')
+  // A browser can't set an Authorization header on a WebSocket, so the live feed takes the
+  // token as its `Sec-WebSocket-Protocol` value. Every other route uses the header.
+  if (!authorized(request, env, path[0] === 'live')) return fail(401, 'Sign in with the admin token.')
 
   const q = url.searchParams
   if (path[0] === 'settings' && path.length === 1) {

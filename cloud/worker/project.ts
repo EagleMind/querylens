@@ -1018,7 +1018,12 @@ export class Project extends DurableObject<Env> {
     const { 0: client, 1: server } = new WebSocketPair()
     this.ctx.acceptWebSocket(server)
     server.send(JSON.stringify({ type: 'hello', connections: this.ctx.getWebSockets().length }))
-    return new Response(null, { status: 101, webSocket: client })
+    const protocol = request.headers.get('sec-websocket-protocol')?.split(',')[0]?.trim()
+    return new Response(null, {
+      status: 101,
+      webSocket: client,
+      headers: protocol ? { 'Sec-WebSocket-Protocol': protocol } : undefined,
+    })
   }
 
   async webSocketMessage(): Promise<void> {
