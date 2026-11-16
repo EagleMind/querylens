@@ -484,6 +484,11 @@ export class Project extends DurableObject<Env> {
 
   // ───────────────────────────── ingest ─────────────────────────────
 
+  /** Cheap pre-body check; `ingest()` repeats it after the body is read. */
+  authorize(key: string): boolean {
+    return this.backendFor(key) !== null
+  }
+
   /** One SDK envelope: evaluate, remember, broadcast. Answers with the settings the SDK filters by. */
   async ingest(key: string, body: string): Promise<IngestResult> {
     const backend = this.backendFor(key)

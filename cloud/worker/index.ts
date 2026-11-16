@@ -19,8 +19,10 @@ async function envelope(request: Request, ns: Exports, id: string): Promise<Resp
   const key = request.headers.get('x-querylens-key')
   if (!key) return fail(401, 'Missing x-querylens-key: check the SDK’s DSN.')
   if (!isProjectId(id)) return fail(401, 'Unknown project or key: check the SDK’s DSN.')
+  const project = ns.Project.getByName(id)
+  if (!(await project.authorize(key))) return fail(401, 'Unknown project or key: check the SDK’s DSN.')
   const body = await readBody(request)
-  const result = await ns.Project.getByName(id).ingest(key, body)
+  const result = await project.ingest(key, body)
   if (!result.ok) return fail(result.status, result.message)
   return json({ accepted: true, config: result.config }, 202)
 }
