@@ -141,17 +141,22 @@ export function requestTable(project: Project, r: StoredRequest): ExportTable {
   }
 }
 
+/** Telemetry goes inside `--` comments; a newline would end the comment and run the rest. */
+function oneLine(s: string): string {
+  return s.replace(/[\r\n]+/g, ' ')
+}
+
 /** The request as a SQL file: each statement with where it ran and how long it took. */
 export function requestSql(project: Project, r: StoredRequest): string {
   const head = [
-    `-- QueryLens: ${r.name}, ${serviceName(project, r.backend)}, ${r.environment}${r.release ? `, release ${r.release}` : ''}`,
+    `-- QueryLens: ${oneLine(r.name)}, ${oneLine(serviceName(project, r.backend))}, ${oneLine(r.environment)}${r.release ? `, release ${oneLine(r.release)}` : ''}`,
     `-- ${r.at}, ${r.statements.length} statements, ${ms(r.dbMs)} ms in the database of ${ms(r.durationMs)} ms`,
     '',
   ]
   const body = [...r.statements]
     .sort((a, b) => a.atMs - b.atMs || a.seq - b.seq)
     .map((s) => {
-      const notes = [`#${s.seq}`, `${ms(s.durationMs)} ms`, `${s.rows} rows`, s.origin, s.error ? `failed: ${s.error.replace(/\s+/g, ' ')}` : null]
+      const notes = [`#${s.seq}`, `${ms(s.durationMs)} ms`, `${s.rows} rows`, s.origin ? oneLine(s.origin) : null, s.error ? `failed: ${s.error.replace(/\s+/g, ' ')}` : null]
       const sql = s.sql.trim().replace(/;\s*$/, '')
       return `-- ${notes.filter(Boolean).join(', ')}\n${sql};\n`
     })

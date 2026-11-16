@@ -68,6 +68,28 @@ test('a request as SQL: one terminated statement each, with where and how long',
   )
 })
 
+test('telemetry newlines cannot end a SQL comment and inject a statement', () => {
+  const hostileProject: Project = {
+    ...project,
+    backends: [{ ...project.backends[0], name: 'orders\nDROP TABLE audit_log; --' }],
+  }
+  const hostile: StoredRequest = {
+    ...request,
+    name: 'GET /orders\r\nDROP TABLE audit_log; --',
+    environment: 'production\nDROP TABLE audit_log; --',
+    release: 'r2\r\nDROP TABLE audit_log; --',
+    statements: [statement(1, 'SELECT 1', { origin: 'src/orders.js:42\nDROP TABLE audit_log; --' })],
+  }
+  const sql = requestSql(hostileProject, hostile)
+  assert.match(
+    sql,
+    /^-- QueryLens: GET \/orders DROP TABLE audit_log; --, orders DROP TABLE audit_log; --, production DROP TABLE audit_log; --, release r2 DROP TABLE audit_log; --$/m,
+  )
+  assert.match(sql, /^-- #1, 1 ms, 1 rows, src\/orders\.js:42 DROP TABLE audit_log; --$/m)
+  assert.ok(!sql.includes('\r'), 'no carriage returns')
+  assert.ok(sql.split('\n').every((line) => !line.startsWith('DROP TABLE audit_log')), 'nothing starts at column 0')
+})
+
 test('the Live list exports every run, or every shape with its totals', () => {
   const live = withProject(project.id, request)
   const runs = runsTable(project, flatten([live]))
